@@ -54,9 +54,9 @@ section, .hero { scroll-margin-top: 96px; }
 .hero .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 34px; }
 
 /* the before and after frame */
-.compare { margin: clamp(36px, 6vw, 80px) var(--edge) 0; position: relative; aspect-ratio: 21 / 9; border-radius: 6px; overflow: hidden; background: #0b1f23; touch-action: pan-y; user-select: none; cursor: ew-resize; box-shadow: 0 30px 60px -30px rgba(8, 63, 68, .55); }
-.compare svg, .compare img.scene { position: absolute; object-fit: cover; object-position: center 22%; inset: 0; width: 100%; height: 100%; display: block; }
-.compare .before { clip-path: inset(0 calc(100% - var(--at, 50%)) 0 0); filter: brightness(.6) saturate(.62) sepia(.55) hue-rotate(-14deg) contrast(.82); }
+.compare { margin: clamp(36px, 6vw, 80px) var(--edge) 0; position: relative; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #0b1f23; touch-action: pan-y; user-select: none; cursor: ew-resize; box-shadow: 0 30px 60px -30px rgba(8, 63, 68, .55); }
+.compare svg, .compare img.scene { position: absolute; object-fit: cover; object-position: center 30%; inset: 0; width: 100%; height: 100%; display: block; }
+.compare .before { clip-path: inset(0 calc(100% - var(--at, 50%)) 0 0); }
 .compare .line { position: absolute; top: 0; bottom: 0; left: var(--at, 50%); width: 2px; margin-left: -1px; background: #fff; }
 .compare .knob { position: absolute; top: 50%; left: var(--at, 50%); width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: #fff; border: 0; cursor: ew-resize; display: grid; place-items: center; }
 .compare .knob::before, .compare .knob::after { content: ""; position: absolute; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: solid var(--ink); border-width: 0 0 2px 2px; }
@@ -89,9 +89,9 @@ section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
 .frame { position: relative; aspect-ratio: 3 / 2; border-radius: 2px; overflow: hidden; }
 .frame i { position: absolute; left: 6px; bottom: 4px; font: 500 11px/1 var(--body); color: rgba(255, 255, 255, .75); font-style: normal; font-variant-numeric: tabular-nums; }
 .frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.frame.soft-focus .pic { filter: blur(3px); }
-.frame.dark .pic { filter: brightness(.35); }
-.pic { position: absolute; inset: 0; }
+.frame.soft-focus .pic { filter: blur(2.5px); }
+.frame.dark .pic { filter: brightness(.3); }
+.pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
 .legend { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 18px; font-size: 16px; color: var(--soft); }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .legend svg { width: 26px; height: 20px; }
@@ -215,13 +215,13 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 </div>
 
 <div class="compare" id="compare">
-  <svg class="scene" viewBox="0 0 2100 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
-  <svg class="scene before" viewBox="0 0 2100 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+  <img class="scene" src="/static/hero-after.jpg" alt="A couple portrait after editing" draggable="false" fetchpriority="high">
+  <img class="scene before" src="/static/hero-before.jpg" alt="The same portrait before editing" draggable="false">
   <span class="line"></span>
   <span class="tag b">Before</span><span class="tag a">After</span>
   <button class="knob" type="button" role="slider" aria-label="Before and after divider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></button>
 </div>
-<p class="caption">Drag the line. Every photo in the app opens like this, so you see exactly what a preset and the automatic corrections changed. <span id="hero-note">The picture here is a drawing, not a client's photo.</span></p>
+<p class="caption">Drag the line to compare the same photograph before and after editing. Every photo in the app opens like this, so you see exactly what changed.</p>
 
 <section id="how">
   <div class="intro">
@@ -250,6 +250,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     </div>
     <div>
       <div class="sheet" id="sheet" role="img" aria-label="A contact sheet of twelve frames. Most are circled to keep, one has a question mark for maybe, two are crossed out as rejected."></div>
+      <p class="caption" style="margin:12px 0 0">The frames on this sheet were made with AI for illustration.</p>
       <div class="legend" aria-hidden="true">
         <span><svg viewBox="0 0 26 20"><ellipse cx="13" cy="10" rx="11" ry="8" fill="none" stroke="#c5281c" stroke-width="2"/></svg>Keep</span>
         <span><svg viewBox="0 0 26 20"><text x="8" y="17" font-size="20" fill="#c5281c" font-family="Georgia, serif" font-style="italic">?</text></svg>Maybe</span>
@@ -372,75 +373,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 </dialog>
 
 <script>
-// ---- the drawn scene: a mandap at night, strings of marigold and jasmine, fairy lights ----
 function rand(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
-function scene() {
-  const r = rand(11);
-  let s = `<defs>
-    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#062a31"/><stop offset=".62" stop-color="#0f4a50"/><stop offset="1" stop-color="#1b1a22"/></linearGradient>
-    <linearGradient id="drape" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6efe2"/><stop offset=".5" stop-color="#fffaf0"/><stop offset="1" stop-color="#e4d9c6"/></linearGradient>
-    <radialGradient id="glow"><stop offset="0" stop-color="#fff2c9" stop-opacity=".95"/><stop offset=".35" stop-color="#ffd27a" stop-opacity=".5"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
-    <filter id="blur"><feGaussianBlur stdDeviation="9"/></filter>
-    <filter id="blur2"><feGaussianBlur stdDeviation="3"/></filter>
-  </defs><rect width="2100" height="900" fill="url(#sky)"/>`;
-  for (let i = 0; i < 46; i++) {                                 // far lights, out of focus
-    const x = r() * 2100, y = r() * 520, rad = 14 + r() * 34;
-    s += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${rad.toFixed(0)}" fill="${r() > .3 ? '#ffd27a' : '#fff6dd'}" opacity="${(.10 + r() * .22).toFixed(2)}" filter="url(#blur)"/>`;
-  }
-  s += `<rect y="700" width="2100" height="200" fill="#151318"/><ellipse cx="1050" cy="712" rx="760" ry="46" fill="#e9c98a" opacity=".16" filter="url(#blur)"/>`;
-  const pillars = [520, 860, 1240, 1580];
-  s += `<path d="M470 150 H1630 V186 H470Z" fill="#f3ead8"/>`;       // canopy beam
-  for (const x of pillars) {                                         // pillars wrapped in cloth
-    s += `<rect x="${x - 22}" y="186" width="44" height="530" fill="url(#drape)"/>`;
-    s += `<path d="M${x - 22} 186 q22 60 44 0 v40 q-22 60 -44 0z" fill="#d9ccb4" opacity=".7"/>`;
-  }
-  for (let k = 0; k < 3; k++) {                                      // swags of cloth between pillars
-    const a = pillars[k], b = pillars[k + 1], m = (a + b) / 2;
-    s += `<path d="M${a} 186 Q${m} ${330 + (k % 2) * 30} ${b} 186 Q${m} ${270 + (k % 2) * 30} ${a} 186Z" fill="#fff8ea" opacity=".85"/>`;
-  }
-  const flower = (x, y, rad, c) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${c}"/>`;
-  const gold = ['#f2a900', '#ff8a1f', '#ffc12e', '#f7931a'];
-  for (let k = 0; k < 3; k++) {                                      // garlands in curves
-    const a = pillars[k], b = pillars[k + 1];
-    for (let row = 0; row < 2; row++) {
-      const sag = 150 + row * 110 + (k % 2) * 20;
-      for (let t = 0; t <= 1.0001; t += 1 / 34) {
-        const x = a + (b - a) * t, y = 190 + sag * 4 * t * (1 - t);
-        s += flower(x, y, 9 + r() * 4, row ? '#fffdf5' : gold[Math.floor(r() * 4)]);
-      }
-    }
-  }
-  for (const x of [600, 690, 780, 950, 1050, 1150, 1320, 1410, 1500]) { // hanging strings
-    const len = 230 + r() * 240;
-    for (let y = 196; y < 196 + len; y += 19) s += flower(x + Math.sin(y / 60) * 4, y, 8 + r() * 3, y % 3 ? gold[Math.floor(r() * 4)] : '#fffdf5');
-    s += `<circle cx="${x}" cy="${196 + len + 14}" r="34" fill="url(#glow)"/>`;
-  }
-  s += `<path d="M700 716 H1400 L1470 770 H630Z" fill="#7a1420"/><path d="M700 716 H1400 V728 H700Z" fill="#f2a900"/>`;  // the stage
-  s += `<g fill="#101015"><path d="M960 716 q-8 -120 20 -170 q-26 -20 -22 -52 a34 34 0 1 1 64 0 q4 32 -22 52 q30 50 22 170z"/><path d="M1068 716 q-34 -96 2 -168 q-22 -18 -18 -46 a30 30 0 1 1 58 0 q4 28 -18 46 q52 72 26 168z"/></g>`;
-  s += `<path d="M1052 500 a30 30 0 0 1 58 0 q10 60 40 110 l-60 -20z" fill="#b3202c" opacity=".9"/>`;   // her veil
-  for (let i = 0; i < 16; i++) {                                     // lamps along the stage
-    const x = 660 + i * 52;
-    s += `<circle cx="${x}" cy="762" r="26" fill="url(#glow)"/><circle cx="${x}" cy="764" r="4" fill="#fff6dd"/>`;
-  }
-  for (let i = 0; i < 14; i++) {                                     // near lights, soft
-    const x = r() * 2100, y = 560 + r() * 320, rad = 30 + r() * 60;
-    s += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${rad.toFixed(0)}" fill="#ffcf70" opacity="${(.05 + r() * .09).toFixed(2)}" filter="url(#blur)"/>`;
-  }
-  return s;
-}
-const art = scene();
-for (const svg of document.querySelectorAll('.scene')) svg.innerHTML = art;
-// When a photograph is present (static/hero.jpg) it takes the place of the drawing.
-const photo = new Image();
-photo.onload = () => {
-  for (const svg of document.querySelectorAll('svg.scene')) {
-    const img = new Image();
-    img.src = photo.src; img.alt = ''; img.className = svg.getAttribute('class'); img.draggable = false;
-    svg.replaceWith(img);
-  }
-  document.getElementById('hero-note').textContent = 'The picture here was made with AI. It is not a client\'s photo.';
-};
-photo.src = '/static/hero.jpg?v=2';
 
 // ---- the divider ----
 const compare = document.getElementById('compare');
@@ -481,16 +414,32 @@ const tones = [['#0f4a50', '#f2a900'], ['#7a1420', '#ffc12e'], ['#3b2a22', '#e9c
                ['#0d5b61', '#fffdf5'], ['#5b1a26', '#f2a900'], ['#1b1a22', '#ff8a1f'], ['#22313a', '#e4d9c6'], ['#0f4a50', '#ffc12e'], ['#7a1420', '#fff2c9']];
 const pencil = {
   k: '<path class="mark" pathLength="1" d="M52 7 C78 5 95 18 94 34 C93 51 72 61 48 60 C24 59 6 48 7 32 C8 17 26 7 58 8" fill="none" stroke="#e23a2c" stroke-width="2.2" stroke-linecap="round"/>',
-  m: '<text class="ask" x="40" y="48" font-size="42" fill="#e23a2c" font-family="Georgia, serif" font-style="italic">?</text>',
+  m: '<text class="ask" x="38" y="50" font-size="48" font-weight="bold" fill="#ff4a3a" stroke="#1a0503" stroke-width="1.2" paint-order="stroke" font-family="Georgia, serif" font-style="italic">?</text>',
   x: '<path class="mark" pathLength="1" d="M14 8 86 58" stroke="#e23a2c" stroke-width="2.4" fill="none" stroke-linecap="round"/><path class="mark" pathLength="1" d="M88 9 12 57" stroke="#e23a2c" stroke-width="2.4" fill="none" stroke-linecap="round"/>',
 };
 const rr = rand(5);
 document.getElementById('sheet').innerHTML = marks.map((m, i) => {
-  const [bg, fg] = tones[i];
-  const x = 30 + rr() * 40, cls = i === 2 ? ' soft-focus' : i === 9 ? ' dark' : '';
-  return `<div class="frame${cls}"><div class="pic" style="background:radial-gradient(circle at ${x.toFixed(0)}% 42%, ${fg} 0 9%, transparent 10%), radial-gradient(ellipse at ${x.toFixed(0)}% 88%, ${fg}cc 0 22%, transparent 23%), linear-gradient(160deg, ${bg}, #101015)"></div>` +
+  const cls = i === 2 ? ' soft-focus' : i === 9 ? ' dark' : '';
+  const n = String(i + 1).padStart(2, '0');
+  return `<div class="frame${cls}"><img class="pic" src="/static/cull/${n}.jpg" alt="" loading="lazy" width="660" height="440">` +
     `<svg viewBox="0 0 100 66" preserveAspectRatio="none" style="--i:${i}">${pencil[m]}</svg><i>${String(i + 14).padStart(2, '0')}A</i></div>`;
 }).join('');
+
+// Always open at the top: a section name left in the address (…/#cull) or the browser's own
+// memory of the last position must not drop a visitor in the middle of the page.
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+scrollTo(0, 0);
+addEventListener('pageshow', () => scrollTo(0, 0));
+// Links to a section scroll there without writing the section into the address.
+for (const a of document.querySelectorAll('a[href^="#"]')) {
+  a.addEventListener('click', (e) => {
+    const to = document.querySelector(a.getAttribute('href'));
+    if (!to) return;
+    e.preventDefault();
+    to.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+  });
+}
 
 // ---- the floating menu and what happens on scroll ----
 const bar = document.querySelector('.top');
