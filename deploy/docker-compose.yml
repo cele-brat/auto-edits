@@ -1,8 +1,8 @@
 # Auto Edits on the VPS. Kept apart from the other apps on the machine:
 #   - its own project name, network and data volume
 #   - hard limits on memory and processor, so it cannot starve n8n and the rest
-#   - listens on this machine only (127.0.0.1); the existing web proxy passes
-#     edits.cele-brat.solutions to it
+#   - listens on this machine only (127.0.0.1); the existing Traefik proxy passes
+#     edits.cele-brat.solutions to it (same label pattern as the CCW app)
 # The key lives in a file named .env next to this one:  AUTOEDITS_KEY=<long secret>
 name: auto-edits
 services:
@@ -16,7 +16,13 @@ services:
     volumes:
       - data:/data
     ports:
-      - "127.0.0.1:8431:8000"
+      - "127.0.0.1:${APP_PORT:-8431}:8000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.autoedits.rule=Host(`${APP_DOMAIN:-edits.cele-brat.solutions}`)
+      - traefik.http.routers.autoedits.entrypoints=websecure
+      - traefik.http.routers.autoedits.tls.certresolver=letsencrypt
+      - traefik.http.services.autoedits.loadbalancer.server.port=8000
     mem_limit: 3g
     cpus: 2.0
     pids_limit: 256
