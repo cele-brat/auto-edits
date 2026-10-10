@@ -49,7 +49,18 @@ section, .hero { scroll-margin-top: 96px; }
 .button.line { background: none; color: var(--ink); }
 .button.line:hover { background: var(--ink); color: var(--paper); }
 
-.hero { padding: clamp(28px, 6vw, 84px) var(--edge) 0; }
+.hero { padding: clamp(28px, 6vw, 84px) var(--edge) 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px clamp(28px, 4vw, 64px); align-items: center; }
+.hero > .text { min-width: 0; }
+.clock { position: relative; width: clamp(260px, 25vw, 340px); aspect-ratio: 1; border-radius: 50%; background: var(--peacock-deep); color: var(--paper);
+  display: grid; place-content: center; text-align: center; padding: 34px; box-shadow: 0 34px 70px -30px rgba(8, 63, 68, .8), inset 0 0 0 10px rgba(242, 169, 0, .9), inset 0 0 0 13px var(--peacock-deep), inset 0 0 0 14px rgba(255,255,255,.18); }
+.clock .big { font: 500 clamp(92px, 9vw, 128px)/1 var(--display); color: var(--marigold); margin-top: -10px; }
+.clock .unit { font: 600 15px/1 var(--body); letter-spacing: .22em; text-transform: uppercase; margin-top: 18px; }
+.clock .what { font-size: 16px; line-height: 1.4; margin-top: 14px; color: #d8e6e4; max-width: 20ch; justify-self: center; }
+.clock .what b { color: var(--paper); }
+.clock::after { content: ""; position: absolute; top: 5%; left: calc(50% - 2px); width: 4px; height: 7%; background: var(--marigold); border-radius: 2px; transform-origin: 50% 643%; animation: tick 15s steps(60) infinite; opacity: .9; }
+@keyframes tick { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .clock::after { animation: none; } }
+@media (max-width: 900px) { .hero { grid-template-columns: 1fr; } .clock { justify-self: start; width: 240px; padding: 26px; } .clock .big { font-size: 88px; } .clock .what { font-size: 14px; } }
 .hero .lede { font-size: clamp(19px, 1.6vw, 23px); margin-top: 28px; max-width: 54ch; color: var(--soft); }
 .hero .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 34px; }
 .trial { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 16px; color: var(--soft); }
@@ -73,6 +84,10 @@ section, .hero { scroll-margin-top: 96px; }
 
 section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
 .intro { display: grid; gap: 22px; }
+.speed { display: flex; align-items: center; gap: 14px 30px; flex-wrap: wrap; margin-top: clamp(30px, 4vw, 48px); padding: clamp(22px, 3vw, 34px) clamp(22px, 3vw, 40px); border-radius: 8px; background: var(--peacock-deep); color: var(--paper); }
+.speed b { font: 500 clamp(52px, 6vw, 84px)/1 var(--display); color: var(--marigold); white-space: nowrap; }
+.speed p { font-size: clamp(18px, 1.6vw, 22px); max-width: 44ch; }
+.speed small { display: block; color: #b9cfcc; font-size: 14px; margin-top: 6px; }
 
 /* the four steps: a real sequence, so they are numbered */
 .steps { list-style: none; margin: clamp(36px, 5vw, 64px) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1.5px solid var(--ink); counter-reset: step; }
@@ -223,6 +238,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 
 <main>
 <div class="hero">
+  <div class="text">
   <h1>A whole wedding, culled and edited while you rest.</h1>
   <p class="lede">Auto Edits rates every photo, applies your own Lightroom presets with corrections worked out for each frame, and makes the finished JPEGs on a server. You start it and walk away.</p>
   <div class="actions">
@@ -230,6 +246,12 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <a class="button line" href="#how">See how it works</a>
   </div>
   <p class="trial"><span><b>Free trial: 50 credits</b> when you sign up. No card needed.</span></p>
+  </div>
+  <div class="clock" role="img" aria-label="15 minutes for 500 photos: uploaded, edited with your preset and exported">
+    <div class="big">15</div>
+    <div class="unit">minutes</div>
+    <div class="what"><b>500 photos</b> uploaded, edited with your preset and exported</div>
+  </div>
 </div>
 
 <div class="compare" id="compare">
@@ -252,6 +274,11 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <li><h3>Edit</h3><p>Choose one of 500 built-in presets, or your own, for each event folder, tick what should be worked out per photo, and fine-tune any single frame.</p></li>
     <li><h3>Export</h3><p>Pick the size, quality and watermark. The server makes the JPEGs and hands you one zip.</p></li>
   </ol>
+  <div class="speed">
+    <b>15 min</b>
+    <p>for 500 photos: upload, your preset applied, and finished JPEGs ready to download.
+      <small>Proof size (2560 px), one preset. Upload time depends on your internet speed.</small></p>
+  </div>
 </section>
 
 <section id="cull">
