@@ -2,9 +2,9 @@
 FROM python:3.12-slim
 WORKDIR /app
 # The headless OpenCV build needs no display libraries. MediaPipe (masks, faces) is installed without its own
-# OpenCV, sound and plotting extras, which the server never uses.
+# OpenCV and sound extras, which the server never uses.
 RUN pip install --no-cache-dir fastapi uvicorn python-multipart numpy scipy opencv-contrib-python-headless==4.11.0.86 \
-        absl-py flatbuffers \
+        absl-py flatbuffers matplotlib \
     && pip install --no-cache-dir --no-deps mediapipe==0.10.32
 COPY engine ./engine
 COPY models ./models
