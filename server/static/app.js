@@ -37,7 +37,7 @@ async function api(path, options = {}) {
 
 // ---- looks ----------------------------------------------------------------
 const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0,
-  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {} });
+  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true });
 // Parts of the photo that can be changed on their own (Lightroom's own mask kinds).
 const MASKS = [
   ['face_skin', 'Face skin'], ['body_skin', 'Body skin'], ['eyes', 'Eyes'], ['hair', 'Hair'], ['clothes', 'Clothes'],
@@ -49,6 +49,15 @@ const MASK_SLIDERS = [
   { key: 'texture', label: 'Texture' }, { key: 'clarity', label: 'Clarity' }, { key: 'sat', label: 'Saturation' },
   { key: 'temp', label: 'Warmth' }, { key: 'tint', label: 'Tint' },
 ];
+// Names for the mask kinds and settings that can come inside a Lightroom preset.
+const KIND_NAMES = { subject: 'People', whole_person: 'Whole person', background: 'Background', face_skin: 'Face skin',
+  body_skin: 'Body skin', hair: 'Hair', clothes: 'Clothes', iris_pupil: 'Iris and pupil', eye_sclera: 'Eye whites',
+  eyebrows: 'Eyebrows', lips: 'Lips', teeth: 'Teeth', facial_hair: 'Facial hair', sky: 'Sky',
+  linear_gradient: 'Linear gradient', radial_gradient: 'Radial gradient', brush: 'Brush', range: 'Range' };
+const ADJ_NAMES = { ev: 'exposure', contrast: 'contrast', hl: 'highlights', sh: 'shadows', wh: 'whites', bl: 'blacks',
+  texture: 'texture', clarity: 'clarity', dehaze: 'dehaze', sat: 'saturation', temp: 'warmth', tint: 'tint',
+  sharp: 'sharpness', noise: 'noise' };
+const NOT_PREVIEWED = new Set(['sharp', 'noise', 'dehaze']);
 // One line per setting: its Auto tick (toggle) and the slider for your own change (key).
 const ROWS = [
   { toggle: 'exposure', label: 'Exposure', key: 'ev', min: -3, max: 3, step: 0.05, digits: 2 },
@@ -74,6 +83,7 @@ function tidy(look) {
     if (Object.keys(kept).length) masks[kind] = kept;
   }
   l.masks = masks;
+  l.preset_masks = l.preset_masks !== false;
   return l;
 }
 const folder = () => (S.wedding ? S.wedding.folders.find((f) => f.id === S.folderId) : null);
@@ -291,7 +301,8 @@ function buildLooks() {
     map.get(key).variants.push(p);
   }
   S.looks = [...map.values()];
-  const packs = [...new Set(S.presets.map((p) => p.pack))];
+  const packs = [...new Set(S.presets.map((p) => p.pack))].sort((a, b) => (b === 'My presets') - (a === 'My presets'));
+  S.looks.sort((a, b) => (b.pack === 'My presets') - (a.pack === 'My presets'));
   $('pack').replaceChildren(el('option', { value: '', textContent: 'All packs' }),
     ...packs.map((k) => el('option', { value: k, textContent: k })));
 }
@@ -312,6 +323,7 @@ function drawLooks() {
   const rows = [none];
   for (const l of shownLooks()) {
     const head = el('button', { type: 'button', className: 'look' }, [l.look, el('small', { textContent: l.pack.replace(' Looks', '') })]);
+    if (l.variants.some((v) => v.masks.length)) head.append(el('small', { className: 'has', textContent: 'with masks' }));
     head.setAttribute('aria-expanded', String(l.key === open));
     head.onclick = () => { S.openLook = l.key; change({ preset: l.variants[0].id }); };
     rows.push(head);
@@ -330,6 +342,25 @@ function drawLooks() {
   box.scrollTop = keep;
   $('preset-name').textContent = chosen ? chosen.name : '';
   $('about').textContent = chosen ? chosen.about : (shownLooks().length ? '' : 'No look matches that search.');
+  $('remove-preset').hidden = !(chosen && chosen.mine);
+  const maskBox = $('preset-masks');
+  maskBox.hidden = !(chosen && chosen.masks.length);
+  if (!maskBox.hidden) {
+    $('use-preset-masks').checked = look.preset_masks;
+    let hiddenParts = 0;
+    $('preset-mask-list').replaceChildren(...chosen.masks.map((m) => {
+      const where = m.parts.map((k) => KIND_NAMES[k] || k.replace(/_/g, ' ')).join(' + ');
+      const what = Object.entries(m.adjust).map(([k, v]) => `${ADJ_NAMES[k] || k} ${signed(v, k === 'ev' ? 2 : 0)}`);
+      if (m.curve) what.push('tone curve');
+      if (!m.shown) hiddenParts += 1;
+      return el('li', { className: m.shown ? '' : 'off' }, [el('b', { textContent: where }), `: ${what.join(', ') || 'no change'}${m.shown ? '' : ' (Lightroom only)'}`]);
+    }));
+    const soft = chosen.masks.some((m) => Object.keys(m.adjust).some((k) => NOT_PREVIEWED.has(k)));
+    $('preset-mask-note').textContent = [
+      hiddenParts ? `${hiddenParts} of these the app cannot find in a photo itself; Lightroom still applies them.` : '',
+      soft ? 'Sharpness, noise and dehaze inside masks are applied in Lightroom, not shown here.' : '',
+    ].filter(Boolean).join(' ');
+  }
 }
 
 function stepPreset(by) {
@@ -550,6 +581,7 @@ async function start() {
   S.presets = presets.presets;
   S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
   buildLooks();
+  $('pack').value = S.pack = '';
   buildRows();
   S.weddings = weddings.weddings;
   $('wedding').replaceChildren(...S.weddings.map((w) => el('option', { value: w.id, textContent: w.name })));
@@ -589,6 +621,55 @@ for (const b of document.querySelectorAll('[data-mode]')) {
   b.onclick = () => change({ mode: b.dataset.mode, toggles: b.dataset.mode === 'preset_auto' ? S.lastToggles : [] });
 }
 $('pack').onchange = (e) => { S.pack = e.target.value; drawLooks(); };
+$('use-preset-masks').onchange = (e) => change({ preset_masks: e.target.checked });
+
+async function loadPresets() {
+  S.presets = (await api('/api/presets')).presets;
+  S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
+  const keep = S.pack;
+  buildLooks();
+  $('pack').value = [...$('pack').options].some((o) => o.value === keep) ? keep : '';
+  S.pack = $('pack').value;
+}
+
+$('upload').onchange = async (e) => {
+  const files = [...e.target.files];
+  if (!files.length) return;
+  const note = $('upload-note');
+  note.textContent = `Adding ${files.length} preset${files.length === 1 ? '' : 's'}…`;
+  const form = new FormData();
+  for (const f of files) form.append('files', f);
+  try {
+    const r = await fetch('/api/presets', { method: 'POST', body: form, credentials: 'same-origin' });
+    if (r.status === 401) return showSignIn();
+    const data = await r.json();
+    if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
+    const good = data.results.filter((x) => x.ok), bad = data.results.filter((x) => !x.ok);
+    await loadPresets();
+    S.pack = 'My presets'; $('pack').value = S.pack; S.query = ''; $('search').value = '';
+    const withMasks = good.filter((x) => x.masks).length;
+    note.textContent = `Added ${good.length} preset${good.length === 1 ? '' : 's'}` +
+      (withMasks ? `, ${withMasks} with masks` : '') + '. They are under “My presets”.' +
+      (bad.length ? ` Not added: ${bad.map((x) => `${x.file} (${x.why})`).join('; ')}` : '');
+    if (good.length === 1 && folder()) { S.openLook = null; change({ preset: good[0].id, mode: panelLook().mode === 'auto' ? 'preset' : panelLook().mode }); }
+    else drawLooks();
+  } catch (err) {
+    note.textContent = `The presets were not added. ${err.message}`;
+  }
+  e.target.value = '';
+};
+$('remove-preset').onclick = async () => {
+  const id = panelLook().preset;
+  const p = S.byPreset.get(id);
+  if (!p || !p.mine) return;
+  try {
+    await api(`/api/presets/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    $('upload-note').textContent = `Removed “${p.name}” from the app. It is still in your Lightroom.`;
+    change({ preset: null });
+    await loadPresets();
+    drawLooks(); drawFolders();
+  } catch (err) { if (err.message !== 'signed out') $('upload-note').textContent = err.message; }
+};
 $('search').oninput = (e) => { S.query = e.target.value; drawLooks(); };
 $('looks').onkeydown = (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); stepPreset(e.key === 'ArrowDown' ? 1 : -1); $('looks').focus(); }

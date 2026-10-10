@@ -34,8 +34,7 @@ import numpy as np
 
 from engine import render as _r
 from engine.auto import TOGGLES, auto_correct, combine
-from engine.masks import KINDS as MASK_KINDS
-from engine.presets import effective_settings
+from engine.presets import effective_settings, local_corrections
 from engine.render import render
 
 cv2.setNumThreads(2)
@@ -52,6 +51,9 @@ ADJUST = {"hl": ("Highlights2012", -100, 100), "sh": ("Shadows2012", -100, 100),
           "bl": ("Blacks2012", -100, 100), "noise": ("LuminanceSmoothing", 0, 100), "angle": ("CropAngle", -45, 45)}
 
 
+# the parts of a photo the app's own Masks section offers
+MASK_KINDS = ("subject", "background", "face_skin", "body_skin", "hair", "clothes", "eyes", "sky")
+MY_PACK = "My presets"                    # presets uploaded from Lightroom
 # what a mask can change -> (lowest, highest)
 MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "sh": (-100, 100),
                "texture": (-100, 100), "clarity": (-100, 100), "sat": (-100, 100), "temp": (-100, 100),
@@ -60,7 +62,8 @@ MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "s
 
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
-            "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {}}
+            "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {},
+            "preset_masks": True}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -92,6 +95,7 @@ def clean_look(raw, preset_ids=None) -> dict:
     for key in ("hl", "sh", "wh", "bl", "noise"):
         look[key] = _number(raw.get(key), -100.0, 100.0)
     look["angle"] = _number(raw.get("angle"), -15.0, 15.0)
+    look["preset_masks"] = raw.get("preset_masks", True) is not False       # use the masks inside the preset
     masks = raw.get("masks") if isinstance(raw.get("masks"), dict) else {}
     for kind in MASK_KINDS:                              # keep only masks that change something
         given = masks.get(kind) if isinstance(masks.get(kind), dict) else {}
@@ -122,23 +126,77 @@ def straighten(img: np.ndarray, angle: float) -> np.ndarray:
     return cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
-def local_adjust(img: np.ndarray, masks: dict, adjustments: dict) -> np.ndarray:
-    """Apply each mask's adjustments to its part of the picture only."""
-    h, w = img.shape[:2]
+def _detail(img: np.ndarray, texture: float, clarity: float) -> np.ndarray:
+    """Texture (fine detail) and clarity (wider, mid-tone contrast) for a masked area.
+
+    Uses an edge-keeping blur, so smoothing skin does not smear across the edge of
+    the face or leave coloured halos. The strengths are set by eye, not yet
+    measured against Lightroom."""
+    if not texture and not clarity:
+        return img
+    y = np.ascontiguousarray(_r._luma(np.clip(img, 0, 1)), np.float32)
+    span = float(np.hypot(*y.shape))
+
+    def smooth(radius_frac, eps):                           # guided filter: blurs flat areas, keeps real edges
+        k = 2 * max(2, int(radius_frac * span)) + 1
+        mean = cv2.blur(y, (k, k))
+        var = cv2.blur(y * y, (k, k)) - mean * mean
+        gain = var / (var + eps)
+        return cv2.blur(gain, (k, k)) * y + cv2.blur(mean - gain * mean, (k, k))
+
+    change = np.zeros_like(y)
+    if texture:
+        change += texture / 100.0 * 1.0 * (y - smooth(0.004, 0.004))
+    if clarity:
+        change += clarity / 100.0 * 0.7 * (y - smooth(0.02, 0.02)) * (4 * y * (1 - y))
+    return np.clip(img + change[..., None], 0, 1)          # brightness only: colour stays where it was
+
+
+def _apply(img: np.ndarray, a: dict, curve=None) -> np.ndarray:
+    """One set of local adjustments on the whole picture (the mask is laid over it afterwards)."""
     P = _r.DEFAULT_PARAMS
-    out = img
+    part = _r.white_balance(img, a.get("temp", 0), a.get("tint", 0), P)
+    part = _r.exposure(part, a.get("ev", 0), P)
+    part = _r.tone(part, {"Contrast2012": a.get("contrast", 0), "Highlights2012": a.get("hl", 0),
+                          "Shadows2012": a.get("sh", 0), "Whites2012": a.get("wh", 0), "Blacks2012": a.get("bl", 0)}, P)
+    part = _detail(part, a.get("texture", 0), a.get("clarity", 0))
+    if curve:
+        part = _r.point_curves(part, {"ToneCurvePV2012": curve})
+    part = _r.vibrance_saturation(part, {"Saturation": a.get("sat", 0)}, P)
+    return np.clip(part, 0, 1)
+
+
+def correction_mask(masks: dict, parts: list) -> np.ndarray | None:
+    """One mask from a preset's parts: added parts joined, "subtract" parts taken away."""
+    total = None
+    for part in parts:
+        m = masks.get(part["kind"])
+        if m is None:
+            return None
+        m = (1 - m if part.get("inverted") else m) * float(part.get("value", 1))
+        if part.get("subtract"):
+            total = (total if total is not None else np.ones_like(m)) * (1 - m)
+        else:
+            total = m if total is None else np.maximum(total, m)
+    return total
+
+
+def local_adjust(img: np.ndarray, masks: dict, adjustments: dict, corrections: list | None = None) -> np.ndarray:
+    """Apply local adjustments to their part of the picture only: first the masks
+    that came inside the preset (corrections), then the app's own (adjustments)."""
+    h, w = img.shape[:2]
+    jobs = []
+    for c in corrections or []:
+        if c.get("shown") and (c.get("adjust") or c.get("curve")):
+            jobs.append((correction_mask(masks, c["parts"]), c["adjust"], c.get("curve"), c.get("amount", 1.0)))
     for kind, a in adjustments.items():
-        m = masks.get(kind)
-        if m is None or not a or float(m.max()) < 0.02:
+        jobs.append((masks.get(kind), a, None, 1.0))
+    out = img
+    for m, a, curve, amount in jobs:
+        if m is None or float(m.max()) < 0.02:
             continue
-        m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)[..., None]
-        part = _r.white_balance(out, a.get("temp", 0), a.get("tint", 0), P)
-        part = _r.exposure(part, a.get("ev", 0), P)
-        part = _r.tone(part, {"Contrast2012": a.get("contrast", 0), "Highlights2012": a.get("hl", 0),
-                              "Shadows2012": a.get("sh", 0)}, P)
-        part = _r.local_contrast(part, {"Texture": a.get("texture", 0), "Clarity2012": a.get("clarity", 0)}, P)
-        part = _r.vibrance_saturation(part, {"Saturation": a.get("sat", 0)}, P)
-        out = out + (np.clip(part, 0, 1) - out) * m
+        m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
+        out = out + (_apply(out, a, curve) - out) * m
     return out
 
 
@@ -169,16 +227,31 @@ class Renderer:
     def __init__(self, presets_file: str | Path = PRESETS_FILE):
         data = json.loads(Path(presets_file).read_text(encoding="utf-8"))
         self.presets = {p["id"]: p for p in data["presets"]}
+        self.library = set(self.presets)                 # the presets that ship with the app
         self._images = _Cache(24)
         self._autos = _Cache(4000)
         self._masks = _Cache(12)
         self._mask_lock = threading.Lock()
 
+    def add_uploaded(self, preset: dict):
+        self.presets[preset["id"]] = preset
+
+    def remove_uploaded(self, preset_id: str) -> bool:
+        if preset_id in self.library or preset_id not in self.presets:
+            return False
+        del self.presets[preset_id]
+        return True
+
     def catalogue(self) -> list[dict]:
         """The presets as the app's picker needs them (no slider values)."""
-        return [{"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
-                 "pack": p["pack"], "about": p["description"], "masks": p["has_masks"]}
-                for p in self.presets.values()]
+        out = []
+        for p in self.presets.values():
+            mine = p["id"] not in self.library
+            out.append({"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
+                        "pack": p["pack"], "about": p["description"], "mine": mine,
+                        "masks": [{"name": c["name"], "parts": [x["kind"] for x in c["parts"]], "adjust": c["adjust"],
+                                   "curve": bool(c["curve"]), "shown": c["shown"]} for c in local_corrections(p)]})
+        return out
 
     def warm_up(self):
         """Render once at the largest viewing size, so the first real photo is not slow."""
@@ -221,15 +294,15 @@ class Renderer:
         stamp = path.stat().st_mtime_ns
 
         def make():
+            from engine import masks as maker
             kept = path.with_suffix(".masks.npz")
             if kept.exists():
                 try:
                     with np.load(kept) as z:
                         if int(z["stamp"]) == stamp:
-                            return {k: z[k].astype(np.float32) / 255 for k in MASK_KINDS}
+                            return {k: z[k].astype(np.float32) / 255 for k in maker.KINDS}
                 except Exception:
                     pass                                     # unreadable or from an older photo: make it again
-            from engine import masks as maker
             with self._mask_lock:                            # the mask models take one photo at a time
                 made = maker.compute(self._load(path, 1600))
             part = kept.with_suffix(f".{threading.get_ident()}.part.npz")
@@ -261,8 +334,9 @@ class Renderer:
                 settings[name] = min(hi, max(lo, float(settings.get(name) or 0) + look[key]))
         manual = {"temp": float(manual.get("temp", 0.0)) + look["temp"],
                   "tint": float(manual.get("tint", 0.0)) + look["tint"], "exposure": look["ev"]}
+        corrections = local_corrections(preset) if preset and look["preset_masks"] else []
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
-                "masks": look["masks"], "angle": float(settings.get("CropAngle") or 0.0),
+                "masks": look["masks"], "corrections": corrections, "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None}
 
     def base(self, path: Path, size: int) -> bytes:
@@ -273,9 +347,9 @@ class Renderer:
         d = self.develop(path, look, iso)
         img = self._load(path, size)
         out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
-        if d["masks"] or show:
+        if d["masks"] or d["corrections"] or show:
             masks = self.masks(path)
-            out = local_adjust(out, masks, d["masks"])
+            out = local_adjust(out, masks, d["masks"], d["corrections"])
             if show in masks:
                 out = show_mask(out, masks[show])
         return self._jpeg(straighten(out, d["angle"]))

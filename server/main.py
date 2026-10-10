@@ -21,7 +21,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import VERSION
-from .looks import MASK_KINDS, SIZES, Renderer, clean_look, effective_look
+from engine.presets import parse_xmp
+
+from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -29,6 +31,7 @@ COOKIE = "autoedits"
 LINK_SECONDS = 120                        # how long a "open in browser" link from the plug-in works
 
 MAX_PREVIEW_BYTES = 12 * 1024 * 1024      # a 2560 px JPEG is 1 to 3 MB
+MAX_PRESET_BYTES = 4 * 1024 * 1024         # presets with tone tables can reach a megabyte or two
 MIN_FREE_BYTES = 2 * 1024 ** 3            # stop taking photos before the disk is full
 
 
@@ -50,6 +53,8 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
     app.state.store = store
 
     renderer = Renderer()
+    for uploaded in store.uploaded_presets():
+        renderer.add_uploaded(uploaded)
     if os.environ.get("AUTOEDITS_WARM_UP") == "1":
         import threading
         threading.Thread(target=renderer.warm_up, daemon=True).start()
@@ -194,6 +199,42 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
     def presets():
         return {"presets": renderer.catalogue()}
 
+    @app.post("/api/presets", dependencies=api)
+    async def upload_presets(files: list[UploadFile] = File(...)):
+        """Presets exported from Lightroom (.xmp), masks included. The original file is
+        kept, so the very same preset can be applied when the edits go back to Lightroom."""
+        results = []
+        for f in files[:200]:
+            name = f.filename or "preset.xmp"
+            raw = await f.read(MAX_PRESET_BYTES + 1)
+            if len(raw) > MAX_PRESET_BYTES:
+                results.append({"file": name, "ok": False, "why": "The file is too large to be a preset."})
+                continue
+            try:
+                text = raw.decode("utf-8", errors="replace")
+                p = parse_xmp(text, name, MY_PACK)
+                if not p.name or not (p.settings or p.masks or p.curves):
+                    raise ValueError
+            except Exception:
+                results.append({"file": name, "ok": False, "why": "This is not a Lightroom preset (.xmp) file."})
+                continue
+            d = p.to_dict()
+            d["id"] = "my-" + (p.uuid or p.id)                # never collides with the presets that ship with the app
+            d["display_name"] = p.name
+            d["look"], d["variant"] = p.group or "No group", p.name
+            replaced = store.save_preset(d, text)
+            renderer.add_uploaded(d)
+            results.append({"file": name, "ok": True, "id": d["id"], "name": p.name, "replaced": replaced,
+                            "masks": len(p.masks)})
+        return {"results": results}
+
+    @app.delete("/api/presets/{preset_id}", dependencies=api)
+    def delete_preset(preset_id: str):
+        if not renderer.remove_uploaded(preset_id):
+            raise HTTPException(404, "Only presets you uploaded can be removed.")
+        store.delete_preset(preset_id)
+        return {"deleted": True}
+
     @app.put("/api/weddings/{wedding_id}/folders/{folder_id}/look", dependencies=api)
     def set_folder_look(wedding_id: str, folder_id: int, look: dict = Body(...)):
         look = clean_look(look, renderer.presets)
@@ -221,8 +262,8 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
         or, with neither, with the look saved for it."""
         if size not in SIZES:
             raise HTTPException(422, f"size must be one of {SIZES}")
-        if show and show not in MASK_KINDS:
-            raise HTTPException(422, f"show must be one of {MASK_KINDS}")
+        if show and not show.replace("_", "").isalpha():
+            raise HTTPException(422, "show must name a mask")
         p = photo_or_404(wedding_id, photo_id)
         path = store.preview_path(wedding_id, photo_id)
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
@@ -249,7 +290,8 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
         chosen = read_look(look) if look else effective_look(p["settings"], p["folder_settings"])
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
         d = renderer.develop(store.preview_path(wedding_id, photo_id), chosen, iso)
-        return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"]}
+        return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"],
+                "preset_masks": d["corrections"]}
 
     @app.get("/")
     def home():

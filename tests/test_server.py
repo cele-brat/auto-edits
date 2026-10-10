@@ -171,7 +171,48 @@ def test_masks_change_only_their_part(tmp_path):
     Image.effect_noise((320, 240), 40).convert("RGB").save(photo, "JPEG")
     r = Renderer()
     masks = r.masks(photo)                                             # made once, then kept beside the preview
-    assert set(masks) == {"subject", "background", "face_skin", "body_skin", "hair", "clothes", "eyes", "sky"}
+    assert set(masks) >= {"subject", "background", "face_skin", "body_skin", "hair", "clothes", "eyes", "sky",
+                          "iris_pupil", "eye_sclera", "eyebrows", "lips", "teeth", "facial_hair", "whole_person"}
     assert all(m.ndim == 2 and 0 <= m.min() and m.max() <= 1 for m in masks.values())
     assert photo.with_suffix(".masks.npz").exists()
     assert r.render(photo, {"masks": {"background": {"ev": 1}}}, 360) != r.render(photo, {}, 360)
+
+
+def test_upload_a_lightroom_preset_with_ai_masks(client):
+    from pathlib import Path
+    xmp = (Path(__file__).parent / "fixtures" / "polished_bright_2.xmp").read_bytes()
+    assert client.post("/api/presets", files=[("files", ("a.xmp", xmp))]).status_code == 401
+    r = client.post("/api/presets", headers=H, files=[("files", ("Polished Bright 2.xmp", xmp, "application/xml")),
+                                                      ("files", ("holiday.jpg", jpeg(), "image/jpeg"))]).json()["results"]
+    good, bad = r
+    assert good["ok"] and good["name"] == "Polished Bright 2" and good["masks"] == 10 and not good["replaced"]
+    assert not bad["ok"] and "not a Lightroom preset" in bad["why"]
+    pid = good["id"]
+    mine = [p for p in client.get("/api/presets", headers=H).json()["presets"] if p["mine"]]
+    assert len(mine) == 1 and mine[0]["pack"] == "My presets" and mine[0]["id"] == pid
+    kinds = {k for m in mine[0]["masks"] for k in m["parts"]}
+    assert kinds == {"subject", "background", "clothes", "face_skin", "eye_sclera", "iris_pupil", "teeth"}
+    skin = next(m for m in mine[0]["masks"] if m["name"] == "Facial Skin")
+    assert skin["adjust"] == {"clarity": -10.0, "texture": -20.0} and skin["shown"]          # Lightroom's slider numbers
+    iris = next(m for m in mine[0]["masks"] if m["name"] == "Iris and Pupil")
+    assert iris["adjust"]["ev"] == 0.35
+
+    w = client.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    buf = io.BytesIO(); Image.effect_noise((320, 240), 40).convert("RGB").save(buf, "JPEG")
+    send(client, w["id"], "u1", "Haldi", "A.NEF", buf.getvalue())
+    photo = client.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"][0]
+    url = f"/api/weddings/{w['id']}/photos/{photo['id']}"
+    look = lambda **more: {"look": json.dumps({"mode": "preset", "preset": pid, **more})}
+    with_masks = client.get(url + "/image?size=360", headers=H, params=look()).content
+    without = client.get(url + "/image?size=360", headers=H, params=look(preset_masks=False)).content
+    assert with_masks != without                                 # the background mask alone changes this picture
+    d = client.get(url + "/develop", headers=H, params=look()).json()
+    assert len(d["preset_masks"]) == 10 and d["look"]["preset_masks"] is True
+    assert client.get(url + "/develop", headers=H, params=look(preset_masks=False)).json()["preset_masks"] == []
+
+    again = client.post("/api/presets", headers=H, files=[("files", ("x.xmp", xmp))]).json()["results"][0]
+    assert again["replaced"] and again["id"] == pid              # same preset again: replaced, not doubled
+    library = next(p["id"] for p in client.get("/api/presets", headers=H).json()["presets"] if not p["mine"])
+    assert client.delete(f"/api/presets/{library}", headers=H).status_code == 404   # the built-in ones stay
+    assert client.delete(f"/api/presets/{pid}", headers=H).json()["deleted"]
+    assert not any(p["mine"] for p in client.get("/api/presets", headers=H).json()["presets"])

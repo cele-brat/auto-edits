@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS photos (
     meta TEXT NOT NULL DEFAULT '{}', bytes INTEGER NOT NULL DEFAULT 0, received REAL NOT NULL,
     UNIQUE (wedding_id, lr_uuid)
 );
+CREATE TABLE IF NOT EXISTS presets (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, xmp TEXT NOT NULL, added REAL NOT NULL
+);
 CREATE INDEX IF NOT EXISTS photos_by_folder ON photos (folder_id, taken, file_name);
 """
 
@@ -180,6 +183,28 @@ class Store:
         with self._db() as db:
             return bool(db.execute("UPDATE photos SET settings=? WHERE wedding_id=? AND id=?",
                                    (value, wedding_id, photo_id)).rowcount)
+
+    # ---- presets uploaded from Lightroom --------------------------------------
+    def save_preset(self, preset: dict, xmp: str) -> bool:
+        """Keep an uploaded preset, with its original file for sending back to Lightroom. True if it replaced one."""
+        with self._db() as db:
+            had = db.execute("SELECT 1 FROM presets WHERE id=?", (preset["id"],)).fetchone() is not None
+            db.execute("INSERT OR REPLACE INTO presets (id, name, data, xmp, added) VALUES (?,?,?,?,?)",
+                       (preset["id"], preset["display_name"], json.dumps(preset, ensure_ascii=False), xmp, time.time()))
+        return had
+
+    def uploaded_presets(self) -> list[dict]:
+        with self._db() as db:
+            return [json.loads(r["data"]) for r in db.execute("SELECT data FROM presets ORDER BY name")]
+
+    def preset_file(self, preset_id: str) -> str | None:
+        with self._db() as db:
+            r = db.execute("SELECT xmp FROM presets WHERE id=?", (preset_id,)).fetchone()
+        return r["xmp"] if r else None
+
+    def delete_preset(self, preset_id: str) -> bool:
+        with self._db() as db:
+            return bool(db.execute("DELETE FROM presets WHERE id=?", (preset_id,)).rowcount)
 
     def cache_dir(self, wedding_id: str) -> Path:
         d = self.wedding_dir(wedding_id) / "cache"

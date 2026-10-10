@@ -195,6 +195,42 @@ def _parse_masks(desc) -> list[dict]:
     return out
 
 
+# Local settings as Lightroom stores them (-1..1) -> the app's name and the size of a full slider
+_LOCAL = {"Exposure2012": ("ev", 4.0), "Contrast2012": ("contrast", 100), "Highlights2012": ("hl", 100),
+          "Shadows2012": ("sh", 100), "Whites2012": ("wh", 100), "Blacks2012": ("bl", 100), "Texture": ("texture", 100),
+          "Clarity2012": ("clarity", 100), "Dehaze": ("dehaze", 100), "Saturation": ("sat", 100),
+          "Temperature": ("temp", 100), "Tint": ("tint", 100), "Sharpness": ("sharp", 100),
+          "LuminanceNoise": ("noise", 100)}
+# mask kinds the app can find in a photo and show in its preview
+PREVIEW_KINDS = {"subject", "background", "whole_person", "face_skin", "body_skin", "hair", "clothes", "iris_pupil",
+                 "eye_sclera", "eyebrows", "lips", "teeth", "facial_hair", "sky"}
+
+
+def local_corrections(preset: Preset | dict) -> list[dict]:
+    """The preset's masks in the app's terms: for each one, which parts of the photo
+    it covers and what it changes there (slider units, as shown in Lightroom).
+
+    "shown" is False when the app cannot find that kind of mask itself (gradients,
+    brushes, landscape parts); Lightroom still applies those."""
+    p = preset if isinstance(preset, dict) else preset.to_dict()
+    out = []
+    for c in p.get("masks") or []:
+        if not c.get("active", True) or not c.get("masks"):
+            continue
+        adjust = {}
+        for key, value in (c.get("adjust") or {}).items():
+            if key in _LOCAL and value:
+                name, scale = _LOCAL[key]
+                adjust[name] = round(float(value) * scale, 2)
+        parts = [{"kind": m["kind"], "subtract": bool(m.get("subtract")), "value": float(m.get("value", 1)),
+                  "inverted": bool(m.get("inverted")) and m["kind"] != "background"}   # "background" is already the inverse
+                 for m in c["masks"]]
+        out.append({"name": c.get("name") or "", "parts": parts, "adjust": adjust, "curve": c.get("curve"),
+                    "amount": float(c.get("amount", 1)),
+                    "shown": all(m["kind"] in PREVIEW_KINDS for m in parts)})
+    return out
+
+
 def parse_xmp(text: str, source_file: str = "", pack: str = "") -> Preset:
     import xml.etree.ElementTree as ET
     m = re.search(r"<x:xmpmeta.*</x:xmpmeta>", text, re.S)

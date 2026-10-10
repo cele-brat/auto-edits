@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=4">
+<link rel="stylesheet" href="/static/app.css?v=5">
 </head>
 <body>
 <div id="signin" hidden>
@@ -86,6 +86,16 @@
       </div>
       <div id="looks" tabindex="0" aria-label="Presets. Use the up and down arrow keys to try them."></div>
       <p id="about"></p>
+      <div id="preset-masks" hidden>
+        <label class="show"><input id="use-preset-masks" type="checkbox"> Use the masks inside this preset</label>
+        <ul id="preset-mask-list"></ul>
+        <p id="preset-mask-note"></p>
+      </div>
+      <div class="row between">
+        <label class="filebutton">Add presets from Lightroom<input id="upload" type="file" accept=".xmp" multiple></label>
+        <button id="remove-preset" type="button" class="quiet" hidden>Remove this preset</button>
+      </div>
+      <p id="upload-note" aria-live="polite">Exported .xmp files, masks included. In Lightroom: right-click a preset, then Export.</p>
       <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
     </section>
 
@@ -97,8 +107,8 @@
       <button id="reset" type="button" class="quiet">Reset these settings</button>
     </section>
     <section id="mask-box">
-      <h2>Masks</h2>
-      <p class="hint">Change one part of the photo only. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p>
+      <h2>Your own masks</h2>
+      <p class="hint">Extra changes to one part of the photo, on top of any masks in the preset. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p>
       <div id="masks"></div>
     </section>
     <p id="saved" aria-live="polite"></p>
@@ -112,6 +122,6 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>
