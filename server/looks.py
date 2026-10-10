@@ -107,6 +107,15 @@ class Renderer:
                  "pack": p["pack"], "about": p["description"], "masks": p["has_masks"]}
                 for p in self.presets.values()]
 
+    def warm_up(self):
+        """Render once at the largest viewing size, so the first real photo is not slow."""
+        y, x = np.mgrid[0:1067, 0:1600].astype(np.float32)
+        img = np.stack([x / 1600, y / 1067, (x + y) / 2667], -1)
+        preset = next(iter(self.presets.values()))
+        for _ in range(2):
+            self._jpeg(render(img, preset["settings"], preset["curves"], {"temp": 5, "tint": 5, "exposure": 0.1}))
+        auto_correct(img[::2, ::2], TOGGLES, None, 800)
+
     # ---- images ---------------------------------------------------------
     def _load(self, path: Path, size: int) -> np.ndarray:
         def make():

@@ -50,6 +50,9 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
     app.state.store = store
 
     renderer = Renderer()
+    if os.environ.get("AUTOEDITS_WARM_UP") == "1":
+        import threading
+        threading.Thread(target=renderer.warm_up, daemon=True).start()
     session = hmac.new(key.encode(), b"auto-edits browser session", hashlib.sha256).hexdigest()
     links: dict[str, float] = {}             # one-time sign-in links -> when they stop working
 
