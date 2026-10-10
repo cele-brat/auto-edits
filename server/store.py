@@ -339,6 +339,44 @@ class Store:
             return sum(db.execute("UPDATE photos SET applied=? WHERE wedding_id=? AND lr_uuid=?",
                                   (str(stamp), wedding_id, str(uuid))).rowcount for uuid, stamp in stamps.items())
 
+    def zip_previews(self, wedding_id: str, rows: list[dict]):
+        """The uploaded previews as one zip, made piece by piece (from this disk or from storage)."""
+        import re
+        import zipfile
+
+        class Pieces:
+            def __init__(self): self.parts = []
+            def write(self, b): self.parts.append(bytes(b)); return len(b)
+            def flush(self): pass
+            def take(self):
+                parts, self.parts = self.parts, []
+                return parts
+
+        def safe(x: str) -> str:
+            return re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", x).strip(" .") or "untitled"
+
+        out, seen = Pieces(), set()
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+            for r in rows:
+                stem, n = safe(Path(r["file_name"]).stem), 2
+                name = f"{safe(r['folder'])}/{stem}.jpg"
+                while name.lower() in seen:
+                    name, n = f"{safe(r['folder'])}/{stem}-{n}.jpg", n + 1
+                seen.add(name.lower())
+                local = self._local(wedding_id, r["id"])
+                with z.open(zipfile.ZipInfo(name, time.localtime()[:6]), "w", force_zip64=True) as dest:
+                    if local.exists():
+                        with open(local, "rb") as f:
+                            while chunk := f.read(1 << 20):
+                                dest.write(chunk)
+                                yield from out.take()
+                    else:
+                        for chunk in self.blobs.stream(self._key(wedding_id, r["id"])):
+                            dest.write(chunk)
+                            yield from out.take()
+                yield from out.take()
+        yield from out.take()
+
     def cache_dir(self, wedding_id: str) -> Path:
         d = self.wedding_dir(wedding_id) / "cache"
         d.mkdir(parents=True, exist_ok=True)

@@ -52,6 +52,11 @@ section, .hero { scroll-margin-top: 96px; }
 .hero { padding: clamp(28px, 6vw, 84px) var(--edge) 0; }
 .hero .lede { font-size: clamp(19px, 1.6vw, 23px); margin-top: 28px; max-width: 54ch; color: var(--soft); }
 .hero .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 34px; }
+.trial { display: inline-flex; align-items: center; gap: 10px; margin-top: 16px; font-size: 16px; color: var(--soft); }
+.trial b { color: var(--peacock-deep); }
+.trial::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--marigold); flex: none; }
+.tag-card .free { margin-top: 22px; padding: 14px 16px; border-radius: 6px; background: rgba(242, 169, 0, .14); border: 1px solid rgba(242, 169, 0, .55); font-size: 16px; }
+.tag-card .free b { color: var(--peacock-deep); }
 
 /* the before and after frame */
 .compare { margin: clamp(36px, 6vw, 80px) var(--edge) 0; position: relative; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #0b1f23; touch-action: pan-y; user-select: none; cursor: ew-resize; box-shadow: 0 30px 60px -30px rgba(8, 63, 68, .55); }
@@ -224,6 +229,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <button class="button" type="button" data-signup>Start with 50 free credits</button>
     <a class="button line" href="#how">See how it works</a>
   </div>
+  <p class="trial"><span><b>Free trial: 50 credits</b> when you sign up. No card needed.</span></p>
 </div>
 
 <div class="compare" id="compare">
@@ -349,7 +355,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <div>
       <h2>Pay for the photos you deliver</h2>
       <p class="soft" style="margin-top:22px">Each photo you export, or send back to Lightroom with its edit, is one credit. Culling is one credit for every 10 photos. Try presets and edits as much as you like before that; previews carry a light mark until you export.</p>
-      <p class="soft" style="margin-top:14px">New accounts get 50 free credits once the email is confirmed (one free start per internet connection).</p>
+      <p class="soft" style="margin-top:14px">Try it free: new accounts get 50 credits once the email is confirmed (one free trial per internet connection).</p>
     </div>
     <div class="tag-card">
       <p class="per">per credit</p>
@@ -359,14 +365,16 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
         <div><dt>Export 1,000 photos</dt><dd><s>₹3,000</s> ₹1,000</dd></div>
         <div><dt>Cull 5,000 photos</dt><dd><s>₹1,500</s> ₹500</dd></div>
       </dl>
+      <p class="free"><b>Free trial: 50 credits</b> on sign-up, enough to export 50 edited photos or cull 500.</p>
     </div>
   </div>
 </section>
 
 <section class="close">
-  <h2>Open your weddings</h2>
+  <h2>Try it on your next wedding, free</h2>
+  <p class="soft" style="margin:-12px 0 28px">50 free credits when you sign up.</p>
   <div class="actions">
-    <button class="button" type="button" data-signup>Sign up free</button>
+    <button class="button" type="button" data-signup>Start free trial</button>
     <button class="button line" type="button" data-login>Log in</button>
   </div>
 </section>

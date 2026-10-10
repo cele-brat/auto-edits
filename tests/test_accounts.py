@@ -318,3 +318,62 @@ def test_free_credits_once_per_internet_address(app, box):
                json={"email": "d@example.com", "password": "a good password"})
     spoof.get(f"/verify/{box.link('d@example.com', 'verify')}")
     assert spoof.get("/api/me").json()["credits"] == 0
+
+
+def admin_browser(app):
+    c = browser(app)
+    assert c.post("/api/login", json={"key": KEY}).status_code == 200
+    return c
+
+
+def test_admin_dashboard_lists_photographers_and_adds_credits(app, box):
+    a = sign_up(app, box, "a@example.com")
+    wedding_with(a, 3)
+    admin = admin_browser(app)
+    assert admin.get("/admin").status_code == 200
+    assert a.get("/admin").status_code == 404 and a.get("/api/admin/users").status_code == 404     # not for photographers
+    users = {u["email"]: u for u in admin.get("/api/admin/users").json()["users"]}
+    assert users["a@example.com"]["photos"] == 3 and users["a@example.com"]["balance"] == 50 and users[ADMIN]["admin"]
+    uid = users["a@example.com"]["id"]
+    assert admin.post(f"/api/admin/users/{uid}/credits", json={"credits": 25, "note": "Thank you"}).json()["credits"] == 75
+    assert a.get("/api/credits").json()["history"][0]["note"] == "Thank you"
+
+
+def test_view_as_a_photographer_read_only_and_download_their_work(app, box, tmp_path):
+    import zipfile
+    a = sign_up(app, box, "a@example.com")
+    w = wedding_with(a, 2)
+    e = a.post(f"/api/weddings/{w['id']}/exports", json={"size": 2560}).json()
+    work(idle_exit=True, data_dir=str(tmp_path))
+    admin = admin_browser(app)
+    uid = next(u["id"] for u in admin.get("/api/admin/users").json()["users"] if u["email"] == "a@example.com")
+    assert admin.post(f"/api/admin/view-as/{uid}").status_code == 200
+    s = admin.get("/api/session").json()
+    assert s["user"]["email"] == "a@example.com" and s["viewing_as"] == ADMIN
+    assert [x["id"] for x in admin.get("/api/weddings").json()["weddings"]] == [w["id"]]
+    assert admin.post("/api/weddings", json={"name": "Not allowed"}).status_code == 403             # read-only
+    assert admin.post(f"/api/weddings/{w['id']}/exports", json={"size": 2560}).status_code == 403
+    z = admin.get(f"/api/weddings/{w['id']}/originals.zip")
+    assert z.status_code == 200 and len(zipfile.ZipFile(io.BytesIO(z.content)).namelist()) == 2
+    assert admin.get(f"/api/exports/{e['id']}/zip").status_code == 200
+    assert admin.post("/api/admin/view-as-stop").status_code == 200
+    assert admin.get("/api/session").json()["viewing_as"] is None
+    assert admin.get("/api/weddings").json()["weddings"] == []                                       # back to the studio
+    d = admin.get(f"/api/admin/users/{uid}").json()
+    assert d["weddings"][0]["exports"][0]["done"] == 2
+    assert admin.get(f"/api/admin/weddings/{w['id']}/originals.zip").status_code == 200
+    assert admin.get(f"/api/admin/exports/{e['id']}/zip").status_code == 200
+    assert a.get(f"/api/admin/exports/{e['id']}/zip").status_code == 404
+    other = sign_up(app, box, "b@example.com")                                                       # a photographer cannot view as
+    other.cookies.set("autoedits_as", uid)
+    assert other.get("/api/weddings").json()["weddings"] == []
+
+
+def test_photographers_can_download_their_own_uploads(app, box):
+    import zipfile
+    a = sign_up(app, box, "a@example.com")
+    w = wedding_with(a, 3)
+    names = zipfile.ZipFile(io.BytesIO(a.get(f"/api/weddings/{w['id']}/originals.zip").content)).namelist()
+    assert sorted(names) == ["Haldi/IMG_0.jpg", "Haldi/IMG_1.jpg", "Haldi/IMG_2.jpg"]
+    b = sign_up(app, box, "b@example.com")
+    assert b.get(f"/api/weddings/{w['id']}/originals.zip").status_code == 404

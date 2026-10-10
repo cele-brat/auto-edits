@@ -23,12 +23,20 @@ function notice(text, action, run) {
 $('notice-x').onclick = () => { $('notice').hidden = true; };
 
 function showAccount(session) {
+  if (session.viewing_as) {
+    $('viewing-text').textContent = `Viewing as ${session.user.email} (read-only). Previews look exactly as they see them.`;
+    $('viewing').hidden = false;
+    document.body.classList.add('viewing');
+  }
+  $('admin-link').hidden = !(session.user && session.user.admin) || !!session.viewing_as;
   Acc.user = session.user;
   Acc.credits = session.credits;
   Acc.unlimited = !!(session.user && session.user.admin);
   $('credits').textContent = creditLabel();
   const asked = new URLSearchParams(location.search);
-  if (asked.get('verified') === '1') {
+  if (session.viewing_as) {
+    /* the admin is looking: no messages meant for the photographer */
+  } else if (asked.get('verified') === '1') {
     notice('Your email is confirmed. Your free credits are in your account.');
   } else if (asked.get('verified') === '0') {
     notice('Your email is confirmed. Free credits were already given to an account from this internet connection, so this one starts at 0. Buy credits to begin.');
@@ -109,4 +117,11 @@ $('password-form').onsubmit = async (e) => {
     await api('/api/password', { method: 'POST', body: { current: $('password-current').value, password } });
     location.href = '/?login=1';                  // a new password signs every browser out, this one too
   } catch (err) { $('account-error').textContent = err.message; }
+};
+
+$('viewing-stop').onclick = async () => { await api('/api/admin/view-as-stop', { method: 'POST' }).catch(() => {}); location.href = '/admin'; };
+$('originals').onclick = () => {
+  $('more').open = false;
+  if (!S.wedding) return;
+  location.href = `/api/weddings/${S.wedding.id}/originals.zip`;
 };

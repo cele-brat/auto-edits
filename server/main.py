@@ -33,6 +33,7 @@ from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "autoedits"
+VIEW_AS = "autoedits_as"                  # the admin is looking at a photographer's account (read-only)
 LINK_SECONDS = 120                        # how long a "open in browser" link from the plug-in works
 
 MAX_PREVIEW_BYTES = 30 * 1024 * 1024      # a 2560 px JPEG is 1 to 3 MB; a full-size camera preview up to about 20
@@ -149,15 +150,30 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def key_ok(value: str) -> bool:
         return bool(value) and hmac.compare_digest(value.encode(), key.encode())
 
-    def signed_in(request: Request, x_auto_edits_key: str = Header(default=""), autoedits: str = Cookie(default="")) -> dict:
-        """The plug-in sends its key in a header; the browser holds a session cookie."""
+    def signed_in(request: Request, x_auto_edits_key: str = Header(default=""), autoedits: str = Cookie(default=""),
+                  autoedits_as: str = Cookie(default="")) -> dict:
+        """The plug-in sends its key in a header; the browser holds a session cookie.
+        When the admin chose "View as", the app works as that photographer, read-only."""
         user = None
         if x_auto_edits_key:
             user = accounts.user(accounts.admin_id) if key_ok(x_auto_edits_key) else accounts.plugin_user(x_auto_edits_key)
         if user is None and autoedits:
             user = accounts.session_user(autoedits)
+            if user and user["admin"] and autoedits_as and autoedits_as != user["id"]:
+                target = accounts.user(autoedits_as)
+                if target:
+                    if request.method not in ("GET", "HEAD"):
+                        raise HTTPException(403, f"You are viewing {target['email']}'s account: nothing can be changed from here.")
+                    return {**target, "viewing_as": user["email"]}
         if user is None:
             raise HTTPException(401, "Please log in again.")
+        return user
+
+    def the_admin(autoedits: str = Cookie(default="")) -> dict:
+        """The admin's own session, never a "View as" one."""
+        user = accounts.session_user(autoedits)
+        if user is None or not user["admin"]:
+            raise HTTPException(404, "Not found")
         return user
 
     def confirmed(user: dict = Depends(signed_in)) -> dict:
@@ -217,6 +233,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if autoedits:
             accounts.end_session(autoedits)
         response.delete_cookie(COOKIE)
+        response.delete_cookie(VIEW_AS)
         return {"ok": True}
 
     @app.post("/api/forgot")
@@ -408,7 +425,82 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     # ---- the app: presets, looks, rendered previews ------------------------
     @app.get("/api/session")
     def session_info(user: dict = Depends(signed_in)):
-        return {"ok": True, "version": VERSION, "user": public(user), "credits": accounts.balance(user["id"])}
+        return {"ok": True, "version": VERSION, "user": public(user), "credits": accounts.balance(user["id"]),
+                "viewing_as": user.get("viewing_as")}
+
+    # ---- the admin dashboard -------------------------------------------------------
+    @app.get("/admin")
+    def admin_page(admin: dict = Depends(the_admin)):
+        return FileResponse(STATIC / "admin.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/admin/users")
+    def admin_users(admin: dict = Depends(the_admin)):
+        return {"users": accounts.overview()}
+
+    @app.get("/api/admin/users/{user_id}")
+    def admin_user(user_id: str, admin: dict = Depends(the_admin)):
+        u = accounts.user(user_id)
+        if u is None:
+            raise HTTPException(404, "no such account")
+        return {"user": {**public(u), "created": u["created"], "last_seen": u["last_seen"], "signup_ip": u["signup_ip"]},
+                "credits": accounts.balance(user_id), "history": accounts.history(user_id, 300),
+                "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes")} |
+                             {"exports": [{k: e[k] for k in ("id", "size", "done", "total", "state", "created", "scope")}
+                                          for e in exports.for_wedding(w["id"])]}
+                             for w in store.weddings(user_id)]}
+
+    @app.post("/api/admin/users/{user_id}/credits")
+    def admin_credits(user_id: str, body: dict = Body(...), admin: dict = Depends(the_admin)):
+        """Add (or take back, with a minus) credits by hand: a gift, a correction, a payment made outside the app."""
+        if accounts.user(user_id) is None:
+            raise HTTPException(404, "no such account")
+        try:
+            n = int(body.get("credits"))
+        except (TypeError, ValueError):
+            raise HTTPException(422, "credits must be a whole number")
+        if not n or abs(n) > 1_000_000:
+            raise HTTPException(422, "credits must be a whole number, not 0")
+        note = str(body.get("note") or "").strip()[:150] or ("Added by Cele-Brat" if n > 0 else "Taken back by Cele-Brat")
+        accounts.add(user_id, n, "admin", note)
+        return {"credits": accounts.balance(user_id)}
+
+    @app.post("/api/admin/view-as/{user_id}")
+    def view_as(user_id: str, request: Request, response: Response, admin: dict = Depends(the_admin)):
+        if accounts.user(user_id) is None:
+            raise HTTPException(404, "no such account")
+        response.set_cookie(VIEW_AS, user_id, max_age=4 * 3600, httponly=True, samesite="lax",
+                            secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
+        return {"ok": True}
+
+    @app.post("/api/admin/view-as-stop")
+    def view_as_stop(response: Response):
+        response.delete_cookie(VIEW_AS)
+        return {"ok": True}
+
+    @app.get("/api/admin/weddings/{wedding_id}/originals.zip")
+    def admin_originals(wedding_id: str, admin: dict = Depends(the_admin)):
+        owner = store.owner_of(wedding_id)
+        if owner is None:
+            raise HTTPException(404, "no such wedding")
+        return originals_zip(wedding_id, None, accounts.user(owner))
+
+    @app.get("/api/admin/exports/{export_id}/zip")
+    def admin_export_zip(export_id: str, admin: dict = Depends(the_admin)):
+        e = exports.get(export_id)
+        if e is None:
+            raise HTTPException(404, "no such export")
+        return export_zip(export_id, accounts.user(store.owner_of(e["wedding_id"])))
+
+    @app.get("/api/weddings/{wedding_id}/originals.zip")
+    def originals_zip(wedding_id: str, folder: int | None = None, user: dict = Depends(signed_in)):
+        """The photos as they were uploaded (camera previews), in their event folders, as one zip."""
+        w = wedding_or_404(wedding_id, user)
+        rows = store.photos(wedding_id, folder)
+        if not rows:
+            raise HTTPException(404, "no photos")
+        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in w["name"]).strip() or "photos"
+        return StreamingResponse(store.zip_previews(wedding_id, rows), media_type="application/zip",
+                                 headers={"Content-Disposition": f'attachment; filename="{name} - uploaded photos.zip"'})
 
     @app.get("/api/adjustments")
     def adjustment_panels(user: dict = Depends(signed_in)):

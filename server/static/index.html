@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=12">
+<link rel="stylesheet" href="/static/app.css?v=13">
 </head>
 <body>
 <div id="app" hidden>
@@ -33,11 +33,14 @@
       <summary>More</summary>
       <div class="menu">
         <button id="account-open" type="button">Account, credits and Lightroom key…</button>
+        <button id="originals" type="button">Download this wedding's uploaded photos (zip)</button>
+        <a id="admin-link" href="/admin" hidden>Admin dashboard</a>
         <button id="delete-wedding" type="button">Delete this wedding from the server…</button>
         <button id="signout" type="button">Log out</button>
       </div>
     </details>
   </header>
+  <div id="viewing" role="status" hidden><span id="viewing-text"></span> <button id="viewing-stop" type="button" class="primary">Back to admin</button></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span> <button id="notice-action" type="button" hidden></button><button id="notice-x" type="button" class="quiet" aria-label="Hide this message">×</button></div>
 
   <nav id="folders" aria-label="Event folders"></nav>
@@ -230,10 +233,10 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=12"></script>
-<script src="/static/addfolder.js?v=12"></script>
-<script src="/static/cull.js?v=12"></script>
-<script src="/static/export.js?v=12"></script>
-<script src="/static/account.js?v=12"></script>
+<script src="/static/app.js?v=13"></script>
+<script src="/static/addfolder.js?v=13"></script>
+<script src="/static/cull.js?v=13"></script>
+<script src="/static/export.js?v=13"></script>
+<script src="/static/account.js?v=13"></script>
 </body>
 </html>

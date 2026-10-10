@@ -289,3 +289,19 @@ class Accounts:
             return [dict(r) for r in db.execute(
                 "SELECT delta, kind, note, photos, created FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT ?",
                 (user_id, limit))]
+
+    # ---- for the admin dashboard ---------------------------------------------
+    def overview(self) -> list[dict]:
+        """Every account with its numbers, newest first."""
+        with self._db() as db:
+            rows = db.execute("""
+                SELECT u.id, u.email, u.name, u.verified, u.admin, u.created, u.last_seen, u.signup_ip,
+                  COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id), 0) AS balance,
+                  COALESCE((SELECT -SUM(delta) FROM ledger l WHERE l.user_id=u.id AND delta<0), 0)
+                    - COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id AND kind='refund'), 0) AS used,
+                  COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id AND kind='purchase'), 0) AS bought,
+                  (SELECT COUNT(*) FROM weddings w WHERE w.owner=u.id) AS weddings,
+                  (SELECT COUNT(*) FROM photos p JOIN weddings w ON w.id=p.wedding_id WHERE w.owner=u.id) AS photos,
+                  (SELECT COUNT(*) FROM users o WHERE o.signup_ip=u.signup_ip AND o.signup_ip<>'' ) AS same_ip
+                FROM users u ORDER BY u.admin DESC, u.created DESC""").fetchall()
+        return [{**dict(r), "verified": bool(r["verified"]), "admin": bool(r["admin"])} for r in rows]

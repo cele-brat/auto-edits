@@ -32,6 +32,7 @@ first guesses until `tools/fit_params.py` has been run on real Lightroom exports
 | Separation | Every wedding, photo, export, cull and uploaded preset belongs to one account; others get 404 |
 | Credits | 50 free on confirming the email; export or apply in Lightroom 1 per photo every time; culling 1 per 10 photos every run; failed, stopped or removed exports give their credits back |
 | Studio account | `AUTOEDITS_ADMIN_EMAIL`; owns everything from before accounts; `AUTOEDITS_KEY` signs in as it; never stopped for credits, previews unmarked |
+| Admin dashboard | `/admin`: every photographer with credits and usage, add or take back credits, "View as" (read-only), download their uploads and exports |
 
 ## Commands
 

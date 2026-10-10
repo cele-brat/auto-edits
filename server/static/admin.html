@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Admin · Auto Edits</title>
+<link rel="stylesheet" href="/static/app.css?v=13">
+<style>
+body { overflow-y: auto; }
+.admin { max-width: 1240px; margin: 0 auto; padding: 0 16px 60px; }
+.admin header { display: flex; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.admin header h1 { font: 400 24px var(--serif); margin: 0 auto 0 0; }
+.admin header a { color: var(--text); }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 18px 0; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.tile b { display: block; font: 400 28px/1.1 var(--serif); color: var(--text); }
+.tile span { color: var(--dim); font-size: 13px; }
+.tools { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.tools input[type=search] { flex: 1 1 260px; padding: 8px 10px; }
+.wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: var(--dim); font-weight: 600; padding: 9px 10px; border-bottom: 1px solid var(--line); background: var(--rail); white-space: nowrap; position: sticky; top: 0; }
+td { padding: 9px 10px; border-bottom: 1px solid #2c2c2c; vertical-align: top; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td .who { color: var(--text); }
+td .sub { color: var(--dim); font-size: 12px; }
+.pill { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); margin-left: 6px; white-space: nowrap; }
+.pill.warn { border-color: #f0c05a; color: #f0c05a; }
+.pill.ok { border-color: #7fd69a; color: #7fd69a; }
+.pill.studio { border-color: var(--marigold); color: var(--marigold); }
+.acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+.acts button { padding: 5px 10px; font-size: 13px; white-space: nowrap; }
+#detail { width: min(760px, 94vw); max-height: 90vh; overflow-y: auto; }
+#detail .title { font: 400 22px var(--serif); color: var(--text); margin: 0 0 4px; }
+#detail h3 { font-size: 14px; color: var(--dim); margin: 18px 0 6px; }
+#detail table { font-size: 13px; }
+#detail .row { margin-top: 10px; flex-wrap: wrap; align-items: center; }
+#detail input { padding: 7px 8px; background: var(--rail); border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
+#detail-error { color: var(--danger) !important; min-height: 1.2em; }
+a.dl { color: var(--marigold); white-space: nowrap; }
+.in { color: #7fd69a; }
+</style>
+</head>
+<body>
+<div class="admin">
+  <header>
+    <h1>Auto Edits · Admin</h1>
+    <a href="/">Back to the app</a>
+  </header>
+  <div class="tiles" id="tiles"></div>
+  <div class="tools">
+    <input type="search" id="q" placeholder="Search by email, name or address" aria-label="Search photographers">
+    <label class="check"><input type="checkbox" id="only-unconfirmed"> Only unconfirmed</label>
+  </div>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Photographer</th><th>Joined</th><th>Last seen</th><th class="n">Weddings</th><th class="n">Photos</th><th class="n">Credits left</th><th class="n">Used</th><th class="n">Bought</th><th class="n"></th></tr></thead>
+      <tbody id="rows"><tr><td colspan="9">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  <p id="error" role="alert" style="color:var(--danger)"></p>
+</div>
+
+<dialog id="detail" aria-labelledby="detail-title">
+  <button class="x" type="button" id="detail-close" aria-label="Close">×</button>
+  <h2 class="title" id="detail-title"></h2>
+  <p id="detail-who"></p>
+  <div class="row">
+    <button type="button" class="primary" id="detail-view">View as this photographer</button>
+  </div>
+  <h3>Weddings</h3>
+  <table><thead><tr><th>Wedding</th><th class="n">Photos</th><th class="n">Exports</th><th class="n">Download</th></tr></thead><tbody id="detail-weddings"></tbody></table>
+  <h3>Credits: <span id="detail-credits"></span></h3>
+  <form class="row" id="give">
+    <input type="number" id="give-n" step="1" placeholder="Credits (use − to take back)" aria-label="Credits to add" style="width:220px">
+    <input type="text" id="give-note" maxlength="150" placeholder="Reason (shown to them)" aria-label="Reason" style="flex:1 1 200px">
+    <button type="submit">Add credits</button>
+  </form>
+  <p id="detail-error" role="alert"></p>
+  <h3>Credit history</h3>
+  <table><thead><tr><th>Date</th><th>What</th><th class="n">Credits</th></tr></thead><tbody id="detail-history"></tbody></table>
+</dialog>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const A = { users: [], open: null };
+const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
+const day = (t) => (t ? new Date(t * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+const when = (t) => (t ? new Date(t * 1000).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+function el(tag, props = {}, ...kids) { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; }
+
+async function api(path, options = {}) {
+  const init = { method: options.method || 'GET', headers: {}, credentials: 'same-origin' };
+  if ('body' in options) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(options.body); }
+  const r = await fetch(path, init);
+  if (r.status === 401 || r.status === 404 && path === '/api/admin/users') { location.href = '/?login=1'; throw new Error('signed out'); }
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
+  return data;
+}
+
+function tiles() {
+  const people = A.users.filter((u) => !u.admin);
+  const sum = (k) => people.reduce((n, u) => n + (u[k] || 0), 0);
+  const t = [[fmt(people.length), 'photographers'], [fmt(people.filter((u) => u.verified).length), 'confirmed email'],
+    [fmt(sum('photos')), 'photos uploaded'], [fmt(sum('used')), 'credits used'], [fmt(sum('bought')), 'credits bought'],
+    [fmt(people.filter((u) => u.last_seen > Date.now() / 1000 - 7 * 86400).length), 'active this week']];
+  $('tiles').replaceChildren(...t.map(([b, s]) => el('div', { className: 'tile' }, el('b', { textContent: b }), el('span', { textContent: s }))));
+}
+
+function draw() {
+  const q = $('q').value.trim().toLowerCase(), only = $('only-unconfirmed').checked;
+  const list = A.users.filter((u) => (!q || `${u.email} ${u.name} ${u.signup_ip}`.toLowerCase().includes(q)) && (!only || !u.verified));
+  if (!list.length) { $('rows').replaceChildren(el('tr', {}, el('td', { colSpan: 9, textContent: 'Nobody matches.' }))); return; }
+  $('rows').replaceChildren(...list.map((u) => {
+    const who = el('td', {}, el('div', { className: 'who', textContent: u.email }));
+    if (u.admin) who.firstChild.append(el('span', { className: 'pill studio', textContent: 'studio' }));
+    else if (!u.verified) who.firstChild.append(el('span', { className: 'pill warn', textContent: 'not confirmed' }));
+    if (u.same_ip > 1 && !u.admin) who.firstChild.append(el('span', { className: 'pill warn', textContent: `${u.same_ip} accounts on this address`, title: u.signup_ip }));
+    who.append(el('div', { className: 'sub', textContent: [u.name, u.signup_ip].filter(Boolean).join(' · ') }));
+    const acts = el('div', { className: 'acts' });
+    if (!u.admin) acts.append(el('button', { type: 'button', textContent: 'View as', onclick: () => viewAs(u.id) }));
+    acts.append(el('button', { type: 'button', textContent: 'Details', onclick: () => openDetail(u.id) }));
+    return el('tr', {}, who, el('td', { textContent: day(u.created) }), el('td', { textContent: when(u.last_seen) }),
+      el('td', { className: 'n', textContent: fmt(u.weddings) }), el('td', { className: 'n', textContent: fmt(u.photos) }),
+      el('td', { className: 'n', textContent: u.admin ? 'unlimited' : fmt(u.balance) }), el('td', { className: 'n', textContent: fmt(u.used) }),
+      el('td', { className: 'n', textContent: fmt(u.bought) }), el('td', { className: 'n' }, acts));
+  }));
+}
+
+async function load() {
+  try { A.users = (await api('/api/admin/users')).users; tiles(); draw(); } catch (err) { $('error').textContent = err.message; }
+}
+
+async function viewAs(id) {
+  try { await api(`/api/admin/view-as/${id}`, { method: 'POST' }); location.href = '/'; } catch (err) { $('error').textContent = err.message; }
+}
+
+async function openDetail(id) {
+  A.open = id;
+  $('detail-error').textContent = '';
+  let d;
+  try { d = await api(`/api/admin/users/${id}`); } catch (err) { $('error').textContent = err.message; return; }
+  $('detail-title').textContent = d.user.name || d.user.email;
+  $('detail-who').textContent = `${d.user.email} · joined ${day(d.user.created)} · ${d.user.verified ? 'email confirmed' : 'email not confirmed'}` +
+    (d.user.signup_ip ? ` · signed up from ${d.user.signup_ip}` : '');
+  $('detail-view').hidden = d.user.admin;
+  $('detail-view').onclick = () => viewAs(id);
+  $('detail-credits').textContent = d.user.admin ? 'unlimited (studio)' : fmt(d.credits);
+  const size = (x) => (x === 0 ? 'full size' : `${x} px`);
+  $('detail-weddings').replaceChildren(...(d.weddings.length ? d.weddings.flatMap((w) => [el('tr', {},
+    el('td', { textContent: `${w.name} · ${day(w.created)}` }), el('td', { className: 'n', textContent: fmt(w.photos) }),
+    el('td', { className: 'n', textContent: fmt(w.exports.length) }),
+    el('td', { className: 'n' }, w.photos ? el('a', { className: 'dl', href: `/api/admin/weddings/${w.id}/originals.zip`, textContent: 'Uploaded photos (zip)' }) : '')),
+    ...w.exports.map((e) => el('tr', {}, el('td', { className: 'sub', textContent: `↳ Export ${day(e.created)} · ${e.scope || 'whole wedding'} · ${size(e.size)} · ${e.state}` }),
+      el('td', { className: 'n sub', textContent: `${fmt(e.done)} of ${fmt(e.total)}` }), el('td'),
+      el('td', { className: 'n' }, e.done ? el('a', { className: 'dl', href: `/api/admin/exports/${e.id}/zip`, textContent: 'Edited photos (zip)' }) : '')))])
+    : [el('tr', {}, el('td', { colSpan: 4, textContent: 'No weddings yet.' }))]));
+  $('detail-history').replaceChildren(...(d.history.length ? d.history.map((h) => el('tr', {},
+    el('td', { textContent: when(h.created) }), el('td', { textContent: h.note || h.kind }),
+    el('td', { className: 'n' + (h.delta > 0 ? ' in' : ''), textContent: (h.delta > 0 ? '+' : '') + h.delta })))
+    : [el('tr', {}, el('td', { colSpan: 3, textContent: 'Nothing yet.' }))]));
+  if (!$('detail').open) $('detail').showModal();
+}
+
+$('give').onsubmit = async (e) => {
+  e.preventDefault();
+  $('detail-error').textContent = '';
+  const n = parseInt($('give-n').value, 10);
+  if (!n) { $('detail-error').textContent = 'Type a whole number of credits (use a minus to take back).'; return; }
+  try {
+    await api(`/api/admin/users/${A.open}/credits`, { method: 'POST', body: { credits: n, note: $('give-note').value.trim() } });
+    $('give-n').value = ''; $('give-note').value = '';
+    await openDetail(A.open);
+    load();
+  } catch (err) { $('detail-error').textContent = err.message; }
+};
+$('detail-close').onclick = () => $('detail').close();
+$('q').oninput = draw;
+$('only-unconfirmed').onchange = draw;
+api('/api/admin/view-as-stop', { method: 'POST' }).catch(() => {}).then(load);
+</script>
+</body>
+</html>
