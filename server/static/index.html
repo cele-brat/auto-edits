@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=6">
+<link rel="stylesheet" href="/static/app.css?v=7">
 </head>
 <body>
 <div id="signin" hidden>
@@ -25,6 +25,7 @@
     <span id="brand">Auto Edits</span>
     <select id="wedding" aria-label="Wedding"></select>
     <span id="count"></span>
+    <button id="add-photos" type="button">Add photos</button>
     <span class="grow"></span>
     <div class="seg" role="group" aria-label="View">
       <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
@@ -115,6 +116,26 @@
   </aside>
 </div>
 
+<dialog id="add">
+  <h2 class="title">Add photos from this computer</h2>
+  <p>Pick the wedding's folder. Raw files stay on this computer: only the preview stored inside each one is uploaded. Sub-folders (Haldi, Sangeet…) become event folders.</p>
+  <label class="field">Folder <input id="add-folder" type="file" webkitdirectory multiple></label>
+  <p id="add-summary"></p>
+  <label class="field">Wedding name <input id="add-name" type="text" autocomplete="off"></label>
+  <label class="field">Upload size
+    <select id="add-size">
+      <option value="2560">Proof size, 2560 px (fast)</option>
+      <option value="4000">Medium, 4000 px</option>
+      <option value="12000">Full size (largest exports, slower)</option>
+    </select>
+  </label>
+  <p id="add-progress" aria-live="polite"></p>
+  <div class="row end">
+    <button id="add-close" type="button" class="quiet">Close</button>
+    <button id="add-start" type="button" class="primary" disabled>Add these photos</button>
+  </div>
+</dialog>
+
 <dialog id="confirm">
   <p id="confirm-text"></p>
   <div class="row end">
@@ -122,6 +143,7 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=6"></script>
+<script src="/static/app.js?v=7"></script>
+<script src="/static/addfolder.js?v=7"></script>
 </body>
 </html>

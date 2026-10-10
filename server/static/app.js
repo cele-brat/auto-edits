@@ -634,12 +634,12 @@ async function start() {
     $('count').textContent = '';
     $('panel').style.visibility = 'hidden';
     $('empty').replaceChildren(el('strong', { textContent: 'No photos here yet' }),
-      'In Lightroom, select the photos, then choose Library > Plug-in Extras > “Auto Edits: send photos to the server”.');
+      'Click “Add photos” at the top to pick a folder from this computer. Or, in Lightroom, choose Library > Plug-in Extras > “Auto Edits: send photos to the server”.');
     $('empty').hidden = false;
     $('grid').hidden = $('loupe').hidden = true;
     return;
   }
-  $('empty').replaceChildren(el('strong', { textContent: 'This folder is empty' }), 'Send photos to it from Lightroom.');
+  $('empty').replaceChildren(el('strong', { textContent: 'This folder is empty' }), 'Add photos to it with “Add photos” at the top, or send them from Lightroom.');
   await openWedding(S.weddings[0].id);
 }
 

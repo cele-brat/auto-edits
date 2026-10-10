@@ -288,3 +288,59 @@ def test_every_lightroom_slider_in_lightroom_order(client, tmp_path):
     assert r.render(photo, {"adj": {"Texture": 80}}, 360) != r.render(photo, {}, 360)
     mine = next(p for p in client.get("/api/presets", headers=H).json()["presets"] if p["id"] == preset["id"])
     assert mine["s"]["Contrast2012"] == own["Contrast2012"]                # the app can show the preset's own values
+
+
+class FakeBlobs:
+    """Stands in for the storage bucket."""
+    on = True
+
+    def __init__(self):
+        self.objects = {}
+
+    def put(self, key, path):
+        self.objects[key] = path.read_bytes()
+
+    def fetch(self, key, path):
+        if key not in self.objects:
+            return False
+        path.write_bytes(self.objects[key])
+        return True
+
+    def delete_prefix(self, prefix):
+        gone = [k for k in self.objects if k.startswith(prefix)]
+        for k in gone:
+            del self.objects[k]
+        return len(gone)
+
+
+def test_photos_live_in_storage_and_the_disk_is_only_a_working_copy(tmp_path):
+    blobs = FakeBlobs()
+    c = TestClient(create_app(str(tmp_path), KEY, blobs))
+    assert c.get("/api/ping", headers=H).json()["storage"] == "cloud"
+    w = c.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    send(c, w["id"], "u1"), send(c, w["id"], "u2")
+    assert len(blobs.objects) == 2 and all(k.startswith(f"weddings/{w['id']}/previews/") for k in blobs.objects)
+    photo = c.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"][0]
+    url = f"/api/weddings/{w['id']}/photos/{photo['id']}/image?size=800"
+    first = c.get(url, headers=H).content
+
+    store = c.app.state.store
+    local = list((tmp_path / "weddings" / w["id"] / "previews").glob("*.jpg"))
+    assert len(local) == 2 and store.trim_working_copies(10 ** 9) == 0        # under the allowance: nothing removed
+    assert store.trim_working_copies(0) == 2 and not list((tmp_path / "weddings" / w["id"] / "previews").glob("*.jpg"))
+    assert c.get(url, headers=H).content == first                            # fetched back from storage when needed
+
+    assert c.delete(f"/api/weddings/{w['id']}", headers=H).json()["deleted"] and blobs.objects == {}
+
+
+def test_photos_already_on_the_disk_are_moved_into_storage(tmp_path):
+    c = TestClient(create_app(str(tmp_path), KEY))                           # first without storage
+    assert c.get("/api/ping", headers=H).json()["storage"] == "this server"
+    w = c.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    send(c, w["id"], "u1"), send(c, w["id"], "u2"), send(c, w["id"], "u3")
+    blobs = FakeBlobs()
+    c2 = TestClient(create_app(str(tmp_path), KEY, blobs))                   # then storage is switched on
+    store = c2.app.state.store
+    assert store.trim_working_copies(0) == 0                                  # not safe to remove yet
+    assert store.store_pending() == 3 and len(blobs.objects) == 3 and store.store_pending() == 0
+    assert store.trim_working_copies(0) == 3

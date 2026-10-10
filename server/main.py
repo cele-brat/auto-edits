@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import VERSION, adjustments
+from . import VERSION, adjustments, blobs as blob_store
 from engine.presets import parse_xmp
 
 from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
@@ -30,7 +30,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 COOKIE = "autoedits"
 LINK_SECONDS = 120                        # how long a "open in browser" link from the plug-in works
 
-MAX_PREVIEW_BYTES = 12 * 1024 * 1024      # a 2560 px JPEG is 1 to 3 MB
+MAX_PREVIEW_BYTES = 30 * 1024 * 1024      # a 2560 px JPEG is 1 to 3 MB; a full-size camera preview up to about 20
 MAX_PRESET_BYTES = 4 * 1024 * 1024         # presets with tone tables can reach a megabyte or two
 MIN_FREE_BYTES = 2 * 1024 ** 3            # stop taking photos before the disk is full
 
@@ -44,13 +44,29 @@ class Login(BaseModel):
     key: str
 
 
-def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
+def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) -> FastAPI:
     key = key if key is not None else os.environ.get("AUTOEDITS_KEY", "")
     if len(key) < 16:
         raise RuntimeError("set AUTOEDITS_KEY to a secret of at least 16 characters")
-    store = Store(data_dir or os.environ.get("AUTOEDITS_DATA", "data/server"))
+    store = Store(data_dir or os.environ.get("AUTOEDITS_DATA", "data/server"),
+                  blobs if blobs is not None else blob_store.from_environment())
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
+
+    if store.blobs.on and os.environ.get("AUTOEDITS_WARM_UP") == "1":
+        import threading
+
+        def tidy():                              # photos into storage, and this disk kept within its allowance
+            keep = int(float(os.environ.get("AUTOEDITS_WORKING_GB", "8")) * 1024 ** 3)
+            while True:
+                try:
+                    while store.store_pending():
+                        pass
+                    store.trim_working_copies(keep)
+                except Exception:
+                    pass
+                time.sleep(600)
+        threading.Thread(target=tidy, daemon=True).start()
 
     renderer = Renderer()
     for uploaded in store.uploaded_presets():
@@ -115,7 +131,8 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
 
     @app.get("/api/ping", dependencies=api)
     def ping():
-        return {"ok": True, "version": VERSION, "free_gb": round(store.free_space() / 1024 ** 3, 1)}
+        return {"ok": True, "version": VERSION, "free_gb": round(store.free_space() / 1024 ** 3, 1),
+                "storage": "cloud" if store.blobs.on else "this server"}
 
     @app.get("/api/weddings", dependencies=api)
     def weddings():

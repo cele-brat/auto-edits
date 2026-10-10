@@ -13,6 +13,12 @@ services:
     restart: unless-stopped
     environment:
       AUTOEDITS_KEY: ${AUTOEDITS_KEY:?put AUTOEDITS_KEY in deploy/.env}
+      # Cloudflare R2: when these four are in deploy/.env the photos live there, not on this disk
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      AUTOEDITS_WORKING_GB: ${AUTOEDITS_WORKING_GB:-8}
     volumes:
       - data:/data
     ports:

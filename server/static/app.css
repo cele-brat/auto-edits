@@ -166,3 +166,14 @@ dialog p { color: var(--text); margin: 0; }
   #panel { border-left: 0; }
   #brand, #count { display: none; }
 }
+
+/* add photos */
+#add { width: min(560px, 92vw); }
+#add .title { font: 400 22px var(--serif); color: var(--text); margin: 0 0 8px; }
+#add p { color: var(--dim); margin: 0 0 12px; }
+.field { display: grid; gap: 4px; margin: 0 0 12px; color: var(--dim); }
+.field input[type=text], .field select { padding: 8px; color: var(--text); background: var(--rail); border: 1px solid var(--line); border-radius: 4px; }
+.field input[type=file] { color: var(--text); }
+button.primary { background: var(--marigold); border-color: var(--marigold); color: var(--marigold-ink); font-weight: 600; }
+button:disabled { opacity: .45; cursor: default; }
+#add-progress { min-height: 2.8em; color: var(--text) !important; }

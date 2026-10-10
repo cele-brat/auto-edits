@@ -9,6 +9,7 @@ same photo twice replaces it instead of making a second copy.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sqlite3
 import time
@@ -41,7 +42,9 @@ CREATE INDEX IF NOT EXISTS photos_by_folder ON photos (folder_id, taken, file_na
 
 
 class Store:
-    def __init__(self, data_dir: str | Path):
+    def __init__(self, data_dir: str | Path, blobs=None):
+        from .blobs import NoBlobs
+        self.blobs = blobs or NoBlobs()          # where the photos are kept when not on this disk
         self.root = Path(data_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "autoedits.db"
@@ -50,6 +53,8 @@ class Store:
             columns = {r["name"] for r in db.execute("PRAGMA table_info(photos)")}
             if "settings" not in columns:            # a photo's own look; empty means "as the folder"
                 db.execute("ALTER TABLE photos ADD COLUMN settings TEXT NOT NULL DEFAULT ''")
+            if "stored" not in columns:              # 1 once the preview is safely in the storage bucket
+                db.execute("ALTER TABLE photos ADD COLUMN stored INTEGER NOT NULL DEFAULT 0")
             if "applied" not in columns:             # stamp of the edit last applied to this photo in Lightroom
                 db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
 
@@ -109,6 +114,7 @@ class Store:
             n = db.execute("DELETE FROM weddings WHERE id=?", (wedding_id,)).rowcount
         if n:
             shutil.rmtree(self.wedding_dir(wedding_id), ignore_errors=True)
+            self.blobs.delete_prefix(f"weddings/{wedding_id}/")
         return bool(n)
 
     # ---- photos ---------------------------------------------------------
@@ -116,8 +122,64 @@ class Store:
         with self._db() as db:
             return [r["lr_uuid"] for r in db.execute("SELECT lr_uuid FROM photos WHERE wedding_id=?", (wedding_id,))]
 
-    def preview_path(self, wedding_id: str, photo_id: str) -> Path:
+    def _local(self, wedding_id: str, photo_id: str) -> Path:
         return self.wedding_dir(wedding_id) / "previews" / f"{photo_id}.jpg"
+
+    @staticmethod
+    def _key(wedding_id: str, photo_id: str) -> str:
+        return f"weddings/{wedding_id}/previews/{photo_id}.jpg"
+
+    def preview_path(self, wedding_id: str, photo_id: str) -> Path:
+        """The preview as a file on this disk, fetched from storage first if the working copy is gone."""
+        path = self._local(wedding_id, photo_id)
+        if not path.exists() and self.blobs.on:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if self.blobs.fetch(self._key(wedding_id, photo_id), path):
+                with self._db() as db:
+                    r = db.execute("SELECT received FROM photos WHERE id=?", (photo_id,)).fetchone()
+                if r:                              # same date as before, so kept masks still belong to it
+                    os.utime(path, (r["received"], r["received"]))
+        return path
+
+    def store_pending(self, limit: int = 500) -> int:
+        """Copy previews that are only on this disk into storage. Returns how many were copied."""
+        if not self.blobs.on:
+            return 0
+        with self._db() as db:
+            rows = db.execute("SELECT id, wedding_id FROM photos WHERE stored=0 LIMIT ?", (limit,)).fetchall()
+        done = 0
+        for r in rows:
+            path = self._local(r["wedding_id"], r["id"])
+            if not path.exists():
+                continue
+            self.blobs.put(self._key(r["wedding_id"], r["id"]), path)
+            with self._db() as db:
+                db.execute("UPDATE photos SET stored=1 WHERE id=?", (r["id"],))
+            done += 1
+        return done
+
+    def trim_working_copies(self, keep_bytes: int) -> int:
+        """Free this disk: remove the least recently used working copies of previews
+        that are safely in storage, until what is left fits in keep_bytes."""
+        if not self.blobs.on:
+            return 0
+        with self._db() as db:
+            safe = {r["id"] for r in db.execute("SELECT id FROM photos WHERE stored=1")}
+        files = []
+        for f in (self.root / "weddings").glob("*/previews/*.jpg"):
+            st = f.stat()
+            files.append((st.st_atime, st.st_size, f))
+        total = sum(size for _, size, _ in files)
+        removed = 0
+        for _, size, f in sorted(files, key=lambda x: x[0]):
+            if total <= keep_bytes:
+                break
+            if f.stem in safe:
+                f.unlink(missing_ok=True)
+                f.with_suffix(".masks.npz").unlink(missing_ok=True)
+                total -= size
+                removed += 1
+        return removed
 
     def add_photo(self, wedding_id: str, meta: dict, preview: bytes) -> dict:
         """Store one photo sent by the plug-in. Sending it again replaces the earlier one."""
@@ -135,19 +197,29 @@ class Store:
             row = db.execute("SELECT id FROM photos WHERE wedding_id=? AND lr_uuid=?", (wedding_id, lr_uuid)).fetchone()
             replaced = row is not None
             photo_id = row["id"] if replaced else uuid.uuid4().hex[:16]
-            path = self.preview_path(wedding_id, photo_id)
+            path = self._local(wedding_id, photo_id)
             path.parent.mkdir(parents=True, exist_ok=True)
             tmp = path.with_suffix(".part")
             tmp.write_bytes(preview)
             tmp.replace(path)                       # the file is complete or absent, never half written
+            now = float(int(time.time()))
+            os.utime(path, (now, now))
+            path.with_suffix(".masks.npz").unlink(missing_ok=True)
             values = (folder_id, file_name, str(meta.get("taken") or ""), json.dumps(meta, ensure_ascii=False),
-                      len(preview), time.time())
+                      len(preview), now)
             if replaced:
-                db.execute("UPDATE photos SET folder_id=?, file_name=?, taken=?, meta=?, bytes=?, received=? "
+                db.execute("UPDATE photos SET folder_id=?, file_name=?, taken=?, meta=?, bytes=?, received=?, stored=0 "
                            "WHERE id=?", values + (photo_id,))
             else:
                 db.execute("INSERT INTO photos (folder_id, file_name, taken, meta, bytes, received, id, wedding_id, "
                            "lr_uuid) VALUES (?,?,?,?,?,?,?,?,?)", values + (photo_id, wedding_id, lr_uuid))
+        if self.blobs.on:                           # into storage straight away; this disk keeps a working copy
+            try:
+                self.blobs.put(self._key(wedding_id, photo_id), path)
+                with self._db() as db:
+                    db.execute("UPDATE photos SET stored=1 WHERE id=?", (photo_id,))
+            except Exception:
+                pass                                # stays on this disk; the regular tidy-up tries again
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:

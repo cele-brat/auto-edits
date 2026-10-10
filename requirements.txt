@@ -11,3 +11,4 @@ uvicorn
 python-multipart
 httpx
 lupa
+boto3
