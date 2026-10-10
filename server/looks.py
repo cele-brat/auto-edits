@@ -381,7 +381,15 @@ class Renderer:
         if not toggles:
             return {"settings": {}, "manual": {}, "info": {}}
         key = (str(path), path.stat().st_mtime_ns, toggles, iso)
-        return self._autos.get(key, lambda: auto_correct(self._load(path, 800), toggles, None, iso))
+        def make():
+            skin = None
+            if "white_balance" in toggles:                    # faces keep the white balance honest
+                try:
+                    skin = self.masks(path)["face_skin"]
+                except Exception:
+                    skin = None                               # no masks: neutral areas alone decide
+            return auto_correct(self._load(path, 800), toggles, None, iso, skin)
+        return self._autos.get(key, make)
 
     def develop(self, path: Path, look: dict, iso=None) -> dict:
         """Everything the look sets for this photo: Lightroom settings, point

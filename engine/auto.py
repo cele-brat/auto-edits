@@ -25,7 +25,7 @@ AUTO_PARAMS = {
     "face_target": 0.52,       # brightness aimed for on faces
     "face_weight": 0.5,        # how much faces count against the whole frame
     "max_ev": 2.0,
-    "wb_strength": 0.5,        # warm wedding light is partly kept, not neutralised
+    "wb_strength": 0.85,       # most of the cast is removed; a little of the room's warmth is kept
 }
 
 
@@ -107,31 +107,102 @@ def auto_tone(img, exposure_ev=0.0) -> dict:
     return {"Highlights2012": r(highlights), "Shadows2012": r(shadows), "Whites2012": r(whites), "Blacks2012": r(blacks)}
 
 
-def auto_white_balance(img, P=AUTO_PARAMS) -> dict:
+def _light_colour(lin):
+    """The colour of the light, as (red gain, blue gain, share of the frame that is near-neutral).
+
+    Things that should be grey or white (shirts, walls, paper, metal) show the light's colour.
+    Under a strong cast they do not look grey at all, so one look is not enough: estimate,
+    correct, look again for near-neutral areas, and repeat until the estimate settles.
+    """
+    y = lin @ LUMA
+    usable = (y > 0.04) & (lin.max(-1) < 0.92)                # not black, no clipped channel
+    if usable.mean() < 0.05:
+        return 1.0, 1.0, 0.0
+    px = lin[usable].astype(np.float64)
+    # first guess from the whole frame, held back because a coloured scene (red lehenga, green lawn) pulls it
+    avg = np.power(np.mean(np.power(px, 4), 0), 0.25)
+    gain = np.array([(avg[1] / max(avg[0], 1e-5)) ** 0.6, 1.0, (avg[1] / max(avg[2], 1e-5)) ** 0.6])
+    share = 0.0
+    for limit in (0.30, 0.24, 0.20, 0.18, 0.18):
+        fixed = px * gain
+        mx, mn = fixed.max(-1), fixed.min(-1)
+        sat = (mx - mn) / np.maximum(mx, 1e-4)
+        w = np.clip(1 - sat / limit, 0, 1) ** 2               # the closer to neutral, the more it counts
+        share = float((sat < limit).mean())
+        if share < 0.01:
+            break
+        w = w * np.sqrt(px @ LUMA)                            # brighter neutrals are cleaner than dark ones
+        avg = (px * w[:, None]).sum(0) / w.sum()
+        gain = np.array([avg[1] / max(avg[0], 1e-5), 1.0, avg[1] / max(avg[2], 1e-5)])
+    return float(gain[0]), float(gain[2]), share
+
+
+# Skin of every tone sits close to one line when plotted as ln(red/green) against ln(blue/green):
+# darker skin is further along it, a green or magenta cast pushes it off to the side. Measured on
+# face skin in correctly balanced wedding photos.
+_SKIN_SLOPE, _SKIN_AT_ZERO = -1.25, 0.45
+_SKIN_SCATTER = 0.03            # how far off the line normal skin can be, either way
+_SKIN_WARMEST, _SKIN_COOLEST = 1.0, 0.38      # ln(red/green) of skin stays inside this range in good light
+
+
+def _skin_colour(lin, skin):
+    """Where the face skin sits: (ln red/green, ln blue/green, how sure 0..1). None without faces."""
+    if skin is None:
+        return None
+    if skin.shape[:2] != lin.shape[:2]:
+        skin = cv2.resize(skin.astype(np.float32), (lin.shape[1], lin.shape[0]), interpolation=cv2.INTER_AREA)
+    px = lin[skin > 0.6]
+    if len(px) < 60:
+        return None
+    y = px @ LUMA
+    px = px[(y > np.percentile(y, 25)) & (px.max(-1) < 0.95) & (px.min(-1) > 1e-3)]   # lit skin, not shadow or shine
+    if len(px) < 40:
+        return None
+    x = float(np.median(np.log(px[:, 0] / px[:, 1])))
+    z = float(np.median(np.log(px[:, 2] / px[:, 1])))
+    return x, z, float(np.clip(len(px) / 400.0, 0.3, 1.0))
+
+
+def auto_white_balance(img, P=AUTO_PARAMS, skin=None) -> dict:
     """White balance as a relative shift.
+
+    Two witnesses are used. Neutral things (white shirts, walls, metal) give the colour of the
+    light. Face skin (skin: the face-skin mask, any size) gives the green-magenta balance and
+    stops the result from turning faces too orange or too blue. Where both speak they are
+    averaged by how sure each is.
 
     Returns our preview sliders (temp, tint, -100..100) and the red/blue gains
     behind them; the plugin converts the gains to Kelvin from the as-shot value.
     """
     small = srgb_to_linear(_small(img, 384))
-    y = small @ LUMA
-    mx, mn = small.max(-1), small.min(-1)
-    sat = (mx - mn) / np.maximum(mx, 1e-4)
-    mask = (y > 0.05) & (y < 0.85) & (sat < 0.22)             # near-neutral, not clipped, not coloured outfits
-    if mask.mean() < 0.02:
+    r_gain, b_gain, share = _light_colour(small)
+    sure = float(np.clip(share / 0.08, 0, 1)) if share >= 0.01 else 0.0
+    # in logs: warm is red up and blue down; tint is red and blue both up (green down)
+    warm = 0.5 * (np.log(r_gain) - np.log(b_gain)) * (0.5 + 0.5 * sure) if sure else 0.0
+    tint = 0.5 * (np.log(r_gain) + np.log(b_gain)) if sure else 0.0
+    face = _skin_colour(small, skin)
+    if face is not None:
+        x, z, face_sure = face
+        off = (_SKIN_AT_ZERO + _SKIN_SLOPE * x - z) / (1 - _SKIN_SLOPE)       # tint that puts skin back on its line
+        off = float(np.sign(off) * max(abs(off) - _SKIN_SCATTER, 0.0))
+        w_face, w_neutral = 1.5 * face_sure, sure
+        tint = (w_face * off + w_neutral * tint) / (w_face + w_neutral)
+        after = x + warm + tint                                # skin's ln(red/green) once corrected
+        if after > _SKIN_WARMEST:
+            warm -= 0.7 * (after - _SKIN_WARMEST)
+        elif after < _SKIN_COOLEST:
+            warm += 0.7 * (_SKIN_COOLEST - after)
+    elif not sure:                                             # nothing to judge by: leave the photo alone
         return {"temp": 0, "tint": 0, "r_gain": 1.0, "b_gain": 1.0, "confident": False}
-    px = small[mask]
-    avg = np.power(np.mean(np.power(px, 4), 0), 0.25)         # shades-of-grey estimate of the light colour
-    r_gain, b_gain = avg[1] / max(avg[0], 1e-5), avg[1] / max(avg[2], 1e-5)
     s = P["wb_strength"]
-    r_gain, b_gain = float(r_gain ** s), float(b_gain ** s)
+    warm, tint = warm * s, tint * s
     from .render import DEFAULT_PARAMS as RP
-    # r up + b down is warmer (temp +); r and b both up is magenta (tint +)
-    temp = 0.5 * (np.log2(r_gain) - np.log2(b_gain)) / RP["wb_temp"] * 100
-    tint = 0.5 * (np.log2(r_gain) + np.log2(b_gain)) / RP["wb_tint"] * 100
-    temp, tint = np.clip(temp, -30, 30), np.clip(tint, -20, 20)       # an automatic shift stays moderate
-    return {"temp": int(round(temp)), "tint": int(round(tint)),
-            "r_gain": round(r_gain, 4), "b_gain": round(b_gain, 4), "confident": bool(mask.mean() > 0.08)}
+    ln2 = float(np.log(2))
+    temp_slider = np.clip(warm / ln2 / RP["wb_temp"] * 100, -100, 100)
+    tint_slider = np.clip(tint / ln2 / RP["wb_tint"] * 100, -60, 60)
+    return {"temp": int(round(temp_slider)), "tint": int(round(tint_slider)),
+            "r_gain": round(float(np.exp(warm + tint)), 4), "b_gain": round(float(np.exp(tint - warm)), 4),
+            "confident": bool(share > 0.08 or face is not None)}
 
 
 def measure_noise(img) -> float:
@@ -192,7 +263,7 @@ def auto_straighten(img) -> dict:
             "measured_tilt": round(med, 2), "agreement": round(agree, 2)}
 
 
-def auto_correct(img, toggles=TOGGLES, faces=None, iso=None) -> dict:
+def auto_correct(img, toggles=TOGGLES, faces=None, iso=None, skin=None) -> dict:
     """Automatic values for the switched-on toggles.
 
     Returns {"settings": Lightroom settings, "manual": preview white balance,
@@ -205,7 +276,7 @@ def auto_correct(img, toggles=TOGGLES, faces=None, iso=None) -> dict:
     settings, manual, info = {}, {}, {}
     work = img
     if "white_balance" in toggles:
-        wb = auto_white_balance(img)
+        wb = auto_white_balance(img, skin=skin)
         manual.update(temp=wb["temp"], tint=wb["tint"])
         info["white_balance"] = wb
         from .render import white_balance as _wb, DEFAULT_PARAMS

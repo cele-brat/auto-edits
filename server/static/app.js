@@ -122,7 +122,10 @@ function queueSave(key, run) {
   pending.set(key, { timer });
 }
 
-function change(patch) {
+// live: a slider is being dragged. Only the numbers and the photo are redrawn (the photo at most
+// every 80 ms), so the slider follows the hand; everything else is redrawn when it is let go.
+let stageTimer = null;
+function change(patch, live = false) {
   const look = tidy({ ...panelLook(), ...patch });
   if (look.mode === 'preset_auto') S.lastToggles = look.toggles;
   if (editingPhoto()) {
@@ -134,8 +137,9 @@ function change(patch) {
     f.settings = look;
     queueSave(`f${f.id}`, () => api(`/api/weddings/${S.wedding.id}/folders/${f.id}/look`, { method: 'PUT', body: look }));
   }
-  drawPanel();
-  drawStage();
+  if (!live) { clearTimeout(stageTimer); stageTimer = null; drawPanel(); drawStage(); return; }
+  drawSliders(look);
+  if (!stageTimer) stageTimer = setTimeout(() => { stageTimer = null; drawStage(); }, 80);
 }
 
 // ---- drawing: folders, grid, strip ------------------------------------------
@@ -374,10 +378,31 @@ function sliderBase(look, sl) {
   return typeof own === 'number' ? own : (sl.neutral || 0);
 }
 const sliderDelta = (look, sl) => (sl.field ? look[sl.field] : (look.adj || {})[sl.key]) || 0;
-function setDelta(sl, delta) {
+function setDelta(sl, delta, live = false) {
   const d = Math.round(delta * 1000) / 1000;
-  if (sl.field) change({ [sl.field]: d });
-  else change({ adj: { ...(panelLook().adj || {}), [sl.key]: d } });
+  if (sl.field) change({ [sl.field]: d }, live);
+  else change({ adj: { ...(panelLook().adj || {}), [sl.key]: d } }, live);
+}
+// Click a slider's number to type the exact value.
+function typeValue(sl) {
+  const base = sliderBase(panelLook(), sl);
+  const box = el('input', { type: 'text', className: 'exact', inputMode: 'decimal', value: sl.input.value });
+  box.setAttribute('aria-label', `${sl.label}, exact value`);
+  let done = false;
+  const finish = (keep) => {
+    if (done) return; done = true;
+    const v = Number(box.value.replace('−', '-').replace(',', '.'));
+    box.replaceWith(sl.out);
+    if (keep && box.value.trim() !== '' && Number.isFinite(v)) {
+      const fits = Math.min(Number(sl.input.max), Math.max(Number(sl.input.min), v));
+      setDelta(sl, fits - (base === null ? 0 : base));
+    }
+    sl.out.focus();
+  };
+  box.onkeydown = (e) => { e.stopPropagation(); if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); finish(e.key === 'Enter'); } };
+  box.onblur = () => finish(true);
+  sl.out.replaceWith(box);
+  box.select();
 }
 const digitsOf = (sl) => (sl.step < 0.1 ? 2 : sl.step < 1 ? 1 : 0);
 
@@ -389,7 +414,7 @@ function buildPanels() {
     for (const group of panel.groups) {
       if (group.name) box.append(el('h3', { textContent: group.name }));
       for (const sl of group.sliders) {
-        const row = el('div', { className: 'adj' });
+        const row = el('div', { className: `adj${sl.switch ? ' switch' : ''}` });
         if (sl.toggle) {
           // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
           sl.box = el('input', { type: 'checkbox' });
@@ -400,18 +425,20 @@ function buildPanels() {
             change({ mode: 'preset_auto', toggles: [...now] });
           };
           row.append(el('label', { className: 'auto' }, [sl.box, sl.switch ? 'On' : 'Auto']));
-        } else row.append(el('span'));
+        }
         row.append(el('span', { className: `name${sl.shown ? '' : ' later'}${sl.switch ? ' wide' : ''}`, textContent: sl.label }));
         if (!sl.switch) {
           sl.input = el('input', { type: 'range', step: sl.step });
           sl.input.setAttribute('aria-label', `${panel.name}, ${group.name ? group.name + ', ' : ''}${sl.label}`);
           sl.input.oninput = () => {
             const base = sliderBase(panelLook(), sl);
-            setDelta(sl, Number(sl.input.value) - (base === null ? 0 : base));
+            setDelta(sl, Number(sl.input.value) - (base === null ? 0 : base), true);
           };
+          sl.input.onchange = () => { drawPanel(); drawStage(); };   // let go: redraw the rest
           sl.input.ondblclick = () => setDelta(sl, 0);          // back to the preset's own value
-          sl.out = el('output');
-          row.append(sl.input, sl.out);
+          sl.out = el('button', { type: 'button', className: 'value', title: 'Click to type a value' });
+          sl.out.onclick = () => typeValue(sl);
+          row.append(sl.out, sl.input);
         }
         box.append(row);
       }
@@ -441,7 +468,7 @@ function drawSliders(look) {
         if (sl.hue && base !== null) value = ((value % 360) + 360) % 360;
         value = Math.min(hi, Math.max(lo, value));
         sl.input.min = lo; sl.input.max = hi;
-        if (document.activeElement !== sl.input) sl.input.value = value;
+        if (Number(sl.input.value) !== value) sl.input.value = value;
         const d = digitsOf(sl);
         sl.out.textContent = base === null ? (sl.relative ? signed(value, d) : `auto ${signed(value, d)}`)
           : (sl.min < 0 ? signed(value, d) : value.toFixed(d));
@@ -455,10 +482,10 @@ function drawSliders(look) {
 function maskValue(kind, key) {
   return ((panelLook().masks || {})[kind] || {})[key] || 0;
 }
-function changeMask(kind, patch) {
+function changeMask(kind, patch, live = false) {
   const masks = { ...(panelLook().masks || {}) };
   masks[kind] = patch === null ? {} : { ...(masks[kind] || {}), ...patch };
-  change({ masks });
+  change({ masks }, live);
 }
 
 function drawMasks() {
@@ -481,7 +508,8 @@ function drawMasks() {
       const input = el('input', { type: 'range', min: sl.min ?? -100, max: sl.max ?? 100, step: sl.step ?? 1, value });
       const out = el('output', { textContent: signed(value, sl.digits || 0) });
       input.dataset.mask = `${kind}.${sl.key}`;
-      input.oninput = () => { out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }); };
+      input.oninput = () => { out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
+      input.onchange = () => { drawPanel(); drawStage(); };
       input.ondblclick = () => { changeMask(kind, { [sl.key]: 0 }); drawMasks(); };
       body.append(el('label', { className: 'slider' }, [el('span', { textContent: sl.label }), input, out]));
     }
@@ -718,7 +746,8 @@ $('looks').onkeydown = (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); stepPreset(e.key === 'ArrowDown' ? 1 : -1); $('looks').focus(); }
 };
 for (const [id, key] of [['amount', 'amount']]) {
-  $(id).oninput = (e) => change({ [key]: Number(e.target.value) });
+  $(id).oninput = (e) => { change({ [key]: Number(e.target.value) }, true); $(id).nextElementSibling.textContent = `${Math.round(e.target.value * 100)}%`; };
+  $(id).onchange = () => { drawPanel(); drawStage(); };
   $(id).ondblclick = () => change({ [key]: key === 'amount' ? 1 : 0 });
 }
 $('reset').onclick = () => change(blankLook());
