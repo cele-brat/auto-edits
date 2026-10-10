@@ -35,6 +35,8 @@ import numpy as np
 from engine import render as _r
 from engine.auto import TOGGLES, auto_correct, combine
 from engine.presets import effective_settings, local_corrections
+
+from . import adjustments
 from engine.render import render
 
 cv2.setNumThreads(2)
@@ -63,7 +65,7 @@ MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "s
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
             "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {},
-            "preset_masks": True}
+            "preset_masks": True, "adj": {}}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -95,6 +97,7 @@ def clean_look(raw, preset_ids=None) -> dict:
     for key in ("hl", "sh", "wh", "bl", "noise"):
         look[key] = _number(raw.get(key), -100.0, 100.0)
     look["angle"] = _number(raw.get("angle"), -15.0, 15.0)
+    look["adj"] = adjustments.clean_adj(raw.get("adj"))                     # every other Lightroom slider
     look["preset_masks"] = raw.get("preset_masks", True) is not False       # use the masks inside the preset
     masks = raw.get("masks") if isinstance(raw.get("masks"), dict) else {}
     for kind in MASK_KINDS:                              # keep only masks that change something
@@ -249,6 +252,9 @@ class Renderer:
             mine = p["id"] not in self.library
             out.append({"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
                         "pack": p["pack"], "about": p["description"], "mine": mine,
+                        "s": {k: v for k, v in p["settings"].items()
+                              if k in adjustments.SLIDERS and isinstance(v, (int, float)) and not isinstance(v, bool)
+                              and v != adjustments.neutral(k)},
                         "masks": [{"name": c["name"], "parts": [x["kind"] for x in c["parts"]], "adjust": c["adjust"],
                                    "curve": bool(c["curve"]), "shown": c["shown"]} for c in local_corrections(p)]})
         return out
@@ -332,6 +338,7 @@ class Renderer:
         for key, (name, lo, hi) in ADJUST.items():
             if look[key]:
                 settings[name] = min(hi, max(lo, float(settings.get(name) or 0) + look[key]))
+        adjustments.add(settings, look["adj"])
         manual = {"temp": float(manual.get("temp", 0.0)) + look["temp"],
                   "tint": float(manual.get("tint", 0.0)) + look["tint"], "exposure": look["ev"]}
         corrections = local_corrections(preset) if preset and look["preset_masks"] else []
@@ -347,6 +354,9 @@ class Renderer:
         d = self.develop(path, look, iso)
         img = self._load(path, size)
         out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
+        texture = d["settings"].get("Texture")
+        if isinstance(texture, (int, float)) and texture:        # the engine's own texture is too weak to see
+            out = _detail(out, float(texture) * d["amount"], 0)
         if d["masks"] or d["corrections"] or show:
             masks = self.masks(path)
             out = local_adjust(out, masks, d["masks"], d["corrections"])

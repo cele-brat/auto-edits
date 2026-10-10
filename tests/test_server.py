@@ -260,3 +260,31 @@ def test_edits_for_lightroom(client):
     assert m["preset_uuid"] == "8EF01EEA28314F66B346C52D6E20C54A" and not m["from_no_edit"] and m["curves"] == {}
     assert set(m["settings"]) <= {"Exposure2012", "Shadows2012"} and "Exposure2012" in m["settings"]   # only what differs
     client.delete(f"/api/presets/{pid}", headers=H)
+
+
+def test_every_lightroom_slider_in_lightroom_order(client, tmp_path):
+    from server import adjustments
+    from server.looks import Renderer, clean_look
+    panels = client.get("/api/adjustments", headers=H).json()["panels"]
+    assert [p["name"] for p in panels] == ["Basic", "Tone Curve", "Color Mixer", "Color Grading", "Detail",
+                                           "Lens Corrections", "Transform", "Effects", "Calibration"]
+    basic = [s["label"] for g in panels[0]["groups"] for s in g["sliders"]]
+    assert basic == ["Temp", "Tint", "Exposure", "Contrast", "Highlights", "Shadows", "Whites", "Blacks",
+                     "Texture", "Clarity", "Dehaze", "Vibrance", "Saturation"]
+    assert len(adjustments.SLIDERS) > 85 and len({s["key"] for s in adjustments.SLIDERS.values()}) == len(adjustments.SLIDERS)
+
+    look = clean_look({"adj": {"Contrast2012": 20, "Vibrance": 9999, "Made": 5, "Exposure2012": 1, "Sharpness": "x"}})
+    assert look["adj"] == {"Contrast2012": 20, "Vibrance": 200}          # unknown and Auto-row keys are not kept here
+    r = Renderer()
+    photo = tmp_path / "p.jpg"
+    Image.effect_noise((320, 240), 40).convert("RGB").save(photo, "JPEG")
+    preset = next(p for p in r.presets.values() if p["settings"].get("Contrast2012") and p["settings"].get("SplitToningShadowHue"))
+    own = preset["settings"]
+    d = r.develop(photo, {"preset": preset["id"], "adj": {"Contrast2012": 20, "Vibrance": 200, "SplitToningShadowHue": 300,
+                                                          "Sharpness": 30, "PerspectiveScale": -10}})["settings"]
+    assert d["Contrast2012"] == min(100, own["Contrast2012"] + 20) and d["Vibrance"] == 100       # stays in Lightroom's range
+    assert d["SplitToningShadowHue"] == (own["SplitToningShadowHue"] + 300) % 360               # hue goes round the wheel
+    assert d["Sharpness"] == own.get("Sharpness", 40) + 30 and d["PerspectiveScale"] == 90     # starts from Lightroom's default
+    assert r.render(photo, {"adj": {"Texture": 80}}, 360) != r.render(photo, {}, 360)
+    mine = next(p for p in client.get("/api/presets", headers=H).json()["presets"] if p["id"] == preset["id"])
+    assert mine["s"]["Contrast2012"] == own["Contrast2012"]                # the app can show the preset's own values

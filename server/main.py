@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import VERSION
+from . import VERSION, adjustments
 from engine.presets import parse_xmp
 
 from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
@@ -194,6 +194,10 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
     @app.get("/api/session", dependencies=api)
     def session_info():
         return {"ok": True, "version": VERSION}
+
+    @app.get("/api/adjustments", dependencies=api)
+    def adjustment_panels():
+        return {"panels": adjustments.PANELS}
 
     @app.get("/api/presets", dependencies=api)
     def presets():

@@ -18,7 +18,7 @@ const MODE_NOTES = {
 const S = {
   weddings: [], wedding: null, folderId: null, photos: [], presets: [], byPreset: new Map(), looks: [],
   photoId: null, view: 'grid', scope: 'folder', split: true, holdBefore: false, dividerAt: 0.5,
-  pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
+  panels: [], pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
 };
 
 // ---- talking to the server ------------------------------------------------
@@ -37,7 +37,7 @@ async function api(path, options = {}) {
 
 // ---- looks ----------------------------------------------------------------
 const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0,
-  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true });
+  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true, adj: {} });
 // Parts of the photo that can be changed on their own (Lightroom's own mask kinds).
 const MASKS = [
   ['face_skin', 'Face skin'], ['body_skin', 'Body skin'], ['eyes', 'Eyes'], ['hair', 'Hair'], ['clothes', 'Clothes'],
@@ -58,19 +58,8 @@ const ADJ_NAMES = { ev: 'exposure', contrast: 'contrast', hl: 'highlights', sh: 
   texture: 'texture', clarity: 'clarity', dehaze: 'dehaze', sat: 'saturation', temp: 'warmth', tint: 'tint',
   sharp: 'sharpness', noise: 'noise' };
 const NOT_PREVIEWED = new Set(['sharp', 'noise', 'dehaze']);
-// One line per setting: its Auto tick (toggle) and the slider for your own change (key).
-const ROWS = [
-  { toggle: 'exposure', label: 'Exposure', key: 'ev', min: -3, max: 3, step: 0.05, digits: 2 },
-  { toggle: 'highlights', label: 'Highlights', key: 'hl', min: -100, max: 100, step: 1 },
-  { toggle: 'shadows', label: 'Shadows', key: 'sh', min: -100, max: 100, step: 1 },
-  { toggle: 'whites', label: 'Whites', key: 'wh', min: -100, max: 100, step: 1 },
-  { toggle: 'blacks', label: 'Blacks', key: 'bl', min: -100, max: 100, step: 1 },
-  { toggle: 'white_balance', label: 'Warmth', key: 'temp', min: -100, max: 100, step: 1 },
-  { label: 'Tint', key: 'tint', min: -100, max: 100, step: 1, sub: true },
-  { toggle: 'straighten', label: 'Straighten', key: 'angle', min: -10, max: 10, step: 0.1, digits: 1 },
-  { toggle: 'noise', label: 'Noise', key: 'noise', min: -50, max: 50, step: 1, later: true },
-  { toggle: 'lens', label: 'Lens fix', later: true },
-];
+// Every Lightroom slider, panel by panel, as the server lists them (see server/adjustments.py).
+const allSliders = () => S.panels.flatMap((p) => p.groups.flatMap((g) => g.sliders));
 
 function tidy(look) {
   const l = { ...blankLook(), ...look };
@@ -84,6 +73,7 @@ function tidy(look) {
   }
   l.masks = masks;
   l.preset_masks = l.preset_masks !== false;
+  l.adj = Object.fromEntries(Object.entries(l.adj || {}).filter(([, v]) => v));
   return l;
 }
 const folder = () => (S.wedding ? S.wedding.folders.find((f) => f.id === S.folderId) : null);
@@ -97,7 +87,8 @@ function describe(look) {
   const masks = Object.keys(look.masks || {}).length ? ' + masks' : '';
   if (look.mode === 'auto') return `Auto Correct${masks}`;
   const p = S.byPreset.get(look.preset);
-  if (!p) return ROWS.some((r) => r.key && look[r.key]) || masks ? `Your own adjustment${masks}` : 'Not edited yet';
+  const own = ['ev', 'temp', 'tint', 'hl', 'sh', 'wh', 'bl', 'noise', 'angle'].some((k) => look[k]) || Object.keys(look.adj || {}).length;
+  if (!p) return own || masks ? `Your own adjustment${masks}` : 'Not edited yet';
   return p.name + (look.mode === 'preset_auto' && look.toggles.length ? ' + auto' : '') + masks;
 }
 
@@ -374,31 +365,91 @@ function stepPreset(by) {
   if (b) b.scrollIntoView({ block: 'nearest' });
 }
 
-function buildRows() {
-  $('rows').replaceChildren(...ROWS.map((r) => {
-    const row = el('div', { className: `adj${r.sub ? ' sub' : ''}` });
-    if (r.toggle) {
-      // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
-      r.box = el('input', { type: 'checkbox' });
-      r.box.setAttribute('aria-label', `Auto ${r.label.toLowerCase()}`);
-      r.box.onchange = () => {
-        const now = new Set(panelLook().toggles);
-        if (r.box.checked) now.add(r.toggle); else now.delete(r.toggle);
-        change({ mode: 'preset_auto', toggles: [...now] });
-      };
-      row.append(el('label', { className: 'auto' }, [r.box, r.key ? 'Auto' : 'On']));
-    } else row.append(el('span'));
-    row.append(el('span', { className: `name${r.later ? ' later' : ''}`, textContent: r.label }));
-    if (r.key) {
-      r.input = el('input', { type: 'range', min: r.min, max: r.max, step: r.step, value: 0 });
-      r.input.setAttribute('aria-label', `${r.label}, your own change`);
-      r.input.oninput = () => change({ [r.key]: Number(r.input.value) });
-      r.input.ondblclick = () => change({ [r.key]: 0 });
-      r.out = el('output');
-      row.append(r.input, r.out);
+// What a slider starts from: the preset's value, or Lightroom's default. null means the value is
+// worked out per photo (Auto is ticked) or is relative (white balance), so only your change is shown.
+function sliderBase(look, sl) {
+  if (sl.relative || (sl.toggle && look.toggles.includes(sl.toggle))) return null;
+  const preset = S.byPreset.get(look.preset);
+  const own = preset && preset.s ? preset.s[sl.key] : undefined;
+  return typeof own === 'number' ? own : (sl.neutral || 0);
+}
+const sliderDelta = (look, sl) => (sl.field ? look[sl.field] : (look.adj || {})[sl.key]) || 0;
+function setDelta(sl, delta) {
+  const d = Math.round(delta * 1000) / 1000;
+  if (sl.field) change({ [sl.field]: d });
+  else change({ adj: { ...(panelLook().adj || {}), [sl.key]: d } });
+}
+const digitsOf = (sl) => (sl.step < 0.1 ? 2 : sl.step < 1 ? 1 : 0);
+
+function buildPanels() {
+  $('panels').replaceChildren(...S.panels.map((panel) => {
+    const box = el('details', { className: 'panel', open: !!panel.open });
+    panel.count = el('small');
+    box.append(el('summary', {}, [panel.name, panel.count]));
+    for (const group of panel.groups) {
+      if (group.name) box.append(el('h3', { textContent: group.name }));
+      for (const sl of group.sliders) {
+        const row = el('div', { className: 'adj' });
+        if (sl.toggle) {
+          // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
+          sl.box = el('input', { type: 'checkbox' });
+          sl.box.setAttribute('aria-label', sl.switch ? sl.label : `Auto ${sl.label.toLowerCase()}`);
+          sl.box.onchange = () => {
+            const now = new Set(panelLook().toggles);
+            if (sl.box.checked) now.add(sl.toggle); else now.delete(sl.toggle);
+            change({ mode: 'preset_auto', toggles: [...now] });
+          };
+          row.append(el('label', { className: 'auto' }, [sl.box, sl.switch ? 'On' : 'Auto']));
+        } else row.append(el('span'));
+        row.append(el('span', { className: `name${sl.shown ? '' : ' later'}${sl.switch ? ' wide' : ''}`, textContent: sl.label }));
+        if (!sl.switch) {
+          sl.input = el('input', { type: 'range', step: sl.step });
+          sl.input.setAttribute('aria-label', `${panel.name}, ${group.name ? group.name + ', ' : ''}${sl.label}`);
+          sl.input.oninput = () => {
+            const base = sliderBase(panelLook(), sl);
+            setDelta(sl, Number(sl.input.value) - (base === null ? 0 : base));
+          };
+          sl.input.ondblclick = () => setDelta(sl, 0);          // back to the preset's own value
+          sl.out = el('output');
+          row.append(sl.input, sl.out);
+        }
+        box.append(row);
+      }
     }
-    return row;
+    return box;
   }));
+}
+
+function drawSliders(look) {
+  for (const panel of S.panels) {
+    let changed = 0;
+    for (const group of panel.groups) {
+      for (const sl of group.sliders) {
+        if (sl.box) {
+          sl.box.checked = look.toggles.includes(sl.toggle);
+          sl.box.disabled = look.mode === 'auto';
+          if (sl.box.checked) changed += 1;
+        }
+        if (!sl.input) continue;
+        const base = sliderBase(look, sl);
+        const delta = sliderDelta(look, sl);
+        if (delta) changed += 1;
+        const half = (sl.max - sl.min) / 2;
+        const lo = base === null ? (sl.min < 0 ? sl.min : -half) : sl.min;
+        const hi = base === null ? (sl.min < 0 ? sl.max : half) : sl.max;
+        let value = base === null ? delta : base + delta;
+        if (sl.hue && base !== null) value = ((value % 360) + 360) % 360;
+        value = Math.min(hi, Math.max(lo, value));
+        sl.input.min = lo; sl.input.max = hi;
+        if (document.activeElement !== sl.input) sl.input.value = value;
+        const d = digitsOf(sl);
+        sl.out.textContent = base === null ? (sl.relative ? signed(value, d) : `auto ${signed(value, d)}`)
+          : (sl.min < 0 ? signed(value, d) : value.toFixed(d));
+        sl.out.classList.toggle('moved', !!delta);
+      }
+    }
+    panel.count.textContent = changed ? `${changed} set` : '';
+  }
 }
 
 function maskValue(kind, key) {
@@ -458,7 +509,7 @@ async function drawAutoValues(look) {
   const p = photo();
   const turn = ++autoTurn;
   if (!p || S.view !== 'loupe' || !look.toggles.length) {
-    out.textContent = look.toggles.some((t) => !SHOWN_HERE.has(t)) ? '* Applied in Lightroom, not shown in this preview.' : '';
+    out.textContent = '* Applied in Lightroom, not shown in this preview.';
     return;
   }
   try {
@@ -469,7 +520,7 @@ async function drawAutoValues(look) {
       .map(([k, n]) => `${n} ${signed(d.auto[k], k === 'Exposure2012' ? 2 : k === 'CropAngle' ? 1 : 0)}`);
     if ('temp' in d.auto_wb) bits.push(`warmth ${signed(d.auto_wb.temp)}`, `tint ${signed(d.auto_wb.tint)}`);
     out.textContent = (bits.length ? `Auto chose for this photo: ${bits.join(', ')}. ` : '') +
-      (look.toggles.some((t) => !SHOWN_HERE.has(t)) ? '* Applied in Lightroom, not shown in this preview.' : '');
+      '* Applied in Lightroom, not shown in this preview.';
   } catch (e) { /* the photo itself will report the problem */ }
 }
 
@@ -507,16 +558,7 @@ function drawPanel() {
   $('preset-box').toggleAttribute('data-off', look.mode === 'auto');
   drawLooks();
 
-  for (const r of ROWS) {
-    if (r.box) {
-      r.box.checked = look.toggles.includes(r.toggle);
-      r.box.disabled = look.mode === 'auto';
-    }
-    if (r.input) {
-      if (document.activeElement !== r.input) r.input.value = look[r.key];
-      r.out.textContent = signed(look[r.key], r.digits || 0);
-    }
-  }
+  drawSliders(look);
   setSlider('amount', look.amount, `${Math.round(look.amount * 100)}%`);
   if (!(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.mask)) drawMasks();
   drawAutoValues(look);
@@ -577,12 +619,13 @@ async function start() {
   try { await api('/api/session'); } catch (e) { return; }
   $('signin').hidden = true;
   $('app').hidden = false;
-  const [presets, weddings] = await Promise.all([api('/api/presets'), api('/api/weddings')]);
+  const [presets, weddings, panels] = await Promise.all([api('/api/presets'), api('/api/weddings'), api('/api/adjustments')]);
+  S.panels = panels.panels;
+  buildPanels();
   S.presets = presets.presets;
   S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
   buildLooks();
   $('pack').value = S.pack = '';
-  buildRows();
   S.weddings = weddings.weddings;
   $('wedding').replaceChildren(...S.weddings.map((w) => el('option', { value: w.id, textContent: w.name })));
   if (!S.weddings.length) {
