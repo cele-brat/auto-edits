@@ -13,6 +13,6 @@ COPY server ./server
 RUN useradd --uid 10001 --no-create-home autoedits && mkdir /data && chown autoedits /data
 USER autoedits
 # one maths thread per request: more threads than the processor share allows makes rendering erratic
-ENV AUTOEDITS_DATA=/data AUTOEDITS_WARM_UP=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1
+ENV AUTOEDITS_DATA=/data AUTOEDITS_WARM_UP=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MPLCONFIGDIR=/tmp/matplotlib
 EXPOSE 8000
 CMD ["uvicorn", "server.main:app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
