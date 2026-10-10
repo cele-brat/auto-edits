@@ -22,7 +22,7 @@ def sheet(photo, presets, cols=3, tile=420):
     tiles = [label(img, "BEFORE")]
     for p in presets:
         s, c = effective_settings(p)
-        tiles.append(label(render(img, s, c), p.name.replace("Cele-Brat ", "") + " | " + p.pack))
+        tiles.append(label(render(img, s, c), p.display_name + " | " + p.pack))
     h, w = tiles[0].shape[:2]
     rows = -(-len(tiles) // cols)
     canvas = np.zeros((rows * h, cols * w, 3), np.float32)
@@ -34,6 +34,6 @@ def sheet(photo, presets, cols=3, tile=420):
 if __name__ == "__main__":
     lib = load_folder("presets/library")
     wanted = sys.argv[3:]
-    chosen = [p for w in wanted for p in lib if w in (p.id, ) or w.lower() in p.name.lower()][:11] or lib[:5]
+    chosen = [p for w in wanted for p in lib if w in (p.id, ) or w.lower() in p.display_name.lower()][:11] or lib[:5]
     save_jpeg(sheet(sys.argv[1], chosen), sys.argv[2])
     print(len(chosen), "presets ->", sys.argv[2])

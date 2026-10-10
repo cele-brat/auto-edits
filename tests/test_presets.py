@@ -31,3 +31,13 @@ def test_toggles_skip_preset_values(library):
     assert cut["Shadows2012"] == full["Shadows2012"] and cut["Whites2012"] == full["Whites2012"]
     assert cut["Contrast2012"] == full["Contrast2012"]
     assert curves == p.curves
+
+
+def test_full_names(library):
+    names = [p.display_name for p in library]
+    assert len(set(names)) == 500                       # full names never repeat
+    p = next(x for x in library if x.id == "CBV-PT-MG-01-P-F467EB66")
+    assert (p.look, p.variant, p.display_name) == ("Marco Grob", "01 Signature", "Marco Grob 01 Signature")
+    from engine.presets import split_name
+    assert split_name("Cele-Brat Bottega53 01 Signature", "Cele-Brat - Bottega53 Look")[2] == "Bottega53 01 Signature"
+    assert split_name("Cele-Brat Marco Grob 01 Signature", "Cele-Brat - Marco Grob Look")[2] == "Marco Grob 01 Signature"

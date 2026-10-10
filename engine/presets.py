@@ -45,7 +45,10 @@ TOGGLE_KEYS = {
 class Preset:
     id: str
     uuid: str
-    name: str
+    name: str            # name stored in the file, e.g. "Cele-Brat MG 01 Signature"
+    display_name: str    # full name shown in the app, e.g. "Marco Grob 01 Signature"
+    look: str            # "Marco Grob"
+    variant: str         # "01 Signature"
     group: str
     pack: str
     description: str
@@ -82,6 +85,21 @@ def _unescape(s: str) -> str:
              .replace("&quot;", '"').replace("&apos;", "'"))
 
 
+def split_name(name: str, group: str) -> tuple[str, str, str]:
+    """Full look name and variant from the stored name and group.
+
+    "Cele-Brat MG 01 Signature" in group "Cele-Brat - Marco Grob Look"
+    -> ("Marco Grob", "01 Signature", "Marco Grob 01 Signature")
+    """
+    look = re.sub(r"^Cele-Brat\s*-\s*", "", group).strip()
+    look = re.sub(r"\s+Look$", "", look)
+    m = re.search(r"(?:^|\s)(\d{2}\s.+)$", name)
+    variant = m.group(1).strip() if m else name
+    if not look:                       # presets from elsewhere: keep their own name
+        return "", variant, name
+    return look, variant, f"{look} {variant}"
+
+
 def parse_xmp(text: str, source_file: str = "", pack: str = "") -> Preset:
     attrs = dict(re.findall(r'crs:(\w+)="([^"]*)"', text))
     settings = {k: _num(v) for k, v in attrs.items() if k not in _META_KEYS}
@@ -98,11 +116,17 @@ def parse_xmp(text: str, source_file: str = "", pack: str = "") -> Preset:
 
     ident = re.search(r'dc:identifier="([^"]+)"', text)
     uuid = attrs.get("UUID", "")
+    name = _alt_text(text, "crs:Name")
+    group = _alt_text(text, "crs:Group")
+    look, variant, display = split_name(name, group)
     return Preset(
         id=ident.group(1) if ident else uuid,
         uuid=uuid,
-        name=_alt_text(text, "crs:Name"),
-        group=_alt_text(text, "crs:Group"),
+        name=name,
+        display_name=display,
+        look=look,
+        variant=variant,
+        group=group,
         pack=pack,
         description=_alt_text(text, "dc:description"),
         process_version=attrs.get("ProcessVersion", ""),

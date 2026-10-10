@@ -32,9 +32,13 @@ LIB = Path(__file__).resolve().parent.parent / "presets" / "library"
 
 
 def find_preset(folder_name, library):
-    hits = [p for p in library if folder_name in (p.id, p.name)]
+    key = folder_name.strip().lower()
+    key = key[len("cele-brat "):] if key.startswith("cele-brat ") else key
+    hits = [p for p in library if folder_name == p.id or key == p.display_name.lower()]
     if not hits:
-        hits = [p for p in library if folder_name.lower() in p.name.lower()]
+        hits = [p for p in library if folder_name == p.name]
+    if not hits:
+        hits = [p for p in library if key in p.display_name.lower() or key in p.name.lower()]
     if len(hits) != 1:
         raise SystemExit(f"folder '{folder_name}' matches {len(hits)} presets; name it by Product ID (CBV-...)")
     return hits[0]
