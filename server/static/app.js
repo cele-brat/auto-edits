@@ -10,9 +10,9 @@ const TOGGLES = [
 const SHOWN_HERE = new Set(['exposure', 'highlights', 'shadows', 'whites', 'blacks', 'white_balance']);
 const ALL_TOGGLES = TOGGLES.map((t) => t[0]);
 const MODE_NOTES = {
-  preset: 'Every photo gets the preset exactly as it is.',
+  preset: 'Every photo gets the preset exactly as it is. Tick a setting below to have it worked out per photo instead.',
   preset_auto: 'The ticked settings are worked out for each photo. Everything else comes from the preset.',
-  auto: 'No preset. Every setting below is worked out for each photo.',
+  auto: 'No preset. Every setting below is worked out for each photo, so the ticks are fixed.',
 };
 
 const S = {
@@ -370,15 +370,15 @@ function drawPanel() {
   for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === look.mode));
   $('mode-note').textContent = MODE_NOTES[look.mode];
   $('preset-box').toggleAttribute('data-off', look.mode === 'auto');
-  $('auto-box').toggleAttribute('data-off', look.mode === 'preset');
   drawLooks();
 
   $('toggles').replaceChildren(...TOGGLES.map(([key, label]) => {
-    const box = el('input', { type: 'checkbox', checked: look.toggles.includes(key), disabled: look.mode !== 'preset_auto' });
+    // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
+    const box = el('input', { type: 'checkbox', checked: look.toggles.includes(key), disabled: look.mode === 'auto' });
     box.onchange = () => {
       const now = new Set(panelLook().toggles);
       if (box.checked) now.add(key); else now.delete(key);
-      change({ toggles: [...now] });
+      change({ mode: 'preset_auto', toggles: [...now] });
     };
     return el('label', { className: SHOWN_HERE.has(key) ? '' : 'later' }, [box, label]);
   }));
