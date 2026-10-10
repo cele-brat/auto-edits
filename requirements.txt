@@ -6,3 +6,8 @@ rawpy
 pillow
 mediapipe
 pytest
+fastapi
+uvicorn
+python-multipart
+httpx
+lupa

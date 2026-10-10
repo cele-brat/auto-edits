@@ -4,3 +4,4 @@ __pycache__/
 data/out/
 data/testsets/
 data/params_*.json
+deploy/.env

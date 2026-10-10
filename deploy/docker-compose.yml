@@ -1,0 +1,30 @@
+# Auto Edits on the VPS. Kept apart from the other apps on the machine:
+#   - its own project name, network and data volume
+#   - hard limits on memory and processor, so it cannot starve n8n and the rest
+#   - listens on this machine only (127.0.0.1); the existing web proxy passes
+#     edits.cele-brat.solutions to it
+# The key lives in a file named .env next to this one:  AUTOEDITS_KEY=<long secret>
+name: auto-edits
+services:
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      AUTOEDITS_KEY: ${AUTOEDITS_KEY:?put AUTOEDITS_KEY in deploy/.env}
+    volumes:
+      - data:/data
+    ports:
+      - "127.0.0.1:8431:8000"
+    mem_limit: 3g
+    cpus: 2.0
+    pids_limit: 256
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - autoedits
+volumes:
+  data:
+networks:
+  autoedits:
