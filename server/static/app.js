@@ -347,7 +347,7 @@ function drawLooks() {
   const keep = box.scrollTop;
   box.replaceChildren(...rows);
   box.scrollTop = keep;
-  $('preset-name').textContent = chosen ? chosen.name : '';
+  $('preset-name').textContent = chosen ? chosen.name : 'No preset chosen';
   $('about').textContent = chosen ? chosen.about : (shownLooks().length ? '' : 'No look matches that search.');
   $('remove-preset').hidden = !(chosen && chosen.mine);
   const maskBox = $('preset-masks');
@@ -460,6 +460,7 @@ function buildPanels() {
 }
 
 function drawSliders(look) {
+  let total = 0;
   for (const panel of S.panels) {
     let changed = 0;
     for (const group of panel.groups) {
@@ -481,14 +482,17 @@ function drawSliders(look) {
         value = Math.min(hi, Math.max(lo, value));
         sl.input.min = lo; sl.input.max = hi;
         if (Number(sl.input.value) !== value) sl.input.value = value;
+        paint(sl.input, base === null ? 0 : base);
         const d = digitsOf(sl);
         sl.out.textContent = base === null ? (sl.relative ? signed(value, d) : `auto ${signed(value, d)}`)
           : (sl.min < 0 ? signed(value, d) : value.toFixed(d));
         sl.out.classList.toggle('moved', !!delta);
       }
     }
-    panel.count.textContent = changed ? `${changed} set` : '';
+    panel.count.textContent = changed ? `${changed}` : '';
+    total += changed;
   }
+  $('tab-adjust').dataset.n = total || '';
 }
 
 function maskValue(kind, key) {
@@ -520,7 +524,8 @@ function drawMasks() {
       const input = el('input', { type: 'range', min: sl.min ?? -100, max: sl.max ?? 100, step: sl.step ?? 1, value });
       const out = el('output', { textContent: signed(value, sl.digits || 0) });
       input.dataset.mask = `${kind}.${sl.key}`;
-      input.oninput = () => { out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
+      paint(input, 0);
+      input.oninput = () => { paint(input, 0); out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
       input.onchange = () => { drawPanel(); drawStage(); };
       input.ondblclick = () => { changeMask(kind, { [sl.key]: 0 }); drawMasks(); };
       body.append(el('label', { className: 'slider' }, [el('span', { textContent: sl.label }), input, out]));
@@ -534,12 +539,21 @@ function drawMasks() {
     rows.push(body);
   }
   $('masks').replaceChildren(...rows);
+  $('tab-masks').dataset.n = MASKS.reduce((n, [kind]) => n + Object.keys((look.masks || {})[kind] || {}).length, 0) || '';
 }
 
+// Colours a slider's track between where it starts (the preset's value, or zero) and the thumb,
+// so a changed slider is visible at a glance.
+function paint(input, from) {
+  const lo = Number(input.min), hi = Number(input.max), span = hi - lo || 1;
+  input.style.setProperty('--p', Math.min(1, Math.max(0, (Number(input.value) - lo) / span)));
+  input.style.setProperty('--z', Math.min(1, Math.max(0, (from - lo) / span)));
+}
 function setSlider(id, value, text) {
   const input = $(id);
   if (document.activeElement !== input) input.value = value;
   input.nextElementSibling.textContent = text;
+  paint(input, id === 'amount' ? 1 : 0);
 }
 const signed = (v, digits = 0) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(digits);
 
@@ -751,11 +765,19 @@ $('looks').onkeydown = (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); stepPreset(e.key === 'ArrowDown' ? 1 : -1); $('looks').focus(); }
 };
 for (const [id, key] of [['amount', 'amount']]) {
-  $(id).oninput = (e) => { change({ [key]: Number(e.target.value) }, true); $(id).nextElementSibling.textContent = `${Math.round(e.target.value * 100)}%`; };
+  $(id).oninput = (e) => { paint(e.target, 1); change({ [key]: Number(e.target.value) }, true); $(id).nextElementSibling.textContent = `${Math.round(e.target.value * 100)}%`; };
   $(id).onchange = () => { drawPanel(); drawStage(); };
   $(id).ondblclick = () => change({ [key]: key === 'amount' ? 1 : 0 });
 }
 $('reset').onclick = () => change(blankLook());
+// The three parts of the panel: Look, Adjust, Masks.
+for (const t of document.querySelectorAll('#tabs button')) {
+  t.onclick = () => {
+    $('panel').dataset.tab = t.dataset.tab;
+    for (const o of document.querySelectorAll('#tabs button')) o.setAttribute('aria-selected', String(o === t));
+    $('panel-body').scrollTop = 0;
+  };
+}
 
 $('delete-wedding').onclick = () => {
   if (!S.wedding) return;

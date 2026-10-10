@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=13">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css?v=14">
 </head>
 <body>
 <div id="app" hidden>
@@ -62,27 +65,36 @@
     </div>
   </main>
 
-  <aside id="panel" aria-label="Look">
-    <section id="scope-box">
-      <div class="seg wide" role="group" aria-label="What these settings apply to">
-        <button id="scope-folder" type="button" aria-pressed="true">Whole folder</button>
-        <button id="scope-photo" type="button" aria-pressed="false">This photo only</button>
+  <aside id="panel" aria-label="Look" data-tab="look">
+    <div id="panel-head">
+      <section id="scope-box">
+        <h2>Apply to</h2>
+        <div class="seg wide" role="group" aria-label="What these settings apply to">
+          <button id="scope-folder" type="button" aria-pressed="true">Whole folder</button>
+          <button id="scope-photo" type="button" aria-pressed="false">This photo only</button>
+        </div>
+        <p id="scope-note"></p>
+      </section>
+      <section id="mode-box">
+        <h2>Edit with</h2>
+        <div class="seg wide three" role="group" aria-label="How to edit">
+          <button data-mode="preset" type="button">Preset</button>
+          <button data-mode="preset_auto" type="button">Preset + auto</button>
+          <button data-mode="auto" type="button">Auto Correct</button>
+        </div>
+        <p id="mode-note"></p>
+      </section>
+      <div id="tabs" role="tablist" aria-label="Settings">
+        <button type="button" role="tab" id="tab-look" data-tab="look" aria-selected="true">Preset</button>
+        <button type="button" role="tab" id="tab-adjust" data-tab="adjust" aria-selected="false">Adjust</button>
+        <button type="button" role="tab" id="tab-masks" data-tab="masks" aria-selected="false">Masks</button>
       </div>
-      <p id="scope-note"></p>
-    </section>
+    </div>
+    <div id="panel-body">
 
-    <section>
-      <h2>How to edit</h2>
-      <div class="seg wide three" role="group" aria-label="How to edit">
-        <button data-mode="preset" type="button">Preset</button>
-        <button data-mode="preset_auto" type="button">Preset + auto</button>
-        <button data-mode="auto" type="button">Auto Correct</button>
-      </div>
-      <p id="mode-note"></p>
-    </section>
-
-    <section id="preset-box">
-      <h2>Preset <span id="preset-name"></span></h2>
+    <section id="preset-box" data-pane="look">
+      <h2 class="chosen"><span id="preset-name"></span></h2>
+      <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
       <div class="row">
         <select id="pack" aria-label="Preset pack"></select>
         <input id="search" type="search" placeholder="Search looks" aria-label="Search looks">
@@ -99,21 +111,19 @@
         <button id="remove-preset" type="button" class="quiet" hidden>Remove this preset</button>
       </div>
       <p id="upload-note" aria-live="polite">Exported .xmp files, masks included. In Lightroom: right-click a preset, then Export.</p>
-      <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
     </section>
 
-    <section id="adjust-box">
-      <h2>Adjust</h2>
-      <p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back.</p>
+    <section id="adjust-box" data-pane="adjust">
+      <details class="help"><summary>How the sliders work</summary><p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back. Click a number to type it.</p></details>
       <div id="panels"></div>
       <p id="auto-values"></p>
       <button id="reset" type="button" class="quiet">Reset these settings</button>
     </section>
-    <section id="mask-box">
-      <h2>Your own masks</h2>
-      <p class="hint">Extra changes to one part of the photo, on top of any masks in the preset. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p>
+    <section id="mask-box" data-pane="masks">
+      <details class="help"><summary>How your own masks work</summary><p class="hint">Extra changes to one part of the photo, on top of any masks in the preset. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p></details>
       <div id="masks"></div>
     </section>
+    </div>
     <p id="saved" aria-live="polite"></p>
   </aside>
 </div>
@@ -233,10 +243,10 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=13"></script>
-<script src="/static/addfolder.js?v=13"></script>
-<script src="/static/cull.js?v=13"></script>
-<script src="/static/export.js?v=13"></script>
-<script src="/static/account.js?v=13"></script>
+<script src="/static/app.js?v=14"></script>
+<script src="/static/addfolder.js?v=14"></script>
+<script src="/static/cull.js?v=14"></script>
+<script src="/static/export.js?v=14"></script>
+<script src="/static/account.js?v=14"></script>
 </body>
 </html>
