@@ -1,5 +1,5 @@
 --[[ Auto Edits: Lightroom Classic plug-in.
-     Version 0.4: sends photos to the Auto Edits server; reference and calibration exports for tuning. ]]
+     Version 0.5: opens the app; sends photos to the Auto Edits server; reference and calibration exports for tuning. ]]
 return {
     LrSdkVersion = 10.0,
     LrSdkMinimumVersion = 6.0,
@@ -9,6 +9,7 @@ return {
 
     -- Library > Plug-in Extras
     LrLibraryMenuItems = {
+        { title = 'Auto Edits: open the app', file = 'OpenApp.lua' },
         { title = 'Auto Edits: send photos to the server', file = 'SendToServer.lua' },
         { title = 'Auto Edits: server settings', file = 'Settings.lua' },
         { title = 'Make reference exports (selected photos)', file = 'ReferenceExports.lua' },
@@ -20,5 +21,5 @@ return {
         { title = 'Make reference exports (selected photos)', file = 'ReferenceExports.lua' },
     },
 
-    VERSION = { major = 0, minor = 4, revision = 0 },
+    VERSION = { major = 0, minor = 5, revision = 0 },
 }

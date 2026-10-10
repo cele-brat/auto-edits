@@ -5,3 +5,4 @@ data/out/
 data/testsets/
 data/params_*.json
 deploy/.env
+data/server/

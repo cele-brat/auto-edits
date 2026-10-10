@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Auto Edits</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="signin" hidden>
+  <form id="signin-form">
+    <h1>Auto Edits</h1>
+    <p>In Lightroom, choose Library &gt; Plug-in Extras &gt; “Auto Edits: open the app”. It signs you in without typing anything.</p>
+    <p>Or paste the server key here.</p>
+    <label for="key">Server key</label>
+    <input id="key" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <p id="signin-error" role="alert"></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header id="bar">
+    <span id="brand">Auto Edits</span>
+    <select id="wedding" aria-label="Wedding"></select>
+    <span id="count"></span>
+    <span class="grow"></span>
+    <div class="seg" role="group" aria-label="View">
+      <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
+      <button id="view-loupe" type="button" aria-pressed="false" title="One photo (Enter)">One photo</button>
+    </div>
+    <button id="split" type="button" aria-pressed="true" title="Drag the line on the photo. Hold \ to see the whole photo before.">Before and after</button>
+    <details id="more">
+      <summary>More</summary>
+      <div class="menu">
+        <button id="delete-wedding" type="button">Delete this wedding from the server…</button>
+        <button id="signout" type="button">Sign out</button>
+      </div>
+    </details>
+  </header>
+
+  <nav id="folders" aria-label="Event folders"></nav>
+
+  <main id="stage">
+    <div id="empty" hidden></div>
+    <div id="grid" hidden></div>
+    <div id="loupe" hidden>
+      <div id="frame">
+        <img id="after" alt="">
+        <img id="before" alt="">
+        <div id="divider" role="slider" aria-label="Before and after divider" aria-valuemin="0" aria-valuemax="100" tabindex="0"><span></span></div>
+        <span id="tag-before" class="tag">Before</span>
+        <span id="tag-after" class="tag">After</span>
+        <span id="busy" hidden>Rendering</span>
+      </div>
+      <div id="caption"></div>
+      <div id="strip"></div>
+    </div>
+  </main>
+
+  <aside id="panel" aria-label="Look">
+    <section id="scope-box">
+      <div class="seg wide" role="group" aria-label="What these settings apply to">
+        <button id="scope-folder" type="button" aria-pressed="true">Whole folder</button>
+        <button id="scope-photo" type="button" aria-pressed="false">This photo only</button>
+      </div>
+      <p id="scope-note"></p>
+    </section>
+
+    <section>
+      <h2>How to edit</h2>
+      <div class="seg wide three" role="group" aria-label="How to edit">
+        <button data-mode="preset" type="button">Preset</button>
+        <button data-mode="preset_auto" type="button">Preset + auto</button>
+        <button data-mode="auto" type="button">Auto Correct</button>
+      </div>
+      <p id="mode-note"></p>
+    </section>
+
+    <section id="preset-box">
+      <h2>Preset <span id="preset-name"></span></h2>
+      <div class="row">
+        <select id="pack" aria-label="Preset pack"></select>
+        <input id="search" type="search" placeholder="Search looks" aria-label="Search looks">
+      </div>
+      <div id="looks" tabindex="0" aria-label="Presets. Use the up and down arrow keys to try them."></div>
+      <p id="about"></p>
+      <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
+    </section>
+
+    <section id="auto-box">
+      <h2>Set automatically, per photo</h2>
+      <div id="toggles"></div>
+      <p id="auto-values"></p>
+    </section>
+
+    <section>
+      <h2>Your own adjustment</h2>
+      <label class="slider"><span>Exposure</span><input id="ev" type="range" min="-3" max="3" step="0.05"><output></output></label>
+      <label class="slider"><span>Warmth</span><input id="temp" type="range" min="-100" max="100" step="1"><output></output></label>
+      <label class="slider"><span>Tint</span><input id="tint" type="range" min="-100" max="100" step="1"><output></output></label>
+      <button id="reset" type="button" class="quiet">Reset these settings</button>
+    </section>
+    <p id="saved" aria-live="polite"></p>
+  </aside>
+</div>
+
+<dialog id="confirm">
+  <p id="confirm-text"></p>
+  <div class="row end">
+    <button id="confirm-no" type="button" class="quiet">Keep it</button>
+    <button id="confirm-yes" type="button" class="danger">Delete from server</button>
+  </div>
+</dialog>
+<script src="/static/app.js"></script>
+</body>
+</html>

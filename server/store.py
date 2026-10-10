@@ -44,6 +44,9 @@ class Store:
         self.db_path = self.root / "autoedits.db"
         with self._db() as db:
             db.executescript(SCHEMA)
+            columns = {r["name"] for r in db.execute("PRAGMA table_info(photos)")}
+            if "settings" not in columns:            # a photo's own look; empty means "as the folder"
+                db.execute("ALTER TABLE photos ADD COLUMN settings TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _db(self):
@@ -83,10 +86,10 @@ class Store:
             if row is None:
                 return None
             folders = db.execute(
-                "SELECT f.id, f.name, COUNT(p.id) AS photos, COALESCE(SUM(p.bytes),0) AS bytes "
+                "SELECT f.id, f.name, f.settings, COUNT(p.id) AS photos, COALESCE(SUM(p.bytes),0) AS bytes "
                 "FROM folders f LEFT JOIN photos p ON p.folder_id=f.id "
                 "WHERE f.wedding_id=? GROUP BY f.id ORDER BY f.name", (wedding_id,)).fetchall()
-        folders = [dict(f) for f in folders]
+        folders = [{**dict(f), "settings": json.loads(f["settings"] or "{}")} for f in folders]
         return {**dict(row), "folders": folders, "photos": sum(f["photos"] for f in folders),
                 "bytes": sum(f["bytes"] for f in folders)}
 
@@ -143,7 +146,8 @@ class Store:
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
-        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, f.name AS folder, f.id AS folder_id "
+        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, "
+             "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
         if folder_id is not None:
@@ -151,12 +155,36 @@ class Store:
             args.append(folder_id)
         with self._db() as db:
             rows = db.execute(q + " ORDER BY f.name, p.taken, p.file_name", args).fetchall()
-        return [{**dict(r), "meta": json.loads(r["meta"])} for r in rows]
+        return [{**dict(r), "meta": json.loads(r["meta"]),
+                 "settings": json.loads(r["settings"]) if r["settings"] else None} for r in rows]
 
     def photo(self, wedding_id: str, photo_id: str) -> dict | None:
         with self._db() as db:
-            r = db.execute("SELECT * FROM photos WHERE wedding_id=? AND id=?", (wedding_id, photo_id)).fetchone()
-        return {**dict(r), "meta": json.loads(r["meta"])} if r else None
+            r = db.execute("SELECT p.*, f.settings AS folder_settings FROM photos p JOIN folders f ON f.id=p.folder_id "
+                           "WHERE p.wedding_id=? AND p.id=?", (wedding_id, photo_id)).fetchone()
+        if r is None:
+            return None
+        return {**dict(r), "meta": json.loads(r["meta"]),
+                "settings": json.loads(r["settings"]) if r["settings"] else None,
+                "folder_settings": json.loads(r["folder_settings"] or "{}")}
+
+    # ---- looks ----------------------------------------------------------
+    def set_folder_settings(self, wedding_id: str, folder_id: int, settings: dict) -> bool:
+        with self._db() as db:
+            return bool(db.execute("UPDATE folders SET settings=? WHERE wedding_id=? AND id=?",
+                                   (json.dumps(settings), wedding_id, folder_id)).rowcount)
+
+    def set_photo_settings(self, wedding_id: str, photo_id: str, settings: dict | None) -> bool:
+        """A photo's own look. None puts it back on its folder's look."""
+        value = json.dumps(settings) if settings is not None else ""
+        with self._db() as db:
+            return bool(db.execute("UPDATE photos SET settings=? WHERE wedding_id=? AND id=?",
+                                   (value, wedding_id, photo_id)).rowcount)
+
+    def cache_dir(self, wedding_id: str) -> Path:
+        d = self.wedding_dir(wedding_id) / "cache"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def free_space(self) -> int:
         return shutil.disk_usage(self.root).free

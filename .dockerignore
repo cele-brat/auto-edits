@@ -1,5 +1,7 @@
 .git
-data
+data/testsets
+data/out
+data/server
 tests
 presets
 models

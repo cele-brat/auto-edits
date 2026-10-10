@@ -81,3 +81,51 @@ def test_delete_removes_images_from_the_server_only(client, tmp_path):
     assert not (tmp_path / "weddings" / w["id"]).exists()
     assert client.get(f"/api/weddings/{w['id']}", headers=H).status_code == 404
     assert client.get(f"/api/weddings/{other['id']}", headers=H).json()["photos"] == 1
+
+
+def test_browser_signs_in_with_the_key_and_gets_a_cookie(client):
+    assert client.get("/").status_code == 200                       # the page itself is public, the data is not
+    assert client.get("/api/session").status_code == 401
+    assert client.post("/api/login", json={"key": KEY}).status_code == 200
+    assert client.get("/api/session").json()["ok"]
+    assert len(client.get("/api/presets").json()["presets"]) == 500
+    client.post("/api/logout")
+    client.cookies.clear()
+    assert client.get("/api/presets").status_code == 401
+
+
+def test_looks_per_folder_and_per_photo(client):
+    w = client.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    photo = Image.effect_noise((320, 240), 40).convert("RGB")
+    buf = io.BytesIO(); photo.save(buf, "JPEG")
+    send(client, w["id"], "u1", "Haldi", "A.NEF", buf.getvalue())
+    send(client, w["id"], "u2", "Haldi", "B.NEF", buf.getvalue())
+    folder = client.get(f"/api/weddings/{w['id']}", headers=H).json()["folders"][0]
+    a, b = client.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"]
+    assert a["look"] is None and set(a) >= {"id", "name", "folder", "v", "iso"}
+    preset = client.get("/api/presets", headers=H).json()["presets"][0]["id"]
+    url = f"/api/weddings/{w['id']}/photos/{a['id']}"
+
+    plain = client.get(url + "/image?size=360", headers=H).content
+    assert plain[:3] == b"\xff\xd8\xff"
+    saved = client.put(f"/api/weddings/{w['id']}/folders/{folder['id']}/look", headers=H,
+                       json={"mode": "preset_auto", "preset": preset, "toggles": ["exposure", "bogus"], "ev": 99}).json()["look"]
+    assert saved["toggles"] == ["exposure"] and saved["ev"] == 5 and saved["preset"] == preset
+    with_look = client.get(url + "/image?size=360", headers=H).content
+    assert with_look != plain                                        # the folder's look reaches its photos
+
+    own = client.put(url + "/look", headers=H, json={"mode": "auto", "preset": preset}).json()["look"]
+    assert own["preset"] is None and len(own["toggles"]) == 9        # Auto Correct: no preset, everything automatic
+    assert client.get(url + "/image?size=360", headers=H).content != with_look
+    d = client.get(url + "/develop", headers=H).json()
+    assert "Exposure2012" in d["auto"] and "temp" in d["auto_wb"]
+    assert client.get(f"/api/weddings/{w['id']}/photos/{b['id']}/image?size=360", headers=H).content == \
+        client.get(f"/api/weddings/{w['id']}/photos/{b['id']}/image?size=360", headers=H).content
+
+    r = client.request("PUT", url + "/look", headers={**H, "Content-Type": "application/json"}, content="null")
+    assert r.json()["look"] is None
+    assert client.get(url + "/image?size=360", headers=H).content == with_look
+    assert client.get(url + "/image?size=1600&base=1", headers=H).status_code == 200
+    assert client.get(url + "/image?size=123", headers=H).status_code == 422
+    assert client.get(url + "/image?size=800&look=%7Bbroken", headers=H).status_code == 422
+    assert client.put(f"/api/weddings/{w['id']}/folders/999/look", headers=H, json={}).status_code == 404

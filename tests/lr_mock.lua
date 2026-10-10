@@ -63,6 +63,7 @@ local modules = {
     LrHttp = {
         get = function(url, headers) return http('GET', url, nil, headers) end,
         post = function(url, body, headers) return http('POST', url, body, headers) end,
+        openUrlInBrowser = function(url) M.opened = url end,
         postMultipart = function(url, content, headers) return http('MULTI', url, content[1].value, headers, content[2].filePath) end,
     },
     LrPathUtils = {

@@ -27,7 +27,7 @@ local LrView = import 'LrView'
 local Neutral = require 'Neutral'
 local Server = require 'Server'
 
-local PLUGIN_VERSION = '0.4'
+local PLUGIN_VERSION = '0.5'
 local PREVIEW_SIZE = 2560
 local STOP_AFTER_FAILURES = 5          -- in a row: the server or the internet is down
 local SNAPSHOT_NAME = 'Before Auto Edits'

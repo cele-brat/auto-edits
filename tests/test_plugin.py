@@ -180,3 +180,19 @@ def test_problems_are_reported_plainly(rig):
     before = len(rig.messages())
     rig.run()
     assert len(rig.messages()) == before
+
+
+def test_open_the_app_signs_the_browser_in_once(rig):
+    rig.run("OpenApp.lua")
+    url = rig.mock.opened
+    assert url.startswith("https://edits.test/enter/")
+    path = url[len("https://edits.test"):]
+    first = rig.client.get(path, follow_redirects=False)
+    assert first.status_code == 303 and "autoedits=" in first.headers["set-cookie"]
+    rig.client.cookies.clear()
+    again = rig.client.get(path, follow_redirects=False)                 # the link works once
+    assert "set-cookie" not in again.headers
+
+    rig.mock.prefs.serverKey = ""
+    rig.run("OpenApp.lua")
+    assert "server key is not set" in rig.messages()[-1][1]
