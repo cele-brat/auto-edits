@@ -306,6 +306,9 @@ class FakeBlobs:
         path.write_bytes(self.objects[key])
         return True
 
+    def stream(self, key):
+        yield self.objects[key]
+
     def delete_prefix(self, prefix):
         gone = [k for k in self.objects if k.startswith(prefix)]
         for k in gone:
@@ -344,3 +347,75 @@ def test_photos_already_on_the_disk_are_moved_into_storage(tmp_path):
     assert store.trim_working_copies(0) == 0                                  # not safe to remove yet
     assert store.store_pending() == 3 and len(blobs.objects) == 3 and store.store_pending() == 0
     assert store.trim_working_copies(0) == 3
+
+
+def _wedding_with_looks(c):
+    w = c.post("/api/weddings", headers=H, json={"name": "Asha & Rohan"}).json()
+    buf = io.BytesIO(); Image.effect_noise((900, 600), 40).convert("RGB").save(buf, "JPEG", quality=92)
+    for u, folder, name in (("u1", "Haldi", "A.NEF"), ("u2", "Haldi", "a.jpg"), ("u3", "Sangeet", "B.NEF")):
+        send(c, w["id"], u, folder, name, buf.getvalue())
+    folders = {f["name"]: f["id"] for f in c.get(f"/api/weddings/{w['id']}", headers=H).json()["folders"]}
+    preset = c.get("/api/presets", headers=H).json()["presets"][0]["id"]
+    c.put(f"/api/weddings/{w['id']}/folders/{folders['Haldi']}/look", headers=H,
+          json={"mode": "preset_auto", "preset": preset, "toggles": ["exposure"], "masks": {"background": {"ev": 0.3}}, "angle": 1.5})
+    return w, folders
+
+
+@pytest.mark.parametrize("cloud", [False, True])
+def test_export_on_the_server_and_download_as_zip(tmp_path, cloud):
+    import zipfile
+    from server.worker import work
+    blobs = FakeBlobs() if cloud else None
+    c = TestClient(create_app(str(tmp_path), KEY, blobs))
+    w, folders = _wedding_with_looks(c)
+    assert c.post(f"/api/weddings/{w['id']}/exports", headers=H, json={"size": 123}).status_code == 422
+    e = c.post(f"/api/weddings/{w['id']}/exports", headers=H, json={"size": 0, "quality": 88, "watermark": "Cele-Brat"}).json()
+    assert (e["total"], e["done"], e["state"]) == (3, 0, "waiting")
+    assert c.get(f"/api/exports/{e['id']}/zip", headers=H).status_code == 409
+
+    assert work(idle_exit=True, data_dir=str(tmp_path), blobs=blobs) == 3
+    done = c.get(f"/api/exports/{e['id']}", headers=H).json()
+    assert (done["done"], done["failed"], done["state"]) == (3, 0, "done") and done["bytes"] > 0 and done["failures"] == []
+    if cloud:
+        made = [k for k in blobs.objects if "/exports/" in k]
+        assert len(made) == 3 and not list(tmp_path.glob("weddings/*/exports/*/*/*.jpg"))      # kept in the bucket only
+
+    z = zipfile.ZipFile(io.BytesIO(c.get(f"/api/exports/{e['id']}/zip", headers=H).content))
+    assert sorted(z.namelist()) == ["Haldi/A.jpg", "Haldi/a-2.jpg", "Sangeet/B.jpg"]        # same name twice: both kept
+    edited = Image.open(io.BytesIO(z.read("Haldi/A.jpg"))); plain = Image.open(io.BytesIO(z.read("Sangeet/B.jpg")))
+    assert edited.size == (900, 600) and plain.size == (900, 600)
+    import numpy as np
+    a, b = np.asarray(edited).astype(int), np.asarray(plain).astype(int)
+    assert abs(a[:400].mean() - b[:400].mean()) > 1                                         # the look was applied
+    assert np.asarray(plain)[540:, 600:].max() > 250                                        # the watermark is there
+
+    proofs = c.post(f"/api/weddings/{w['id']}/exports", headers=H, json={"size": 2560, "folder": folders["Sangeet"]}).json()
+    assert proofs["total"] == 1 and proofs["scope"] == "Sangeet"
+    c.post(f"/api/exports/{proofs['id']}/stop", headers=H)
+    assert work(idle_exit=True, data_dir=str(tmp_path), blobs=blobs) == 0                   # stopped: nothing is made
+    assert c.get(f"/api/exports/{proofs['id']}", headers=H).json()["state"] == "stopped"
+    assert len(c.get(f"/api/weddings/{w['id']}/exports", headers=H).json()["exports"]) == 2
+    assert c.delete(f"/api/exports/{e['id']}", headers=H).json()["deleted"]
+    if cloud:
+        assert not [k for k in blobs.objects if f"/exports/{e['id']}/" in k]
+    assert c.get(f"/api/exports/{e['id']}", headers=H).status_code == 404
+
+
+def test_fast_export_renderer_matches_the_exact_one(tmp_path):
+    import numpy as np
+    from engine.fast import render8
+    from engine.presets import effective_settings
+    from engine.render import render
+    from server.looks import Renderer
+    r = Renderer()
+    rng = np.random.default_rng(1)
+    yy, xx = np.mgrid[0:300, 0:420].astype(np.float32)
+    img8 = (np.clip(np.stack([xx / 420, yy / 300, (xx + yy) / 720], -1) + rng.normal(0, 0.02, (300, 420, 3)), 0, 1) * 255).astype(np.uint8)
+    img = img8.astype(np.float32) / 255
+    for p in list(r.presets.values())[::60]:
+        s, c = effective_settings(p)
+        s = dict(s, GrainAmount=0)                                   # grain is random, so compare without it
+        for amount in (1.0, 0.5):
+            exact = render(img, s, c, {"temp": 6, "tint": -4, "exposure": 0.25}, amount=amount)
+            fast = render8(img8, s, c, {"temp": 6, "tint": -4, "exposure": 0.25}, amount=amount).astype(np.float32) / 255
+            assert np.abs(exact - fast).mean() < 0.006, p["display_name"]      # under 1.5 levels of 255 on average

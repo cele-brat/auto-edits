@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=7">
+<link rel="stylesheet" href="/static/app.css?v=8">
 </head>
 <body>
 <div id="signin" hidden>
@@ -26,6 +26,7 @@
     <select id="wedding" aria-label="Wedding"></select>
     <span id="count"></span>
     <button id="add-photos" type="button">Add photos</button>
+    <button id="export-open" type="button">Export</button>
     <span class="grow"></span>
     <div class="seg" role="group" aria-label="View">
       <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
@@ -136,6 +137,36 @@
   </div>
 </dialog>
 
+<dialog id="export">
+  <h2 class="title">Export finished photos</h2>
+  <p>The server makes the JPEGs with each photo's look. You can close this window or the browser: it carries on.</p>
+  <label class="field">Which photos
+    <select id="export-scope"></select>
+  </label>
+  <label class="field">Size
+    <select id="export-size">
+      <option value="2560">Proofs and social, 2560 px</option>
+      <option value="4000">Medium, 4000 px</option>
+      <option value="0">Full size (as large as was uploaded)</option>
+    </select>
+  </label>
+  <label class="field">JPEG quality
+    <select id="export-quality">
+      <option value="80">80 (smaller files)</option>
+      <option value="90" selected>90 (recommended)</option>
+      <option value="95">95 (largest files)</option>
+    </select>
+  </label>
+  <label class="field">Watermark text (leave empty for none) <input id="export-watermark" type="text" maxlength="80" autocomplete="off"></label>
+  <p id="export-error" role="alert"></p>
+  <div class="row end">
+    <button id="export-close" type="button" class="quiet">Close</button>
+    <button id="export-start" type="button" class="primary">Start export</button>
+  </div>
+  <h3 class="sub">Exports of this wedding</h3>
+  <ul id="export-list"></ul>
+</dialog>
+
 <dialog id="confirm">
   <p id="confirm-text"></p>
   <div class="row end">
@@ -143,7 +174,8 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=7"></script>
-<script src="/static/addfolder.js?v=7"></script>
+<script src="/static/app.js?v=8"></script>
+<script src="/static/addfolder.js?v=8"></script>
+<script src="/static/export.js?v=8"></script>
 </body>
 </html>

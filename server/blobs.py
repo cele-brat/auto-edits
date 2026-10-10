@@ -19,6 +19,7 @@ class NoBlobs:
     def put(self, key: str, path: Path) -> None: ...
     def fetch(self, key: str, path: Path) -> bool: return False
     def delete_prefix(self, prefix: str) -> int: return 0
+    def stream(self, key: str): return iter(())
 
 
 class R2Blobs:
@@ -33,6 +34,10 @@ class R2Blobs:
 
     def put(self, key: str, path: Path) -> None:
         self.s3.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": "image/jpeg"})
+
+    def stream(self, key: str):
+        """The object's bytes, a megabyte at a time."""
+        yield from self.s3.get_object(Bucket=self.bucket, Key=key)["Body"].iter_chunks(1 << 20)
 
     def fetch(self, key: str, path: Path) -> bool:
         """Bring one object down to path. False when the bucket does not have it."""

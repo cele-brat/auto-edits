@@ -16,13 +16,14 @@ import time
 from pathlib import Path
 
 from fastapi import Body, Cookie, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import VERSION, adjustments, blobs as blob_store
 from engine.presets import parse_xmp
 
+from .exports import SIZES as EXPORT_SIZES, Exports
 from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
 from .store import Store
 
@@ -44,6 +45,13 @@ class Login(BaseModel):
     key: str
 
 
+class NewExport(BaseModel):
+    size: int = 2560
+    quality: int = 90
+    watermark: str = ""
+    folder: int | None = None
+
+
 def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) -> FastAPI:
     key = key if key is not None else os.environ.get("AUTOEDITS_KEY", "")
     if len(key) < 16:
@@ -52,6 +60,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
                   blobs if blobs is not None else blob_store.from_environment())
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
+    exports = Exports(store)
+    app.state.exports = exports
 
     if store.blobs.on and os.environ.get("AUTOEDITS_WARM_UP") == "1":
         import threading
@@ -313,6 +323,53 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
         d = renderer.develop(store.preview_path(wedding_id, photo_id), chosen, iso)
         return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"],
                 "preset_masks": d["corrections"]}
+
+    # ---- exports made on the server ---------------------------------------------
+    @app.post("/api/weddings/{wedding_id}/exports", dependencies=api)
+    def start_export(wedding_id: str, body: NewExport):
+        wedding_or_404(wedding_id)
+        if body.size not in EXPORT_SIZES:
+            raise HTTPException(422, f"size must be one of {EXPORT_SIZES}")
+        try:
+            return exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/weddings/{wedding_id}/exports", dependencies=api)
+    def list_exports(wedding_id: str):
+        wedding_or_404(wedding_id)
+        return {"exports": exports.for_wedding(wedding_id)}
+
+    def export_or_404(export_id: str) -> dict:
+        e = exports.get(export_id)
+        if e is None:
+            raise HTTPException(404, "no such export")
+        return e
+
+    @app.get("/api/exports/{export_id}", dependencies=api)
+    def one_export(export_id: str):
+        return {**export_or_404(export_id), "failures": exports.failures(export_id)}
+
+    @app.post("/api/exports/{export_id}/stop", dependencies=api)
+    def stop_export(export_id: str):
+        export_or_404(export_id)
+        exports.stop(export_id)
+        return exports.get(export_id)
+
+    @app.delete("/api/exports/{export_id}", dependencies=api)
+    def delete_export(export_id: str):
+        export_or_404(export_id)
+        exports.delete(export_id)
+        return {"deleted": True}
+
+    @app.get("/api/exports/{export_id}/zip", dependencies=api)
+    def export_zip(export_id: str):
+        e = export_or_404(export_id)
+        if not e["done"]:
+            raise HTTPException(409, "no pictures are finished yet")
+        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_or_404(e["wedding_id"])["name"]).strip() or "export"
+        return StreamingResponse(exports.zip_stream(export_id), media_type="application/zip",
+                                 headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
 
     # ---- back to Lightroom ---------------------------------------------------
     @app.get("/api/weddings/{wedding_id}/apply", dependencies=api)

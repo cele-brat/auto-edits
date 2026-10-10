@@ -129,7 +129,7 @@ def straighten(img: np.ndarray, angle: float) -> np.ndarray:
     return cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
-def _detail(img: np.ndarray, texture: float, clarity: float) -> np.ndarray:
+def _detail(img: np.ndarray, texture: float, clarity: float, span: float | None = None) -> np.ndarray:
     """Texture (fine detail) and clarity (wider, mid-tone contrast) for a masked area.
 
     Uses an edge-keeping blur, so smoothing skin does not smear across the edge of
@@ -138,7 +138,7 @@ def _detail(img: np.ndarray, texture: float, clarity: float) -> np.ndarray:
     if not texture and not clarity:
         return img
     y = np.ascontiguousarray(_r._luma(np.clip(img, 0, 1)), np.float32)
-    span = float(np.hypot(*y.shape))
+    span = span or float(np.hypot(*y.shape))             # for a cut-out piece, the size of the whole picture
 
     def smooth(radius_frac, eps):                           # guided filter: blurs flat areas, keeps real edges
         k = 2 * max(2, int(radius_frac * span)) + 1
@@ -155,14 +155,14 @@ def _detail(img: np.ndarray, texture: float, clarity: float) -> np.ndarray:
     return np.clip(img + change[..., None], 0, 1)          # brightness only: colour stays where it was
 
 
-def _apply(img: np.ndarray, a: dict, curve=None) -> np.ndarray:
+def _apply(img: np.ndarray, a: dict, curve=None, span: float | None = None) -> np.ndarray:
     """One set of local adjustments on the whole picture (the mask is laid over it afterwards)."""
     P = _r.DEFAULT_PARAMS
     part = _r.white_balance(img, a.get("temp", 0), a.get("tint", 0), P)
     part = _r.exposure(part, a.get("ev", 0), P)
     part = _r.tone(part, {"Contrast2012": a.get("contrast", 0), "Highlights2012": a.get("hl", 0),
                           "Shadows2012": a.get("sh", 0), "Whites2012": a.get("wh", 0), "Blacks2012": a.get("bl", 0)}, P)
-    part = _detail(part, a.get("texture", 0), a.get("clarity", 0))
+    part = _detail(part, a.get("texture", 0), a.get("clarity", 0), span)
     if curve:
         part = _r.point_curves(part, {"ToneCurvePV2012": curve})
     part = _r.vibrance_saturation(part, {"Saturation": a.get("sat", 0)}, P)
@@ -200,6 +200,62 @@ def local_adjust(img: np.ndarray, masks: dict, adjustments: dict, corrections: l
             continue
         m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
         out = out + (_apply(out, a, curve) - out) * m
+    return out
+
+
+def local_adjust8(img8: np.ndarray, masks: dict, adjustments: dict, corrections: list | None = None) -> np.ndarray:
+    """local_adjust for a full-size 8-bit picture: each mask's change is worked out only
+    on the part of the picture the mask covers, which keeps large exports quick."""
+    h, w = img8.shape[:2]
+    span = float(np.hypot(h, w))
+    jobs = []
+    for c in corrections or []:
+        if c.get("shown") and (c.get("adjust") or c.get("curve")):
+            jobs.append((correction_mask(masks, c["parts"]), c["adjust"], c.get("curve"), c.get("amount", 1.0)))
+    for kind, a in adjustments.items():
+        jobs.append((masks.get(kind), a, None, 1.0))
+    out = img8
+    for m, a, curve, amount in jobs:
+        if m is None or float(m.max()) < 0.02:
+            continue
+        ys, xs = np.where(m > 0.01)
+        mh, mw = m.shape
+        pad = max(2, int(0.03 * max(mh, mw)))                       # room for clarity to see past the mask's edge
+        y0, y1 = max(0, ys.min() - pad), min(mh, ys.max() + 1 + pad)
+        x0, x1 = max(0, xs.min() - pad), min(mw, xs.max() + 1 + pad)
+        Y0, Y1, X0, X1 = y0 * h // mh, min(h, -(-y1 * h // mh)), x0 * w // mw, min(w, -(-x1 * w // mw))
+        if out is img8:
+            out = img8.copy()
+        part = out[Y0:Y1, X0:X1].astype(np.float32) / 255
+        cover = cv2.resize(m[y0:y1, x0:x1], (X1 - X0, Y1 - Y0), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
+        part = part + (_apply(part, a, curve, span) - part) * cover
+        out[Y0:Y1, X0:X1] = (np.clip(part, 0, 1) * 255 + 0.5).astype(np.uint8)
+    return out
+
+
+def watermark8(img8: np.ndarray, text: str) -> np.ndarray:
+    """The text in the bottom right corner, white with a soft dark edge so it reads on any picture."""
+    text = (text or "").strip()
+    if not text:
+        return img8
+    from PIL import Image, ImageDraw, ImageFilter, ImageFont
+    h, w = img8.shape[:2]
+    size = max(14, round(0.022 * max(h, w)))
+    font = ImageFont.load_default(size)
+    layer = Image.new("L", (w, h), 0)
+    draw = ImageDraw.Draw(layer)
+    box = draw.textbbox((0, 0), text, font=font)
+    margin = round(size * 1.1)
+    at = (w - (box[2] - box[0]) - margin - box[0], h - (box[3] - box[1]) - margin - box[1])
+    draw.text(at, text, font=font, fill=255)
+    y0, x0 = max(0, at[1] - size), max(0, at[0] - size)
+    letters = np.asarray(layer)[y0:, x0:].astype(np.float32) / 255
+    shadow = np.asarray(layer.crop((x0, y0, w, h)).filter(ImageFilter.GaussianBlur(size * 0.12))).astype(np.float32) / 255
+    out = img8.copy()
+    part = out[y0:, x0:].astype(np.float32)
+    part *= (1 - 0.45 * np.clip(shadow * 1.6, 0, 1))[..., None]
+    part += (255 - part) * (0.82 * letters)[..., None]
+    out[y0:, x0:] = np.clip(part + 0.5, 0, 255).astype(np.uint8)
     return out
 
 
@@ -348,6 +404,35 @@ class Renderer:
 
     def base(self, path: Path, size: int) -> bytes:
         return self._jpeg(self._load(path, size))
+
+    def export(self, path: Path, look: dict, max_side: int = 0, iso=None, quality: int = 90, watermark: str = "") -> bytes:
+        """The finished picture for delivery: the look applied at max_side (0 = as large as the
+        photo that was uploaded), with the fast renderer."""
+        from engine.fast import render8
+        bgr = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if bgr is None:
+            raise FileNotFoundError(path)
+        h, w = bgr.shape[:2]
+        if max_side and max(h, w) > max_side:
+            k = max_side / max(h, w)
+            bgr = cv2.resize(bgr, (max(1, round(w * k)), max(1, round(h * k))), interpolation=cv2.INTER_AREA)
+        img8 = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        del bgr
+        d = self.develop(path, look, iso)
+        out = render8(img8, d["settings"], d["curves"], d["manual"], amount=d["amount"])
+        texture = d["settings"].get("Texture")
+        if isinstance(texture, (int, float)) and texture:
+            out = (_detail(out.astype(np.float32) / 255, float(texture) * d["amount"], 0) * 255 + 0.5).astype(np.uint8)
+        if d["masks"] or d["corrections"]:
+            out = local_adjust8(out, self.masks(path), d["masks"], d["corrections"])
+        if abs(d["angle"]) >= 0.05:
+            out = straighten(out, d["angle"])
+        out = watermark8(out, watermark)
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(out, cv2.COLOR_RGB2BGR),
+                               [cv2.IMWRITE_JPEG_QUALITY, int(min(100, max(40, quality))), cv2.IMWRITE_JPEG_OPTIMIZE, 1])
+        if not ok:
+            raise RuntimeError("could not write the picture")
+        return buf.tobytes()
 
     def render(self, path: Path, look: dict, size: int, iso=None, show: str = "") -> bytes:
         """The photo with the look applied. show names a mask to tint red on top."""
