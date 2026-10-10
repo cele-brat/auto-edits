@@ -9,6 +9,12 @@ its own settings:
      "ev": -5..5, "temp": -100..100, "tint": -100..100,       # your own adjustment, added on top
      "hl", "sh", "wh", "bl": -100..100, "noise": -100..100, "angle": -15..15}
 
+     "masks": {"face_skin": {"texture": -30, "clarity": -10}, "sky": {...}}}   # only part of the photo
+
+Mask kinds are Lightroom's own (subject, background, face_skin, body_skin, hair,
+clothes, eyes, sky); each takes ev, contrast, hl, sh, texture, clarity, sat,
+temp and tint.
+
 Every "own adjustment" is added to whatever sets that slider: the preset's value,
 or the automatic value when its toggle is on.
 
@@ -26,7 +32,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from engine import render as _r
 from engine.auto import TOGGLES, auto_correct, combine
+from engine.masks import KINDS as MASK_KINDS
 from engine.presets import effective_settings
 from engine.render import render
 
@@ -44,9 +52,15 @@ ADJUST = {"hl": ("Highlights2012", -100, 100), "sh": ("Shadows2012", -100, 100),
           "bl": ("Blacks2012", -100, 100), "noise": ("LuminanceSmoothing", 0, 100), "angle": ("CropAngle", -45, 45)}
 
 
+# what a mask can change -> (lowest, highest)
+MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "sh": (-100, 100),
+               "texture": (-100, 100), "clarity": (-100, 100), "sat": (-100, 100), "temp": (-100, 100),
+               "tint": (-100, 100)}
+
+
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
-            "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0}
+            "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {}}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -78,6 +92,13 @@ def clean_look(raw, preset_ids=None) -> dict:
     for key in ("hl", "sh", "wh", "bl", "noise"):
         look[key] = _number(raw.get(key), -100.0, 100.0)
     look["angle"] = _number(raw.get("angle"), -15.0, 15.0)
+    masks = raw.get("masks") if isinstance(raw.get("masks"), dict) else {}
+    for kind in MASK_KINDS:                              # keep only masks that change something
+        given = masks.get(kind) if isinstance(masks.get(kind), dict) else {}
+        kept = {k: _number(given.get(k), lo, hi) for k, (lo, hi) in MASK_ADJUST.items()}
+        kept = {k: v for k, v in kept.items() if v}
+        if kept:
+            look["masks"][kind] = kept
     if look["mode"] == "auto":
         look["preset"], look["toggles"] = None, list(TOGGLES)
     elif look["mode"] == "preset":
@@ -99,6 +120,32 @@ def straighten(img: np.ndarray, angle: float) -> np.ndarray:
     zoom = float(np.cos(a) + max(w / h, h / w) * np.sin(a))
     m = cv2.getRotationMatrix2D((w / 2, h / 2), -angle, zoom)      # positive angle turns the picture clockwise
     return cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+
+def local_adjust(img: np.ndarray, masks: dict, adjustments: dict) -> np.ndarray:
+    """Apply each mask's adjustments to its part of the picture only."""
+    h, w = img.shape[:2]
+    P = _r.DEFAULT_PARAMS
+    out = img
+    for kind, a in adjustments.items():
+        m = masks.get(kind)
+        if m is None or not a or float(m.max()) < 0.02:
+            continue
+        m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)[..., None]
+        part = _r.white_balance(out, a.get("temp", 0), a.get("tint", 0), P)
+        part = _r.exposure(part, a.get("ev", 0), P)
+        part = _r.tone(part, {"Contrast2012": a.get("contrast", 0), "Highlights2012": a.get("hl", 0),
+                              "Shadows2012": a.get("sh", 0)}, P)
+        part = _r.local_contrast(part, {"Texture": a.get("texture", 0), "Clarity2012": a.get("clarity", 0)}, P)
+        part = _r.vibrance_saturation(part, {"Saturation": a.get("sat", 0)}, P)
+        out = out + (np.clip(part, 0, 1) - out) * m
+    return out
+
+
+def show_mask(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Tint the masked part red, the way Lightroom shows a mask."""
+    m = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)[..., None] * 0.55
+    return img * (1 - m) + np.array([1.0, 0.1, 0.1], np.float32) * m
 
 
 class _Cache:
@@ -124,6 +171,8 @@ class Renderer:
         self.presets = {p["id"]: p for p in data["presets"]}
         self._images = _Cache(24)
         self._autos = _Cache(4000)
+        self._masks = _Cache(12)
+        self._mask_lock = threading.Lock()
 
     def catalogue(self) -> list[dict]:
         """The presets as the app's picker needs them (no slider values)."""
@@ -166,6 +215,29 @@ class Renderer:
             raise RuntimeError("could not write the preview")
         return buf.tobytes()
 
+    # ---- masks ----------------------------------------------------------
+    def masks(self, path: Path) -> dict:
+        """The photo's masks. Made the first time they are needed, then kept beside the preview."""
+        stamp = path.stat().st_mtime_ns
+
+        def make():
+            kept = path.with_suffix(".masks.npz")
+            if kept.exists():
+                try:
+                    with np.load(kept) as z:
+                        if int(z["stamp"]) == stamp:
+                            return {k: z[k].astype(np.float32) / 255 for k in MASK_KINDS}
+                except Exception:
+                    pass                                     # unreadable or from an older photo: make it again
+            from engine import masks as maker
+            with self._mask_lock:                            # the mask models take one photo at a time
+                made = maker.compute(self._load(path, 1600))
+            part = kept.with_suffix(f".{threading.get_ident()}.part.npz")
+            np.savez_compressed(part, stamp=np.int64(stamp), **{k: (v * 255 + 0.5).astype(np.uint8) for k, v in made.items()})
+            part.replace(kept)
+            return made
+        return self._masks.get((str(path), stamp), make)
+
     # ---- looks ----------------------------------------------------------
     def auto_values(self, path: Path, toggles, iso=None) -> dict:
         """The automatic values for one photo. Measured on a fixed-size copy, so
@@ -190,14 +262,20 @@ class Renderer:
         manual = {"temp": float(manual.get("temp", 0.0)) + look["temp"],
                   "tint": float(manual.get("tint", 0.0)) + look["tint"], "exposure": look["ev"]}
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
-                "angle": float(settings.get("CropAngle") or 0.0),
+                "masks": look["masks"], "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None}
 
     def base(self, path: Path, size: int) -> bytes:
         return self._jpeg(self._load(path, size))
 
-    def render(self, path: Path, look: dict, size: int, iso=None) -> bytes:
+    def render(self, path: Path, look: dict, size: int, iso=None, show: str = "") -> bytes:
+        """The photo with the look applied. show names a mask to tint red on top."""
         d = self.develop(path, look, iso)
         img = self._load(path, size)
         out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
+        if d["masks"] or show:
+            masks = self.masks(path)
+            out = local_adjust(out, masks, d["masks"])
+            if show in masks:
+                out = show_mask(out, masks[show])
         return self._jpeg(straighten(out, d["angle"]))

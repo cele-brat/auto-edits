@@ -4,7 +4,6 @@ data/out
 data/server
 tests
 presets
-models
 plugin
 tools
 **/__pycache__

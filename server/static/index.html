@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=3">
+<link rel="stylesheet" href="/static/app.css?v=4">
 </head>
 <body>
 <div id="signin" hidden>
@@ -96,6 +96,11 @@
       <p id="auto-values"></p>
       <button id="reset" type="button" class="quiet">Reset these settings</button>
     </section>
+    <section id="mask-box">
+      <h2>Masks</h2>
+      <p class="hint">Change one part of the photo only. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p>
+      <div id="masks"></div>
+    </section>
     <p id="saved" aria-live="polite"></p>
   </aside>
 </div>
@@ -107,6 +112,6 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=3"></script>
+<script src="/static/app.js?v=4"></script>
 </body>
 </html>

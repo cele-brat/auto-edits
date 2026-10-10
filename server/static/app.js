@@ -18,7 +18,7 @@ const MODE_NOTES = {
 const S = {
   weddings: [], wedding: null, folderId: null, photos: [], presets: [], byPreset: new Map(), looks: [],
   photoId: null, view: 'grid', scope: 'folder', split: true, holdBefore: false, dividerAt: 0.5,
-  pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'],
+  pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
 };
 
 // ---- talking to the server ------------------------------------------------
@@ -37,7 +37,18 @@ async function api(path, options = {}) {
 
 // ---- looks ----------------------------------------------------------------
 const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0,
-  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0 });
+  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {} });
+// Parts of the photo that can be changed on their own (Lightroom's own mask kinds).
+const MASKS = [
+  ['face_skin', 'Face skin'], ['body_skin', 'Body skin'], ['eyes', 'Eyes'], ['hair', 'Hair'], ['clothes', 'Clothes'],
+  ['subject', 'People', 'the whole person'], ['background', 'Background', 'everything but the people'], ['sky', 'Sky', 'rough'],
+];
+const MASK_SLIDERS = [
+  { key: 'ev', label: 'Exposure', min: -2, max: 2, step: 0.05, digits: 2 },
+  { key: 'contrast', label: 'Contrast' }, { key: 'hl', label: 'Highlights' }, { key: 'sh', label: 'Shadows' },
+  { key: 'texture', label: 'Texture' }, { key: 'clarity', label: 'Clarity' }, { key: 'sat', label: 'Saturation' },
+  { key: 'temp', label: 'Warmth' }, { key: 'tint', label: 'Tint' },
+];
 // One line per setting: its Auto tick (toggle) and the slider for your own change (key).
 const ROWS = [
   { toggle: 'exposure', label: 'Exposure', key: 'ev', min: -3, max: 3, step: 0.05, digits: 2 },
@@ -57,6 +68,12 @@ function tidy(look) {
   if (l.mode === 'auto') { l.preset = null; l.toggles = [...ALL_TOGGLES]; }
   else if (l.mode === 'preset') l.toggles = [];
   else l.toggles = ALL_TOGGLES.filter((t) => l.toggles.includes(t));
+  const masks = {};
+  for (const [kind, values] of Object.entries(l.masks || {})) {
+    const kept = Object.fromEntries(Object.entries(values || {}).filter(([, v]) => v));
+    if (Object.keys(kept).length) masks[kind] = kept;
+  }
+  l.masks = masks;
   return l;
 }
 const folder = () => (S.wedding ? S.wedding.folders.find((f) => f.id === S.folderId) : null);
@@ -67,10 +84,11 @@ const editingPhoto = () => S.scope === 'photo' && S.view === 'loupe' && !!photo(
 const panelLook = () => (editingPhoto() ? lookOf(photo()) : folderLook());
 
 function describe(look) {
-  if (look.mode === 'auto') return 'Auto Correct';
+  const masks = Object.keys(look.masks || {}).length ? ' + masks' : '';
+  if (look.mode === 'auto') return `Auto Correct${masks}`;
   const p = S.byPreset.get(look.preset);
-  if (!p) return ROWS.some((r) => r.key && look[r.key]) ? 'Your own adjustment' : 'Not edited yet';
-  return p.name + (look.mode === 'preset_auto' && look.toggles.length ? ' + auto' : '');
+  if (!p) return ROWS.some((r) => r.key && look[r.key]) || masks ? `Your own adjustment${masks}` : 'Not edited yet';
+  return p.name + (look.mode === 'preset_auto' && look.toggles.length ? ' + auto' : '') + masks;
 }
 
 function hash(text) {
@@ -80,7 +98,8 @@ function hash(text) {
 }
 const base = (p) => `/api/weddings/${S.wedding.id}/photos/${p.id}`;
 const thumbUrl = (p) => `${base(p)}/image?size=360&k=${hash(JSON.stringify(lookOf(p)))}${p.v}`;
-const afterUrl = (p, size) => `${base(p)}/image?size=${size}&v=${p.v}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}`;
+const afterUrl = (p, size) => `${base(p)}/image?size=${size}&v=${p.v}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}` +
+  (S.showMask && S.openMask ? `&show=${S.openMask}` : '');
 const beforeUrl = (p) => `${base(p)}/image?size=1600&base=1&v=${p.v}`;
 
 // ---- saving ---------------------------------------------------------------
@@ -351,6 +370,50 @@ function buildRows() {
   }));
 }
 
+function maskValue(kind, key) {
+  return ((panelLook().masks || {})[kind] || {})[key] || 0;
+}
+function changeMask(kind, patch) {
+  const masks = { ...(panelLook().masks || {}) };
+  masks[kind] = patch === null ? {} : { ...(masks[kind] || {}), ...patch };
+  change({ masks });
+}
+
+function drawMasks() {
+  const look = panelLook();
+  const loupe = S.view === 'loupe' && !!photo();
+  const rows = [];
+  for (const [kind, label, note] of MASKS) {
+    const count = Object.keys((look.masks || {})[kind] || {}).length;
+    const open = S.openMask === kind;
+    const head = el('button', { type: 'button', className: 'part' }, [label]);
+    if (note) head.append(el('small', { textContent: note }));
+    if (count) head.append(el('span', { className: 'changed', textContent: `${count} change${count === 1 ? '' : 's'}` }));
+    head.setAttribute('aria-expanded', String(open));
+    head.onclick = () => { S.openMask = open ? null : kind; drawMasks(); if (S.showMask) drawStage(); };
+    rows.push(head);
+    if (!open) continue;
+    const body = el('div', { className: 'body' });
+    for (const sl of MASK_SLIDERS) {
+      const value = maskValue(kind, sl.key);
+      const input = el('input', { type: 'range', min: sl.min ?? -100, max: sl.max ?? 100, step: sl.step ?? 1, value });
+      const out = el('output', { textContent: signed(value, sl.digits || 0) });
+      input.dataset.mask = `${kind}.${sl.key}`;
+      input.oninput = () => { out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }); };
+      input.ondblclick = () => { changeMask(kind, { [sl.key]: 0 }); drawMasks(); };
+      body.append(el('label', { className: 'slider' }, [el('span', { textContent: sl.label }), input, out]));
+    }
+    const show = el('input', { type: 'checkbox', checked: S.showMask, disabled: !loupe });
+    show.onchange = () => { S.showMask = show.checked; drawStage(); };
+    const clear = el('button', { type: 'button', className: 'quiet', textContent: 'Clear this mask' });
+    clear.onclick = () => { changeMask(kind, null); drawMasks(); };
+    body.append(el('div', { className: 'tools' }, [
+      el('label', { className: 'show' }, [show, loupe ? 'Show it in red' : 'Open one photo to see it in red']), clear]));
+    rows.push(body);
+  }
+  $('masks').replaceChildren(...rows);
+}
+
 function setSlider(id, value, text) {
   const input = $(id);
   if (document.activeElement !== input) input.value = value;
@@ -424,6 +487,7 @@ function drawPanel() {
     }
   }
   setSlider('amount', look.amount, `${Math.round(look.amount * 100)}%`);
+  if (!(document.activeElement && document.activeElement.dataset && document.activeElement.dataset.mask)) drawMasks();
   drawAutoValues(look);
 }
 

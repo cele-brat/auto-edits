@@ -151,3 +151,27 @@ def test_own_adjustments_add_on_top(client, tmp_path):
     turned = straighten(img, 5)
     assert turned.shape == img.shape and not np.array_equal(turned, img) and straighten(img, 0) is img
     assert r.render(photo, {"mode": "preset", "angle": 3}, 360) != r.render(photo, {"mode": "preset"}, 360)
+
+
+def test_masks_change_only_their_part(tmp_path):
+    import numpy as np
+    from server.looks import Renderer, clean_look, local_adjust, show_mask
+    look = clean_look({"masks": {"face_skin": {"texture": -60, "clarity": 500, "junk": 3}, "hair": {"ev": 0},
+                                 "sky": {"sat": 40}, "made_up": {"ev": 1}}})
+    assert look["masks"] == {"face_skin": {"texture": -60, "clarity": 100}, "sky": {"sat": 40}}
+
+    img = np.full((40, 60, 3), 0.4, np.float32)
+    left = np.zeros((20, 30), np.float32); left[:, :15] = 1            # masks are smaller than the picture
+    out = local_adjust(img, {"subject": left, "sky": np.zeros((20, 30), np.float32)}, {"subject": {"ev": 1.0}, "sky": {"ev": 1.0}})
+    assert out[:, :25].mean() > 0.5 and np.allclose(out[:, 35:], 0.4, atol=1e-3)   # brighter inside, untouched outside
+    red = show_mask(img, left)
+    assert red[20, 5, 0] > red[20, 5, 1] and np.allclose(red[20, 55], 0.4)
+
+    photo = tmp_path / "p.jpg"
+    Image.effect_noise((320, 240), 40).convert("RGB").save(photo, "JPEG")
+    r = Renderer()
+    masks = r.masks(photo)                                             # made once, then kept beside the preview
+    assert set(masks) == {"subject", "background", "face_skin", "body_skin", "hair", "clothes", "eyes", "sky"}
+    assert all(m.ndim == 2 and 0 <= m.min() and m.max() <= 1 for m in masks.values())
+    assert photo.with_suffix(".masks.npz").exists()
+    assert r.render(photo, {"masks": {"background": {"ev": 1}}}, 360) != r.render(photo, {}, 360)

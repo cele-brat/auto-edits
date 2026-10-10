@@ -21,7 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import VERSION
-from .looks import SIZES, Renderer, clean_look, effective_look
+from .looks import MASK_KINDS, SIZES, Renderer, clean_look, effective_look
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -216,11 +216,13 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
             raise HTTPException(422, "the look could not be read")
 
     @app.get("/api/weddings/{wedding_id}/photos/{photo_id}/image", dependencies=api)
-    def image(wedding_id: str, photo_id: str, size: int = 1600, look: str = "", base: bool = False):
+    def image(wedding_id: str, photo_id: str, size: int = 1600, look: str = "", base: bool = False, show: str = ""):
         """The photo as the app shows it: untouched (base), with the look given,
         or, with neither, with the look saved for it."""
         if size not in SIZES:
             raise HTTPException(422, f"size must be one of {SIZES}")
+        if show and show not in MASK_KINDS:
+            raise HTTPException(422, f"show must be one of {MASK_KINDS}")
         p = photo_or_404(wedding_id, photo_id)
         path = store.preview_path(wedding_id, photo_id)
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
@@ -229,7 +231,7 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
             return Response(renderer.base(path, size), media_type="image/jpeg", headers=headers)
         chosen = read_look(look) if look else effective_look(p["settings"], p["folder_settings"])
         if size > 360:
-            return Response(renderer.render(path, chosen, size, iso), media_type="image/jpeg", headers=headers)
+            return Response(renderer.render(path, chosen, size, iso, show), media_type="image/jpeg", headers=headers)
         # small pictures for the grid are kept on disk, one per photo and look
         tag = hashlib.sha1(json.dumps([photo_id, p["received"], size, chosen], sort_keys=True).encode()).hexdigest()[:20]
         cached = store.cache_dir(wedding_id) / f"{tag}.jpg"
@@ -247,7 +249,7 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
         chosen = read_look(look) if look else effective_look(p["settings"], p["folder_settings"])
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
         d = renderer.develop(store.preview_path(wedding_id, photo_id), chosen, iso)
-        return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"]}
+        return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"]}
 
     @app.get("/")
     def home():
