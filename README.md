@@ -1,0 +1,35 @@
+# Auto Edits
+
+Server-side culling, preset editing and proof export for Lightroom Classic catalogues.
+Plan: "Auto Edits: Build Plan" (Claude doc). This repository is built in the stages listed there.
+
+## Status
+
+Stage 1 (accuracy and speed test) is in progress.
+
+| Part | State |
+| --- | --- |
+| `engine/presets.py` | Reads preset .xmp files; 500 Cele-Brat presets indexed by Product ID in `data/presets.json`; toggle rule implemented |
+| `engine/render.py` | Preview engine v0: exposure, white balance, calibration, contrast, highlights, shadows, whites, blacks, texture, clarity, point curves, colour mixer, vibrance, saturation, colour grading, vignette, grain |
+| `tools/accuracy.py` | Compares the engine with real Lightroom exports (CIEDE2000) and writes side-by-side sheets |
+| `tools/fit_params.py` | Fits the engine's strength constants to Lightroom exports |
+| `tools/bench.py` | Render timing on the current machine |
+| `tools/contact_sheet.py` | One photo in many presets on one sheet |
+
+The engine is our own approximation of Lightroom, not Adobe's code. Its strength constants are
+first guesses until `tools/fit_params.py` has been run on real Lightroom exports.
+
+## Commands
+
+    python -m pytest -q tests
+    python -m engine.presets presets/library data/presets.json
+    python -m tools.bench
+    python -m tools.accuracy TESTSET data/out/accuracy
+    python -m tools.fit_params TESTSET data/params.json
+
+## Test set layout
+
+    TESTSET/
+      base/                          Lightroom JPEG exports with no preset
+      Cele-Brat MG 01 Signature/     the same photos exported with that preset
+      ...
