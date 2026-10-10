@@ -3,9 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>Auto Edits: cull, edit and deliver a whole wedding</title>
-<meta name="description" content="Auto Edits rates every photo of a wedding, applies your Lightroom presets with per-photo corrections, and makes the finished JPEGs on the server.">
+<title>Auto Edits: wedding photo culling and editing with your Lightroom presets</title>
+<meta name="description" content="Cull, edit and export a whole wedding online. Auto Edits rates every photo, applies your Lightroom presets with per-photo corrections and makes the JPEGs on a server. 50 free credits.">
+<link rel="canonical" href="https://edits.cele-brat.solutions/">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<meta name="theme-color" content="#083f44">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Auto Edits">
+<meta property="og:title" content="Auto Edits: a whole wedding, culled and edited while you rest">
+<meta property="og:description" content="Automatic culling, your Lightroom presets with per-photo corrections, and server-side export for wedding photographers. Start with 50 free credits.">
+<meta property="og:url" content="https://edits.cele-brat.solutions/">
+<meta property="og:image" content="https://edits.cele-brat.solutions/static/share.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="A couple portrait edited with Auto Edits, shown as before and after">
+<meta property="og:locale" content="en_IN">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Auto Edits: a whole wedding, culled and edited while you rest">
+<meta name="twitter:description" content="Automatic culling, your Lightroom presets with per-photo corrections, and server-side export for wedding photographers.">
+<meta name="twitter:image" content="https://edits.cele-brat.solutions/static/share.jpg">
+<script type="application/ld+json">[{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Auto Edits","url":"https://edits.cele-brat.solutions/","applicationCategory":"MultimediaApplication","applicationSubCategory":"Photo editing and culling","operatingSystem":"Web browser; plug-in for Adobe Lightroom Classic on macOS and Windows","description":"Online culling, preset-based editing and export for wedding photographers. Works on its own or with Lightroom Classic.","image":"https://edits.cele-brat.solutions/static/share.jpg","featureList":["Automatic culling into Keep, Maybe and Reject with reasons","500 built-in presets and your own Lightroom .xmp presets","Automatic exposure, white balance, tone, noise and straightening per photo","Automatic masks for subject, sky, skin, hair, clothes and eyes","Server-side JPEG export with watermark","Lightroom Classic plug-in"],"offers":{"@type":"Offer","price":"1","priceCurrency":"INR","priceValidUntil":"2026-12-31","description":"₹1 per credit until 31 December 2026 (₹3 after). One credit per exported photo; one credit per 10 photos culled. 50 free credits on sign-up.","url":"https://edits.cele-brat.solutions/#pricing"},"publisher":{"@type":"Organization","name":"Cele-Brat","url":"https://edits.cele-brat.solutions/"}},{"@context":"https://schema.org","@type":"WebSite","name":"Auto Edits","url":"https://edits.cele-brat.solutions/"},{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"What is Auto Edits?","acceptedAnswer":{"@type":"Answer","text":"Auto Edits is an online tool for wedding photographers. It culls a whole wedding, applies your Lightroom presets with corrections worked out for each photo, and exports the finished JPEGs on a server, so your own computer stays free."}},{"@type":"Question","name":"Are my raw files uploaded?","acceptedAnswer":{"@type":"Answer","text":"No. Raw files stay on your computer. Only the preview stored inside each raw file is uploaded, which keeps uploads fast and your originals at home."}},{"@type":"Question","name":"Does it work with Lightroom Classic?","acceptedAnswer":{"@type":"Answer","text":"Yes. A Lightroom Classic plug-in sends selected photos to the app and brings the edits back into your catalogue as normal develop settings, with a \"Before Auto Edits\" snapshot on every photo. You can also use Auto Edits on its own, without Lightroom."}},{"@type":"Question","name":"Can I use my own presets?","acceptedAnswer":{"@type":"Answer","text":"Yes. Upload the .xmp presets you exported from Lightroom, including presets with masks. Auto Edits also has 500 presets built in: 100 looks, each in five variations."}},{"@type":"Question","name":"How does the automatic culling decide?","acceptedAnswer":{"@type":"Answer","text":"Each photo is checked for focus, motion blur, exposure, closed eyes, awkward expressions and near-identical shots, then rated Keep, Maybe or Reject with the reason shown. You can change any rating yourself, and nothing is ever deleted."}},{"@type":"Question","name":"How much does Auto Edits cost?","acceptedAnswer":{"@type":"Answer","text":"You pay with credits. Each photo you export, or send back to Lightroom with its edit, is one credit. Culling is one credit for every 10 photos. A credit costs ₹1 until 31 December 2026 and ₹3 after that."}},{"@type":"Question","name":"Is there a free trial?","acceptedAnswer":{"@type":"Answer","text":"Yes. New accounts get 50 free credits once the email address is confirmed, with no card needed. That is enough to export 50 edited photos or cull 500. There is one free trial per internet connection."}},{"@type":"Question","name":"What sizes can I export?","acceptedAnswer":{"@type":"Answer","text":"2560 px for proofs and social media, 4000 px, or full size, at JPEG quality 80, 90 or 95. You can add a text watermark and export every photo, only Keep, or Keep and Maybe."}},{"@type":"Question","name":"Are my photos private?","acceptedAnswer":{"@type":"Answer","text":"Yes. Nothing is visible without logging in, each photographer sees only their own weddings, and the connection is encrypted."}}]}]</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -138,6 +155,15 @@ section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
 .tag-card dl div { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
 .tag-card dt { color: var(--soft); } .tag-card dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 .tag-card dd s { font-weight: 400; color: var(--soft); margin-right: 10px; }
+
+/* questions and answers */
+.faq { margin-top: clamp(28px, 4vw, 48px); border-top: 1.5px solid var(--ink); max-width: 900px; }
+.faq details { border-bottom: 1px solid var(--rule); }
+.faq summary { cursor: pointer; list-style: none; padding: 20px 44px 20px 0; position: relative; font-weight: 600; font-size: 20px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%); font: 400 30px/1 var(--body); color: var(--peacock); transition: transform .25s; }
+.faq details[open] summary::after { transform: translateY(-50%) rotate(45deg); }
+.faq p { padding: 0 44px 22px 0; color: var(--soft); }
 
 /* two routes: a comparison, so two equal columns */
 .routes { display: grid; grid-template-columns: 1fr 1fr; margin-top: clamp(36px, 5vw, 64px); background: var(--peacock-deep); color: #eaf3f1; border-radius: 6px; overflow: hidden; }
@@ -397,6 +423,23 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
   </div>
 </section>
 
+<section id="faq">
+  <div class="intro">
+    <h2>Questions photographers ask</h2>
+  </div>
+  <div class="faq">
+    <details><summary>What is Auto Edits?</summary><p>Auto Edits is an online tool for wedding photographers. It culls a whole wedding, applies your Lightroom presets with corrections worked out for each photo, and exports the finished JPEGs on a server, so your own computer stays free.</p></details>
+    <details><summary>Are my raw files uploaded?</summary><p>No. Raw files stay on your computer. Only the preview stored inside each raw file is uploaded, which keeps uploads fast and your originals at home.</p></details>
+    <details><summary>Does it work with Lightroom Classic?</summary><p>Yes. A Lightroom Classic plug-in sends selected photos to the app and brings the edits back into your catalogue as normal develop settings, with a &quot;Before Auto Edits&quot; snapshot on every photo. You can also use Auto Edits on its own, without Lightroom.</p></details>
+    <details><summary>Can I use my own presets?</summary><p>Yes. Upload the .xmp presets you exported from Lightroom, including presets with masks. Auto Edits also has 500 presets built in: 100 looks, each in five variations.</p></details>
+    <details><summary>How does the automatic culling decide?</summary><p>Each photo is checked for focus, motion blur, exposure, closed eyes, awkward expressions and near-identical shots, then rated Keep, Maybe or Reject with the reason shown. You can change any rating yourself, and nothing is ever deleted.</p></details>
+    <details><summary>How much does Auto Edits cost?</summary><p>You pay with credits. Each photo you export, or send back to Lightroom with its edit, is one credit. Culling is one credit for every 10 photos. A credit costs ₹1 until 31 December 2026 and ₹3 after that.</p></details>
+    <details><summary>Is there a free trial?</summary><p>Yes. New accounts get 50 free credits once the email address is confirmed, with no card needed. That is enough to export 50 edited photos or cull 500. There is one free trial per internet connection.</p></details>
+    <details><summary>What sizes can I export?</summary><p>2560 px for proofs and social media, 4000 px, or full size, at JPEG quality 80, 90 or 95. You can add a text watermark and export every photo, only Keep, or Keep and Maybe.</p></details>
+    <details><summary>Are my photos private?</summary><p>Yes. Nothing is visible without logging in, each photographer sees only their own weddings, and the connection is encrypted.</p></details>
+  </div>
+</section>
+
 <section class="close">
   <h2>Try it on your next wedding, free</h2>
   <p class="soft" style="margin:-12px 0 28px">50 free credits when you sign up.</p>
@@ -407,7 +450,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 </section>
 </main>
 
-<footer><span>Auto Edits by Cele-Brat</span><span>Made for wedding photographers</span></footer>
+<footer><span>Auto Edits by Cele-Brat</span><a href="#faq">Questions</a><span>Made for wedding photographers</span></footer>
 
 <dialog id="auth" class="login" aria-labelledby="auth-title">
   <form id="auth-form" novalidate>

@@ -1,0 +1,31 @@
+# Auto Edits
+
+> Auto Edits is an online culling, editing and export tool for wedding photographers, made by Cele-Brat. It rates every photo of a wedding, applies the photographer's Lightroom presets with corrections worked out for each photo, and makes the finished JPEGs on a server. It works on its own in a browser or together with Adobe Lightroom Classic.
+
+Website: https://edits.cele-brat.solutions/
+
+## What it does
+
+- Culling: every photo is rated Keep, Maybe or Reject, with the reason shown. Checks: focus, motion blur, exposure, closed eyes, awkward expressions, near-identical shots. Three strictness levels. Ratings can be changed by hand. Nothing is deleted.
+- Presets: 500 built in (100 looks, each in five variations, in six packs: Portrait, Glamour, Studio, Street, Landscape, World). Photographers can also upload their own Lightroom .xmp presets, including presets with masks.
+- Automatic corrections per photo: exposure, white balance, highlights, shadows, whites, blacks, noise reduction, straightening and lens fix. White balance reads both neutral areas and face skin.
+- Adjustments: the same panels as Lightroom, in the same order (Basic, Tone Curve, Color Mixer, Color Grading, Detail, Lens Corrections, Transform, Effects, Calibration).
+- Masks found automatically: subject, background, sky, face skin, body skin, hair, clothes, eyes, iris, teeth, lips, eyebrows.
+- Before and after view on every photo.
+- Export: 2560 px, 4000 px or full size; JPEG quality 80, 90 or 95; optional text watermark; every photo, Keep only, or Keep and Maybe; delivered as one zip. Exports carry on after the browser is closed.
+- Lightroom Classic plug-in: send selected photos to the app, choose looks there, bring the edits back as normal develop settings with a "Before Auto Edits" snapshot.
+
+## Privacy
+
+- Raw files stay on the photographer's computer. Only the preview stored inside each raw file is uploaded.
+- Nothing is visible without logging in. Each photographer sees only their own weddings. The connection is encrypted.
+
+## Pricing
+
+- Paid with credits. One credit per photo exported or sent back to Lightroom with its edit. Culling costs one credit per 10 photos.
+- One credit costs ₹1 (Indian rupee) until 31 December 2026, and ₹3 after that.
+- Free trial: 50 credits when a new account's email is confirmed, no card needed, one free trial per internet connection.
+
+## Who it is for
+
+Wedding and event photographers who shoot thousands of photos per event and want culling, first-pass editing and proof or final export done without tying up their own computer.

@@ -738,6 +738,26 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                          wedding_id, marked)
         return {"marked": marked}
 
+    # ---- for search engines and AI assistants ------------------------------------
+    SITE = os.environ.get("AUTOEDITS_SITE", "https://edits.cele-brat.solutions").rstrip("/")
+
+    @app.get("/robots.txt")
+    def robots():
+        """The home page is public; everything behind the log-in stays out of search."""
+        return Response("User-agent: *\nAllow: /$\nAllow: /static/\nAllow: /llms.txt\nDisallow: /api/\nDisallow: /enter/\n"
+                        "Disallow: /verify/\nDisallow: /reset/\nDisallow: /admin\n\n" f"Sitemap: {SITE}/sitemap.xml\n", media_type="text/plain")
+
+    @app.get("/sitemap.xml")
+    def sitemap():
+        changed = time.strftime("%Y-%m-%d", time.gmtime((STATIC / "home.html").stat().st_mtime))
+        return Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+                        f"  <url><loc>{SITE}/</loc><lastmod>{changed}</lastmod></url>\n</urlset>\n", media_type="application/xml")
+
+    @app.get("/llms.txt")
+    def llms():
+        """A plain summary of the product for AI assistants that read sites on a person's behalf."""
+        return FileResponse(STATIC / "llms.txt", media_type="text/markdown; charset=utf-8")
+
     @app.get("/")
     def home(autoedits: str = Cookie(default="")):
         """The app for someone logged in, the public home page for everyone else."""
