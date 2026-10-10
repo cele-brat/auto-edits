@@ -48,7 +48,7 @@ p { margin: 0; max-width: 62ch; }
 
 /* the before and after frame */
 .compare { margin: clamp(36px, 6vw, 80px) var(--edge) 0; position: relative; aspect-ratio: 21 / 9; border-radius: 6px; overflow: hidden; background: #0b1f23; touch-action: pan-y; user-select: none; cursor: ew-resize; box-shadow: 0 30px 60px -30px rgba(8, 63, 68, .55); }
-.compare svg, .compare img.scene { position: absolute; object-fit: cover; object-position: center 30%; inset: 0; width: 100%; height: 100%; display: block; }
+.compare svg, .compare img.scene { position: absolute; object-fit: cover; object-position: center 22%; inset: 0; width: 100%; height: 100%; display: block; }
 .compare .before { clip-path: inset(0 calc(100% - var(--at, 50%)) 0 0); filter: brightness(.6) saturate(.62) sepia(.55) hue-rotate(-14deg) contrast(.82); }
 .compare .line { position: absolute; top: 0; bottom: 0; left: var(--at, 50%); width: 2px; margin-left: -1px; background: #fff; }
 .compare .knob { position: absolute; top: 50%; left: var(--at, 50%); width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: #fff; border: 0; cursor: ew-resize; display: grid; place-items: center; }
