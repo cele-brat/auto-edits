@@ -7,6 +7,10 @@
 
   The Auto Edits engine is tuned by comparing its own rendering with these.
 
+  Version 0.2: presets are applied as plain develop settings carried inside the
+  plug-in (TestPresets.lua), one write per step, and a log of what Lightroom
+  reports after each step is saved next to the exports.
+
   Safety: before anything changes, each photo gets a develop snapshot named
   "Before Auto Edits reference", and its settings are put back when the run
   ends, also when the run fails or is cancelled.
@@ -23,20 +27,8 @@ local LrTasks = import 'LrTasks'
 
 local MAX_PHOTOS = 30
 
--- Presets used for the test. Each entry: folder name to write, then the names
--- the preset may carry in Lightroom (full-name pack first, original short name second).
-local TEST_PRESETS = {
-    { folder = 'Dan Winters 01 Signature',
-      names = { 'Cele-Brat Dan Winters 01 Signature', 'Cele-Brat DWN 01 Signature' }, group = 'Dan Winters' },
-    { folder = 'Alexi Lubomirski 03 Reception Night',
-      names = { 'Cele-Brat Alexi Lubomirski 03 Reception Night', 'Cele-Brat AL 03 Reception Night' }, group = 'Alexi Lubomirski' },
-    { folder = 'Alexi Lubomirski 02 Daylight Bright',
-      names = { 'Cele-Brat Alexi Lubomirski 02 Daylight Bright', 'Cele-Brat AL 02 Daylight Bright' }, group = 'Alexi Lubomirski' },
-    { folder = 'Corbin Gurkin 04 Soft Matte',
-      names = { 'Cele-Brat Corbin Gurkin 04 Soft Matte', 'Cele-Brat CG 04 Soft Matte' }, group = 'Corbin Gurkin' },
-    { folder = 'Thomas Heaton 02 Golden Hour',
-      names = { 'Cele-Brat Thomas Heaton 02 Golden Hour', 'Cele-Brat TH 02 Golden Hour' }, group = 'Thomas Heaton' },
-}
+-- The test presets and their settings travel with the plug-in.
+local TEST_PRESETS = require 'TestPresets'
 
 -- Every setting a slider preset can touch, at its neutral value. Applying this
 -- gives the "no preset" starting point without touching white balance, crop,
@@ -69,32 +61,33 @@ local function neutralSettings()
     return s
 end
 
--- Find installed develop presets by name. Returns name -> list of { preset, groupName }.
-local function installedPresets()
-    local byName = {}
-    for _, folder in ipairs(LrApplication.developPresetFolders()) do
-        local groupName = folder:getName()
-        for _, preset in ipairs(folder:getDevelopPresets()) do
-            local name = preset:getName()
-            byName[name] = byName[name] or {}
-            table.insert(byName[name], { preset = preset, group = groupName })
-        end
-    end
-    return byName
+-- neutral settings with one preset's settings laid over them
+local function withPreset(neutral, presetSettings)
+    local t = {}
+    for k, v in pairs(neutral) do t[k] = v end
+    for k, v in pairs(presetSettings) do t[k] = v end
+    return t
 end
 
-local function findPreset(entry, byName)
-    for _, name in ipairs(entry.names) do
-        local hits = byName[name]
-        if hits then
-            -- several presets can share a short name: prefer the one in the right look group
-            for _, h in ipairs(hits) do
-                if string.find(h.group, entry.group, 1, true) then return h.preset end
-            end
-            if #hits == 1 then return hits[1].preset end
-        end
+-- what Lightroom itself reports for a photo, for the log
+local LOG_KEYS = { 'Exposure2012', 'Contrast2012', 'Highlights2012', 'Shadows2012', 'Whites2012', 'Blacks2012',
+                   'Vibrance', 'Saturation', 'SplitToningShadowHue', 'SplitToningShadowSaturation',
+                   'PostCropVignetteAmount', 'GrainAmount', 'ToneCurveName2012', 'CameraProfile', 'ProcessVersion',
+                   'WhiteBalance', 'Temperature', 'Tint' }
+
+local function describe(photo)
+    local s = photo:getDevelopSettings()
+    local parts = {}
+    for _, k in ipairs(LOG_KEYS) do
+        table.insert(parts, k .. '=' .. tostring(s[k]))
     end
-    return nil
+    local curve = s.ToneCurvePV2012
+    if type(curve) == 'table' then
+        local nums = {}
+        for _, v in ipairs(curve) do table.insert(nums, tostring(v)) end
+        table.insert(parts, 'ToneCurvePV2012={' .. table.concat(nums, ',') .. '}')
+    end
+    return table.concat(parts, ' ')
 end
 
 local function exportTo(photos, parentFolder, subfolder)
@@ -157,23 +150,7 @@ local function run(context)
         return
     end
 
-    -- which test presets are installed?
-    local byName = installedPresets()
-    local found, missing = {}, {}
-    for _, entry in ipairs(TEST_PRESETS) do
-        local preset = findPreset(entry, byName)
-        if preset then
-            table.insert(found, { folder = entry.folder, preset = preset })
-        else
-            table.insert(missing, entry.folder)
-        end
-    end
-    if #found == 0 then
-        LrDialogs.message('Auto Edits',
-            'None of the five test presets were found in Lightroom. Import the Cele-Brat presets first (Develop > Presets > + > Import Presets).',
-            'warning')
-        return
-    end
+    local found, missing = TEST_PRESETS, {}
 
     local message = string.format(
         '%d photos will be exported %d times: once with no preset and once for each of %d presets.\n\n' ..
@@ -217,12 +194,24 @@ local function run(context)
     local neutral = neutralSettings()
     local steps = #found + 1
     local failures = 0
+    local log = { 'Auto Edits reference exports, plug-in 0.2', os.date('%Y-%m-%d %H:%M:%S'), '' }
+    for i, p in ipairs(photos) do
+        table.insert(log, string.format('photo %d: %s', i, tostring(p:getFormattedMetadata('fileName'))))
+    end
+    table.insert(log, '')
+    table.insert(log, 'ORIGINAL   ' .. describe(photos[1]))
+
+    local function applyToAll(settings, historyName)
+        catalog:withWriteAccessDo('Auto Edits: ' .. historyName, function()
+            for _, p in ipairs(photos) do p:applyDevelopSettings(settings, 'Auto Edits: ' .. historyName) end
+        end, { timeout = 30 })
+        LrTasks.sleep(1.5)                 -- let Lightroom take the new settings in before rendering
+    end
 
     -- 1. base: neutral settings, no preset
     progress:setCaption('Exporting: base (no preset)')
-    catalog:withWriteAccessDo('Auto Edits: neutral settings', function()
-        for _, p in ipairs(photos) do p:applyDevelopSettings(neutral) end
-    end, { timeout = 30 })
+    applyToAll(neutral, 'neutral')
+    table.insert(log, 'BASE       ' .. describe(photos[1]))
     failures = failures + exportTo(photos, outFolder, 'base')
     progress:setPortionComplete(1, steps)
 
@@ -230,14 +219,16 @@ local function run(context)
     for i, item in ipairs(found) do
         if progress:isCanceled() then break end
         progress:setCaption('Exporting: ' .. item.folder)
-        catalog:withWriteAccessDo('Auto Edits: apply preset', function()
-            for _, p in ipairs(photos) do
-                p:applyDevelopSettings(neutral)
-                p:applyDevelopPreset(item.preset)
-            end
-        end, { timeout = 30 })
+        applyToAll(withPreset(neutral, item.settings), item.folder)
+        table.insert(log, string.format('%-10s ', item.id) .. describe(photos[1]))
         failures = failures + exportTo(photos, outFolder, item.folder)
         progress:setPortionComplete(i + 1, steps)
+    end
+
+    local fh = io.open(LrPathUtils.child(outFolder, 'reference_log.txt'), 'w')
+    if fh then
+        fh:write(table.concat(log, '\n') .. '\n')
+        fh:close()
     end
 
     local cancelled = progress:isCanceled()
