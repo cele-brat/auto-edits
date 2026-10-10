@@ -296,3 +296,25 @@ def test_mail_without_settings_goes_to_the_log(capsys):
     assert not m.on
     m.send("a@example.com", "Hello", "Body")
     assert "a@example.com" in capsys.readouterr().out
+
+
+def test_free_credits_once_per_internet_address(app, box):
+    def from_ip(email, ip):
+        c = browser(app)
+        H = {"X-Forwarded-For": f"10.0.0.9, {ip}"}           # Traefik adds the real address last
+        assert c.post("/api/signup", headers=H, json={"email": email, "password": "a good password"}).status_code == 200
+        r = c.get(f"/verify/{box.link(email, 'verify')}", follow_redirects=False)
+        return c, r.headers["location"]
+
+    a, where = from_ip("a@example.com", "203.0.113.5")
+    assert where == "/?verified=1" and a.get("/api/me").json()["credits"] == 50
+    b, where = from_ip("b@example.com", "203.0.113.5")                # same address: account works, no free credits
+    assert where == "/?verified=0" and b.get("/api/me").json()["credits"] == 0
+    assert b.get("/api/me").json()["user"]["verified"]
+    c, where = from_ip("c@example.com", "198.51.100.7")               # another address: free credits
+    assert c.get("/api/me").json()["credits"] == 50
+    spoof = browser(app)                                               # a made-up first entry does not help
+    spoof.post("/api/signup", headers={"X-Forwarded-For": "1.2.3.4, 203.0.113.5"},
+               json={"email": "d@example.com", "password": "a good password"})
+    spoof.get(f"/verify/{box.link('d@example.com', 'verify')}")
+    assert spoof.get("/api/me").json()["credits"] == 0

@@ -131,8 +131,14 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     links: dict[str, tuple[float, str]] = {}   # one-time sign-in links -> (when they stop working, user)
     tries: dict[str, list[float]] = {}         # recent attempts per address, to slow down guessing
 
+    def client_ip(request: Request) -> str:
+        """The visitor's address. Traefik adds the address it was reached from as the last entry of
+        X-Forwarded-For; earlier entries come from the visitor and could be made up, so they are ignored."""
+        forwarded = [x.strip() for x in request.headers.get("x-forwarded-for", "").split(",") if x.strip()]
+        return forwarded[-1] if forwarded else (request.client.host if request.client else "")
+
     def too_many(what: str, request: Request, limit: int, seconds: int) -> bool:
-        who = f"{what}|{request.headers.get('x-forwarded-for', '').split(',')[0].strip() or (request.client.host if request.client else '')}"
+        who = f"{what}|{client_ip(request)}"
         now = time.time()
         recent = [t for t in tries.get(who, []) if t > now - seconds]
         tries[who] = recent + [now]
@@ -183,7 +189,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if too_many("signup", request, 8, 3600):
             raise HTTPException(429, "Too many sign-ups from here. Please try again in an hour.")
         try:
-            user = accounts.sign_up(body.email, body.password, body.name)
+            user = accounts.sign_up(body.email, body.password, body.name, client_ip(request))
         except ValueError as e:
             raise HTTPException(422, str(e))
         send_verify(request, user)
@@ -202,7 +208,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if user is None:
             time.sleep(1)                    # slows down guessing
             raise HTTPException(401, "That email and password do not match.")
-        tries.pop(f"login|{request.headers.get('x-forwarded-for', '').split(',')[0].strip() or (request.client.host if request.client else '')}", None)
+        tries.pop(f"login|{client_ip(request)}", None)
         give_cookie(response, request, user["id"])
         return {"user": public(user)}
 
@@ -244,7 +250,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if not user_id:
             return RedirectResponse("/?link=expired", status_code=303)
         accounts.verify(user_id)
-        response = RedirectResponse("/?verified=1", status_code=303)
+        response = RedirectResponse("/?verified=1" if accounts.got_free(user_id) else "/?verified=0", status_code=303)
         give_cookie(response, request, user_id)
         return response
 
@@ -263,7 +269,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     @app.get("/api/me")
     def me(user: dict = Depends(signed_in)):
-        return {"user": public(user), "credits": accounts.balance(user["id"]),
+        return {"user": public(user), "credits": accounts.balance(user["id"]), "free_given": accounts.got_free(user["id"]),
                 "prices": {"export": 1, "cull_photos_per_credit": 10}}
 
     @app.get("/api/credits")

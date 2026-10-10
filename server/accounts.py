@@ -50,6 +50,7 @@ SESSION_DAYS = 30
 VERIFY_HOURS = 48
 RESET_HOURS = 2
 FREE_CREDITS = 50                 # given once, when the email address is confirmed
+FREE_PER_IP_DAYS = 30             # free credits go to one account per internet address in this time
 PHOTOS_PER_CULL_CREDIT = 10
 MIN_PASSWORD = 8
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -99,6 +100,9 @@ class Accounts:
         self.store = store
         with store._db() as db:
             db.executescript(SCHEMA)
+            if "signup_ip" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
+                db.execute("ALTER TABLE users ADD COLUMN signup_ip TEXT NOT NULL DEFAULT ''")
+            db.execute("CREATE INDEX IF NOT EXISTS users_by_ip ON users (signup_ip)")
         self.admin_email = admin_email.strip().lower()
         self.admin_id = self._ensure_admin() if self.admin_email else ""
 
@@ -131,7 +135,7 @@ class Accounts:
             r = db.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
         return dict(r) if r else None
 
-    def sign_up(self, email: str, password: str, name: str = "") -> dict:
+    def sign_up(self, email: str, password: str, name: str = "", ip: str = "") -> dict:
         email = email.strip().lower()
         if not EMAIL_RE.match(email) or len(email) > 200:
             raise ValueError("Please enter a valid email address.")
@@ -143,8 +147,8 @@ class Accounts:
             raise ValueError("There is already an account with this email. Log in, or use \"Forgot password\".")
         uid = uuid.uuid4().hex[:12]
         with self._db() as db:
-            db.execute("INSERT INTO users (id, email, name, password, created) VALUES (?,?,?,?,?)",
-                       (uid, email, name.strip()[:80], hash_password(password), time.time()))
+            db.execute("INSERT INTO users (id, email, name, password, created, signup_ip) VALUES (?,?,?,?,?,?)",
+                       (uid, email, name.strip()[:80], hash_password(password), time.time(), ip[:64]))
         return self.user(uid)
 
     def log_in(self, email: str, password: str) -> dict | None:
@@ -163,12 +167,29 @@ class Accounts:
             db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))      # signed out everywhere else
 
     def verify(self, user_id: str) -> bool:
-        """Mark the email as confirmed. The free credits come with the first confirmation only."""
+        """Mark the email as confirmed. The free credits come with the first confirmation only,
+        and only to the first account signed up from the same internet address within
+        FREE_PER_IP_DAYS (Bharat, Oct 2026): a second account from there works but starts at 0."""
         with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
             n = db.execute("UPDATE users SET verified=1 WHERE id=? AND verified=0", (user_id,)).rowcount
-        if n and FREE_CREDITS:
-            self.add(user_id, FREE_CREDITS, "welcome", "Free credits for a new account")
+            if n and FREE_CREDITS and self._free_allowed(db, user_id):
+                db.execute("INSERT INTO ledger (user_id, delta, kind, note, created) VALUES (?,?,?,?,?)",
+                           (user_id, FREE_CREDITS, "welcome", "Free credits for a new account", time.time()))
         return bool(n)
+
+    @staticmethod
+    def _free_allowed(db, user_id: str) -> bool:
+        ip = db.execute("SELECT signup_ip FROM users WHERE id=?", (user_id,)).fetchone()["signup_ip"]
+        if not ip:
+            return True
+        since = time.time() - FREE_PER_IP_DAYS * 86400
+        return db.execute("SELECT 1 FROM ledger l JOIN users u ON u.id=l.user_id WHERE l.kind='welcome' "
+                          "AND u.signup_ip=? AND u.id<>? AND l.created>? LIMIT 1", (ip, user_id, since)).fetchone() is None
+
+    def got_free(self, user_id: str) -> bool:
+        with self._db() as db:
+            return db.execute("SELECT 1 FROM ledger WHERE user_id=? AND kind='welcome' LIMIT 1", (user_id,)).fetchone() is not None
 
     # ---- sessions ------------------------------------------------------------
     def new_session(self, user_id: str) -> str:

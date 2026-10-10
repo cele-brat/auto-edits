@@ -28,8 +28,10 @@ function showAccount(session) {
   Acc.unlimited = !!(session.user && session.user.admin);
   $('credits').textContent = creditLabel();
   const asked = new URLSearchParams(location.search);
-  if (asked.has('verified')) {
+  if (asked.get('verified') === '1') {
     notice('Your email is confirmed. Your free credits are in your account.');
+  } else if (asked.get('verified') === '0') {
+    notice('Your email is confirmed. Free credits were already given to an account from this internet connection, so this one starts at 0. Buy credits to begin.');
   } else if (Acc.user && !Acc.user.verified) {
     notice(asked.has('welcome') ? `Welcome. We sent a link to ${Acc.user.email}: open it to confirm your email and get 50 free credits.`
       : `Confirm your email (${Acc.user.email}) to start culling and exporting.`, 'Send the link again', sendAgain);
