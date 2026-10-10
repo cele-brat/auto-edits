@@ -653,15 +653,14 @@ async function openWedding(id) {
 }
 
 function showSignIn() {
-  $('app').hidden = true;
-  $('signin').hidden = false;
-  $('key').focus();
+  location.href = '/?login=1';
 }
 
 async function start() {
-  try { await api('/api/session'); } catch (e) { return; }
-  $('signin').hidden = true;
+  let session;
+  try { session = await api('/api/session'); } catch (e) { return; }
   $('app').hidden = false;
+  if (window.showAccount) showAccount(session);
   const [presets, weddings, panels] = await Promise.all([api('/api/presets'), api('/api/weddings'), api('/api/adjustments')]);
   S.panels = panels.panels;
   buildPanels();
@@ -687,15 +686,6 @@ async function start() {
 }
 
 // ---- wiring ---------------------------------------------------------------------
-$('signin-form').onsubmit = async (e) => {
-  e.preventDefault();
-  $('signin-error').textContent = '';
-  const r = await fetch('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ key: $('key').value }), credentials: 'same-origin' });
-  if (!r.ok) { $('signin-error').textContent = 'That key is not right. Copy it again and paste it here.'; return; }
-  $('key').value = '';
-  start();
-};
 $('signout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.href = '/'; };
 $('wedding').onchange = (e) => openWedding(e.target.value);
 $('view-grid').onclick = () => setView('grid');

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<title>Set a new password · Auto Edits</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;1,500&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --glass: #e9edeb; --paper: #f7f9f8; --ink: #17201f; --soft: #3f4a48; --rule: #cbd3d0;
+  --peacock: #0d5b61; --peacock-deep: #083f44; --marigold: #f2a900; --pencil: #c5281c;
+  --display: "Playfair Display", Georgia, serif;
+  --body: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; background: var(--glass); color: var(--ink); font: 400 18px/1.6 var(--body); }
+:focus-visible { outline: 3px solid var(--marigold); outline-offset: 3px; }
+.brand { font: italic 500 26px/1 var(--display); color: var(--ink); text-decoration: none; display: block; margin-bottom: 26px; text-align: center; }
+form { width: min(440px, 100%); background: var(--paper); border-radius: 8px; padding: 34px; box-shadow: 0 30px 70px -34px rgba(8, 63, 68, .5); }
+h1 { font: 500 32px/1.15 var(--display); margin: 0 0 10px; }
+p { margin: 0; color: var(--soft); font-size: 17px; }
+label { display: block; margin: 22px 0 6px; font-size: 15px; font-weight: 500; }
+input { width: 100%; font: inherit; padding: 12px 14px; border: 1.5px solid var(--rule); border-radius: 6px; background: #fff; color: var(--ink); }
+input:focus { border-color: var(--peacock); outline: none; }
+button, .button { font: 600 16px/1 var(--body); padding: 13px 22px; border-radius: 999px; border: 1.5px solid var(--ink); background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; margin-top: 24px; }
+button:hover, .button:hover { background: var(--peacock-deep); border-color: var(--peacock-deep); }
+button:disabled { opacity: .6; cursor: wait; }
+#error { color: var(--pencil); min-height: 1.5em; margin-top: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <a class="brand" href="/">Auto Edits</a>
+  <form id="form" novalidate>
+    <h1>Set a new password</h1>
+    <p>Choose a password of at least 8 characters. You will be logged in straight after.</p>
+    <label for="password">New password</label>
+    <input id="password" type="password" autocomplete="new-password" maxlength="200" required>
+    <label for="again">The same password again</label>
+    <input id="again" type="password" autocomplete="new-password" maxlength="200" required>
+    <p id="error" role="alert"></p>
+    <button type="submit" id="go">Save and log in</button>
+  </form>
+</main>
+<script>
+const token = location.pathname.split('/').pop();
+const $ = (id) => document.getElementById(id);
+$('password').focus();
+$('form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('error').textContent = '';
+  const password = $('password').value;
+  if (password.length < 8) { $('error').textContent = 'The password needs at least 8 characters.'; $('password').focus(); return; }
+  if (password !== $('again').value) { $('error').textContent = 'The two passwords are not the same.'; $('again').focus(); return; }
+  $('go').disabled = true;
+  try {
+    const r = await fetch('/api/reset', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }) });
+    if (r.ok) { location.href = '/'; return; }
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 410) {
+      $('form').innerHTML = '<h1>This link has expired</h1><p>Links to set a password work for 2 hours and only once. Ask for a new one from the log-in window.</p><a class="button" href="/?login=1">Go to log in</a>';
+      return;
+    }
+    $('error').textContent = typeof data.detail === 'string' ? data.detail : 'Something went wrong. Please try again.';
+  } catch (x) {
+    $('error').textContent = 'The server could not be reached. Check your connection and try again.';
+  }
+  $('go').disabled = false;
+};
+</script>
+</body>
+</html>

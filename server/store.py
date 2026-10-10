@@ -20,7 +20,8 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS weddings (
     id TEXT PRIMARY KEY, name TEXT NOT NULL, catalog TEXT NOT NULL DEFAULT '', created REAL NOT NULL,
-    UNIQUE (name, catalog)
+    owner TEXT NOT NULL DEFAULT '',
+    UNIQUE (owner, name, catalog)
 );
 CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY, wedding_id TEXT NOT NULL REFERENCES weddings(id) ON DELETE CASCADE,
@@ -35,7 +36,8 @@ CREATE TABLE IF NOT EXISTS photos (
     UNIQUE (wedding_id, lr_uuid)
 );
 CREATE TABLE IF NOT EXISTS presets (
-    id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, xmp TEXT NOT NULL, added REAL NOT NULL
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, data TEXT NOT NULL, xmp TEXT NOT NULL, added REAL NOT NULL,
+    owner TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS photos_by_folder ON photos (folder_id, taken, file_name);
 """
@@ -48,6 +50,7 @@ class Store:
         self.root = Path(data_dir)
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "autoedits.db"
+        self._give_weddings_owners()
         with self._db() as db:
             db.executescript(SCHEMA)
             columns = {r["name"] for r in db.execute("PRAGMA table_info(photos)")}
@@ -60,6 +63,37 @@ class Store:
                 db.execute("ALTER TABLE photos ADD COLUMN pick TEXT NOT NULL DEFAULT ''")
             if "applied" not in columns:             # stamp of the edit last applied to this photo in Lightroom
                 db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
+            if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
+                db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
+            db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
+
+    def _give_weddings_owners(self):
+        """Weddings made before there were accounts had one name per catalogue for everyone.
+        Rebuild that table once so each photographer has their own names (rows kept as they are)."""
+        if not self.db_path.exists():
+            return
+        db = sqlite3.connect(self.db_path, timeout=30, isolation_level=None)
+        try:
+            db.row_factory = sqlite3.Row
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(weddings)")}
+            if not cols or "owner" in cols:
+                return
+            db.execute("PRAGMA foreign_keys = OFF")        # so the rebuild cannot remove folders and photos
+            db.execute("BEGIN IMMEDIATE")
+            db.execute("CREATE TABLE weddings_new (id TEXT PRIMARY KEY, name TEXT NOT NULL, catalog TEXT NOT NULL DEFAULT '', "
+                       "created REAL NOT NULL, owner TEXT NOT NULL DEFAULT '', UNIQUE (owner, name, catalog))")
+            db.execute("INSERT INTO weddings_new (id, name, catalog, created) SELECT id, name, catalog, created FROM weddings")
+            db.execute("DROP TABLE weddings")
+            db.execute("ALTER TABLE weddings_new RENAME TO weddings")
+            db.execute("COMMIT")
+        finally:
+            db.close()
+
+    def adopt_orphans(self, user_id: str) -> None:
+        """Everything made before there were accounts belongs to the studio (admin) account."""
+        with self._db() as db:
+            db.execute("UPDATE weddings SET owner=? WHERE owner=''", (user_id,))
+            db.execute("UPDATE presets SET owner=? WHERE owner=''", (user_id,))
 
     @contextmanager
     def _db(self):
@@ -77,18 +111,18 @@ class Store:
     def wedding_dir(self, wedding_id: str) -> Path:
         return self.root / "weddings" / wedding_id
 
-    def open_wedding(self, name: str, catalog: str = "") -> dict:
-        """The wedding with this name (and catalogue); made if it does not exist yet."""
+    def open_wedding(self, name: str, catalog: str = "", owner: str = "") -> dict:
+        """This photographer's wedding with this name (and catalogue); made if it does not exist yet."""
         name, catalog = name.strip(), catalog.strip()
         if not name:
             raise ValueError("a wedding needs a name")
         with self._db() as db:
-            row = db.execute("SELECT * FROM weddings WHERE name=? AND catalog=?", (name, catalog)).fetchone()
+            row = db.execute("SELECT * FROM weddings WHERE owner=? AND name=? AND catalog=?", (owner, name, catalog)).fetchone()
             created = row is None
             if created:
                 wid = uuid.uuid4().hex[:12]
-                db.execute("INSERT INTO weddings (id, name, catalog, created) VALUES (?,?,?,?)",
-                           (wid, name, catalog, time.time()))
+                db.execute("INSERT INTO weddings (id, name, catalog, created, owner) VALUES (?,?,?,?,?)",
+                           (wid, name, catalog, time.time(), owner))
                 row = db.execute("SELECT * FROM weddings WHERE id=?", (wid,)).fetchone()
         (self.wedding_dir(row["id"]) / "previews").mkdir(parents=True, exist_ok=True)
         return {**dict(row), "is_new": created}
@@ -106,10 +140,19 @@ class Store:
         return {**dict(row), "folders": folders, "photos": sum(f["photos"] for f in folders),
                 "bytes": sum(f["bytes"] for f in folders)}
 
-    def weddings(self) -> list[dict]:
+    def weddings(self, owner: str | None = None) -> list[dict]:
+        """One photographer's weddings, newest first (None: everyone's)."""
         with self._db() as db:
-            ids = [r["id"] for r in db.execute("SELECT id FROM weddings ORDER BY created DESC")]
+            if owner is None:
+                ids = [r["id"] for r in db.execute("SELECT id FROM weddings ORDER BY created DESC")]
+            else:
+                ids = [r["id"] for r in db.execute("SELECT id FROM weddings WHERE owner=? ORDER BY created DESC", (owner,))]
         return [self.wedding(i) for i in ids]
+
+    def owner_of(self, wedding_id: str) -> str | None:
+        with self._db() as db:
+            r = db.execute("SELECT owner FROM weddings WHERE id=?", (wedding_id,)).fetchone()
+        return r["owner"] if r else None
 
     def delete_wedding(self, wedding_id: str) -> bool:
         """Remove a wedding and all its images from the server. Nothing else is touched."""
@@ -267,17 +310,19 @@ class Store:
             return bool(db.execute("UPDATE photos SET pick=? WHERE wedding_id=? AND id=?", (pick, wedding_id, photo_id)).rowcount)
 
     # ---- presets uploaded from Lightroom --------------------------------------
-    def save_preset(self, preset: dict, xmp: str) -> bool:
+    def save_preset(self, preset: dict, xmp: str, owner: str = "") -> bool:
         """Keep an uploaded preset, with its original file for sending back to Lightroom. True if it replaced one."""
         with self._db() as db:
             had = db.execute("SELECT 1 FROM presets WHERE id=?", (preset["id"],)).fetchone() is not None
-            db.execute("INSERT OR REPLACE INTO presets (id, name, data, xmp, added) VALUES (?,?,?,?,?)",
-                       (preset["id"], preset["display_name"], json.dumps(preset, ensure_ascii=False), xmp, time.time()))
+            db.execute("INSERT OR REPLACE INTO presets (id, name, data, xmp, added, owner) VALUES (?,?,?,?,?,?)",
+                       (preset["id"], preset["display_name"], json.dumps(preset, ensure_ascii=False), xmp, time.time(), owner))
         return had
 
     def uploaded_presets(self) -> list[dict]:
+        """Every uploaded preset, each marked with who uploaded it."""
         with self._db() as db:
-            return [json.loads(r["data"]) for r in db.execute("SELECT data FROM presets ORDER BY name")]
+            return [{**json.loads(r["data"]), "owner": r["owner"]}
+                    for r in db.execute("SELECT data, owner FROM presets ORDER BY name")]
 
     def preset_file(self, preset_id: str) -> str | None:
         with self._db() as db:

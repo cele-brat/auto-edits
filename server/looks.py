@@ -259,6 +259,38 @@ def watermark8(img8: np.ndarray, text: str) -> np.ndarray:
     return out
 
 
+_MARKS: dict = {}
+
+
+def preview_mark(img: np.ndarray, text: str = "AUTO EDITS  ·  PREVIEW") -> np.ndarray:
+    """Light but thick lettering across the whole picture, for previews before export:
+    easy to see through, hard to crop or paint out. Works on a 0..1 float image."""
+    h, w = img.shape[:2]
+    key = (h, w, text)
+    m = _MARKS.get(key)
+    if m is None:
+        from PIL import Image, ImageDraw, ImageFont
+        size = max(18, round(0.065 * max(h, w)))
+        font = ImageFont.load_default(size)
+        side = int((h * h + w * w) ** 0.5) + 2 * size
+        layer = Image.new("L", (side, side), 0)
+        draw = ImageDraw.Draw(layer)
+        box = draw.textbbox((0, 0), text, font=font, stroke_width=max(2, size // 9))
+        tw, th = box[2] - box[0], box[3] - box[1]
+        step_y = int(th * 3.2)
+        for row, y in enumerate(range(0, side, step_y)):
+            x0 = -(row % 2) * (tw // 2)
+            for x in range(x0, side, int(tw * 1.25)):
+                draw.text((x, y), text, font=font, fill=255, stroke_width=max(2, size // 9), stroke_fill=255)
+        layer = layer.rotate(28, resample=Image.BILINEAR)
+        left, top = (side - w) // 2, (side - h) // 2
+        m = np.asarray(layer.crop((left, top, left + w, top + h))).astype(np.float32)[..., None] / 255.0
+        if len(_MARKS) > 16:
+            _MARKS.clear()
+        _MARKS[key] = m
+    return img + (1.0 - img) * (0.16 * m)
+
+
 def show_mask(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Tint the masked part red, the way Lightroom shows a mask."""
     m = cv2.resize(mask, (img.shape[1], img.shape[0]), interpolation=cv2.INTER_LINEAR)[..., None] * 0.55
@@ -301,11 +333,21 @@ class Renderer:
         del self.presets[preset_id]
         return True
 
-    def catalogue(self) -> list[dict]:
-        """The presets as the app's picker needs them (no slider values)."""
+    def allowed(self, owner: str | None) -> set:
+        """Preset ids this photographer may use: the built-in ones and their own uploads."""
+        return {i for i, p in self.presets.items() if i in self.library or owner is None or p.get("owner") == owner}
+
+    def owner_of(self, preset_id: str) -> str | None:
+        p = self.presets.get(preset_id)
+        return None if p is None or preset_id in self.library else p.get("owner", "")
+
+    def catalogue(self, owner: str | None = None) -> list[dict]:
+        """The presets as the app's picker needs them (no slider values): built-in ones and this owner's."""
         out = []
         for p in self.presets.values():
             mine = p["id"] not in self.library
+            if mine and owner is not None and p.get("owner") != owner:
+                continue
             out.append({"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
                         "pack": p["pack"], "about": p["description"], "mine": mine,
                         "s": {k: v for k, v in p["settings"].items()
@@ -442,7 +484,7 @@ class Renderer:
             raise RuntimeError("could not write the picture")
         return buf.tobytes()
 
-    def render(self, path: Path, look: dict, size: int, iso=None, show: str = "") -> bytes:
+    def render(self, path: Path, look: dict, size: int, iso=None, show: str = "", mark: bool = False) -> bytes:
         """The photo with the look applied. show names a mask to tint red on top."""
         d = self.develop(path, look, iso)
         img = self._load(path, size)
@@ -455,7 +497,10 @@ class Renderer:
             out = local_adjust(out, masks, d["masks"], d["corrections"])
             if show in masks:
                 out = show_mask(out, masks[show])
-        return self._jpeg(straighten(out, d["angle"]))
+        out = straighten(out, d["angle"])
+        if mark:
+            out = preview_mark(out)
+        return self._jpeg(out)
 
 
 # ---- handing the edits to Lightroom ------------------------------------------

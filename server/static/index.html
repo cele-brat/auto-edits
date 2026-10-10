@@ -5,21 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=11">
+<link rel="stylesheet" href="/static/app.css?v=12">
 </head>
 <body>
-<div id="signin" hidden>
-  <form id="signin-form">
-    <h1>Auto Edits</h1>
-    <p>In Lightroom, choose Library &gt; Plug-in Extras &gt; “Auto Edits: open the app”. It signs you in without typing anything.</p>
-    <p>Or paste the server key here.</p>
-    <label for="key">Server key</label>
-    <input id="key" type="password" autocomplete="current-password" required>
-    <button type="submit">Sign in</button>
-    <p id="signin-error" role="alert"></p>
-  </form>
-</div>
-
 <div id="app" hidden>
   <header id="bar">
     <span id="brand">Auto Edits</span>
@@ -40,14 +28,17 @@
       <button id="view-loupe" type="button" aria-pressed="false" title="One photo (Enter)">One photo</button>
     </div>
     <button id="split" type="button" aria-pressed="true" title="Drag the line on the photo. Hold \ to see the whole photo before.">Before and after</button>
+    <button id="credits" type="button" title="Your account and credits">Credits</button>
     <details id="more">
       <summary>More</summary>
       <div class="menu">
+        <button id="account-open" type="button">Account, credits and Lightroom key…</button>
         <button id="delete-wedding" type="button">Delete this wedding from the server…</button>
-        <button id="signout" type="button">Sign out</button>
+        <button id="signout" type="button">Log out</button>
       </div>
     </details>
   </header>
+  <div id="notice" role="status" hidden><span id="notice-text"></span> <button id="notice-action" type="button" hidden></button><button id="notice-x" type="button" class="quiet" aria-label="Hide this message">×</button></div>
 
   <nav id="folders" aria-label="Event folders"></nav>
 
@@ -158,6 +149,7 @@
     </select>
   </label>
   <label class="check"><input id="cull-best" type="checkbox"> Among near-identical shots, keep only the best one (the others go to Maybe)</label>
+  <p id="cull-cost" class="cost"></p>
   <p id="cull-progress" aria-live="polite"></p>
   <div class="row end">
     <button id="cull-close" type="button" class="quiet">Close</button>
@@ -194,6 +186,7 @@
     </select>
   </label>
   <label class="field">Watermark text (leave empty for none) <input id="export-watermark" type="text" maxlength="80" autocomplete="off"></label>
+  <p id="export-cost" class="cost"></p>
   <p id="export-error" role="alert"></p>
   <div class="row end">
     <button id="export-close" type="button" class="quiet">Close</button>
@@ -203,6 +196,33 @@
   <ul id="export-list"></ul>
 </dialog>
 
+<dialog id="account" aria-labelledby="account-title">
+  <button class="x" type="button" id="account-close" aria-label="Close">×</button>
+  <h2 class="title" id="account-title">Your account</h2>
+  <p id="account-who"></p>
+  <section class="box">
+    <div class="balance"><span id="account-balance">–</span> <small>credits</small></div>
+    <p class="dim">Export or send to Lightroom: 1 credit a photo, every time. Culling: 1 credit for every 10 photos, every time it runs.</p>
+    <div class="row"><button type="button" id="buy" class="primary" disabled title="Payments are being added">Buy credits (coming soon)</button></div>
+  </section>
+  <h3 class="sub">Lightroom plug-in key</h3>
+  <p class="dim">Paste this key into Lightroom: Library &gt; Plug-in Extras &gt; “Auto Edits: server settings”. Making a new key stops the old one.</p>
+  <div class="row"><button type="button" id="key-new">Make a new key</button></div>
+  <div id="key-shown" hidden>
+    <p class="dim">Copy it now: it is shown only once.</p>
+    <div class="row"><input id="key-value" type="text" readonly aria-label="Plug-in key"><button type="button" id="key-copy" class="primary">Copy</button></div>
+  </div>
+  <h3 class="sub" id="password-title">Password</h3>
+  <form id="password-form" class="row wrap">
+    <input id="password-current" type="password" autocomplete="current-password" placeholder="Current password" aria-label="Current password">
+    <input id="password-new" type="password" autocomplete="new-password" placeholder="New password (8 or more characters)" aria-label="New password" minlength="8">
+    <button type="submit">Save</button>
+  </form>
+  <p id="account-error" role="alert"></p>
+  <h3 class="sub">Credit history</h3>
+  <table id="history"><thead><tr><th>Date</th><th>What</th><th class="n">Credits</th></tr></thead><tbody></tbody></table>
+</dialog>
+
 <dialog id="confirm">
   <p id="confirm-text"></p>
   <div class="row end">
@@ -210,9 +230,10 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=11"></script>
-<script src="/static/addfolder.js?v=11"></script>
-<script src="/static/cull.js?v=11"></script>
-<script src="/static/export.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
+<script src="/static/addfolder.js?v=12"></script>
+<script src="/static/cull.js?v=12"></script>
+<script src="/static/export.js?v=12"></script>
+<script src="/static/account.js?v=12"></script>
 </body>
 </html>

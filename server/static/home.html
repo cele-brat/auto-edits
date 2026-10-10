@@ -146,8 +146,17 @@ dialog label { display: block; margin: 22px 0 6px; font-size: 15px; font-weight:
 dialog input { width: 100%; font: inherit; padding: 12px 14px; border: 1.5px solid var(--rule); border-radius: 6px; background: #fff; color: var(--ink); }
 dialog input:focus { border-color: var(--peacock); outline: none; }
 dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 22px; }
-#login-error { color: var(--pencil); min-height: 1.5em; margin-top: 10px; }
+.top-actions { display: flex; gap: 10px; }
+.close .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+#auth-error { color: var(--pencil); min-height: 1.5em; margin-top: 10px; font-size: 16px; }
+#auth-note { color: var(--peacock); min-height: 0; margin-top: 10px; font-size: 16px; }
+#auth [data-mode] { display: none; }
+#auth.login [data-mode~="login"], #auth.signup [data-mode~="signup"], #auth.forgot [data-mode~="forgot"], #auth.key [data-mode~="key"] { display: block; }
+#auth .switch { margin-top: 18px; font-size: 16px; color: var(--soft); }
+#auth .switch button { font: inherit; color: var(--peacock); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+#auth .hint { font-size: 14px; margin-top: 6px; }
 
+@media (max-width: 520px) { .top-actions [data-signup] { display: none; } }
 @media (max-width: 900px) {
   body { font-size: 17px; }
   .top nav { display: none; }
@@ -201,7 +210,10 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <a href="#export">Export</a>
     <a href="#pricing">Pricing</a>
   </nav>
-  <button class="button line" type="button" data-login>Log in</button>
+  <div class="top-actions">
+    <button class="button line" type="button" data-login>Log in</button>
+    <button class="button" type="button" data-signup>Sign up</button>
+  </div>
 </header>
 
 <main>
@@ -209,7 +221,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
   <h1>A whole wedding, culled and edited while you rest.</h1>
   <p class="lede">Auto Edits rates every photo, applies your own Lightroom presets with corrections worked out for each frame, and makes the finished JPEGs on a server. You start it and walk away.</p>
   <div class="actions">
-    <button class="button" type="button" data-login>Log in</button>
+    <button class="button" type="button" data-signup>Start with 50 free credits</button>
     <a class="button line" href="#how">See how it works</a>
   </div>
 </div>
@@ -335,16 +347,17 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 <section id="pricing">
   <div class="price">
     <div>
-      <h2>Pay for the photos you edit</h2>
-      <p class="soft" style="margin-top:22px">One photo edited is one credit. Buy credits and use them whenever a wedding comes in.</p>
+      <h2>Pay for the photos you deliver</h2>
+      <p class="soft" style="margin-top:22px">Each photo you export, or send back to Lightroom with its edit, is one credit. Culling is one credit for every 10 photos. Try presets and edits as much as you like before that; previews carry a light mark until you export.</p>
+      <p class="soft" style="margin-top:14px">New accounts get 50 free credits once the email is confirmed.</p>
     </div>
     <div class="tag-card">
       <p class="per">per credit</p>
       <p class="amount"><s aria-label="Usual price 3 rupees"><span class="rs">₹</span>3</s><strong><span class="rs">₹</span>1</strong></p>
       <p class="until">Launch price until 31 December 2026</p>
       <dl>
-        <div><dt>1,000 photos</dt><dd><s>₹3,000</s> ₹1,000</dd></div>
-        <div><dt>5,000 photos</dt><dd><s>₹15,000</s> ₹5,000</dd></div>
+        <div><dt>Export 1,000 photos</dt><dd><s>₹3,000</s> ₹1,000</dd></div>
+        <div><dt>Cull 5,000 photos</dt><dd><s>₹1,500</s> ₹500</dd></div>
       </dl>
     </div>
   </div>
@@ -352,23 +365,47 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 
 <section class="close">
   <h2>Open your weddings</h2>
-  <button class="button" type="button" data-login>Log in</button>
+  <div class="actions">
+    <button class="button" type="button" data-signup>Sign up free</button>
+    <button class="button line" type="button" data-login>Log in</button>
+  </div>
 </section>
 </main>
 
 <footer><span>Auto Edits by Cele-Brat</span><span>Made for wedding photographers</span></footer>
 
-<dialog id="login">
-  <form id="login-form">
-    <h2>Log in</h2>
-    <p>Paste your access key. From Lightroom Classic you can skip this: choose Library, Plug-in Extras, "Auto Edits: open the app".</p>
-    <label for="key">Access key</label>
-    <input id="key" type="password" autocomplete="current-password" required>
-    <p id="login-error" role="alert"></p>
-    <div class="row">
-      <button class="button line" type="button" id="login-close">Close</button>
-      <button class="button" type="submit">Log in</button>
+<dialog id="auth" class="login" aria-labelledby="auth-title">
+  <form id="auth-form" novalidate>
+    <h2 id="auth-title">Log in</h2>
+    <p data-mode="signup">Make your account. Confirm your email and 50 free credits are added.</p>
+    <p data-mode="forgot">Enter your email and we will send a link to set a new password.</p>
+    <p data-mode="key">For the studio account only.</p>
+    <div data-mode="signup">
+      <label for="auth-name">Your name or studio</label>
+      <input id="auth-name" autocomplete="organization" maxlength="80">
     </div>
+    <div data-mode="login signup forgot">
+      <label for="auth-email">Email</label>
+      <input id="auth-email" type="email" autocomplete="email" maxlength="200">
+    </div>
+    <div data-mode="login signup">
+      <label for="auth-password">Password</label>
+      <input id="auth-password" type="password" autocomplete="current-password" maxlength="200">
+      <p class="hint soft" data-mode="signup">At least 8 characters.</p>
+    </div>
+    <div data-mode="key">
+      <label for="auth-key">Studio key</label>
+      <input id="auth-key" type="password" autocomplete="off">
+    </div>
+    <p id="auth-error" role="alert"></p>
+    <p id="auth-note" role="status"></p>
+    <div class="row">
+      <button class="button line" type="button" id="auth-close">Close</button>
+      <button class="button" type="submit" id="auth-go">Log in</button>
+    </div>
+    <p class="switch" data-mode="login"><button type="button" data-to="forgot">Forgot password?</button> · New here? <button type="button" data-to="signup">Sign up</button></p>
+    <p class="switch" data-mode="signup">Already have an account? <button type="button" data-to="login">Log in</button></p>
+    <p class="switch" data-mode="forgot key"><button type="button" data-to="login">Back to log in</button></p>
   </form>
 </dialog>
 
@@ -469,22 +506,66 @@ if (!calm && 'IntersectionObserver' in window) {
   for (const el of document.querySelectorAll('.rise, .steps, .sheet, .panels, .routes, .tag-card')) seen.observe(el);
 }
 
-// ---- log in ----
-const login = document.getElementById('login');
-for (const b of document.querySelectorAll('[data-login]')) b.onclick = () => { login.showModal(); document.getElementById('key').focus(); };
-document.getElementById('login-close').onclick = () => login.close();
-login.addEventListener('mousedown', (e) => { if (e.target === login) login.close(); });
-document.getElementById('login-form').onsubmit = async (e) => {
+// ---- log in, sign up, forgot password ----
+const auth = document.getElementById('auth');
+const $a = (id) => document.getElementById(id);
+const TITLES = { login: ['Log in', 'Log in'], signup: ['Sign up', 'Make my account'], forgot: ['Forgot password', 'Send the link'], key: ['Studio key', 'Log in'] };
+function mode(m) {
+  auth.className = m;
+  $a('auth-title').textContent = TITLES[m][0];
+  $a('auth-go').textContent = TITLES[m][1];
+  $a('auth-go').disabled = false;
+  $a('auth-error').textContent = '';
+  $a('auth-note').textContent = '';
+  $a('auth-password').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
+  const first = m === 'signup' ? 'auth-name' : m === 'key' ? 'auth-key' : 'auth-email';
+  setTimeout(() => $a(first).focus(), 0);
+}
+function openAuth(m) { mode(m); if (!auth.open) auth.showModal(); }
+for (const b of document.querySelectorAll('[data-login]')) b.onclick = () => openAuth('login');
+for (const b of document.querySelectorAll('[data-signup]')) b.onclick = () => openAuth('signup');
+for (const b of auth.querySelectorAll('[data-to]')) b.onclick = () => mode(b.dataset.to);
+$a('auth-close').onclick = () => auth.close();
+auth.addEventListener('mousedown', (e) => { if (e.target === auth) auth.close(); });
+document.addEventListener('keydown', (e) => { if (e.code === 'KeyK' && e.altKey && e.shiftKey) openAuth('key'); });
+
+async function post(path, body) {
+  const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  let data = {};
+  try { data = await r.json(); } catch (x) { /* no body */ }
+  return { ok: r.ok, status: r.status, detail: typeof data.detail === 'string' ? data.detail : '' };
+}
+
+$a('auth-form').onsubmit = async (e) => {
   e.preventDefault();
-  const err = document.getElementById('login-error');
-  err.textContent = '';
+  const m = auth.className, err = $a('auth-error');
+  err.textContent = ''; $a('auth-note').textContent = '';
+  const email = $a('auth-email').value.trim(), password = $a('auth-password').value;
+  if (m !== 'key' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Please enter your email address.'; $a('auth-email').focus(); return; }
+  if ((m === 'login' || m === 'signup') && !password) { err.textContent = 'Please enter your password.'; $a('auth-password').focus(); return; }
+  if (m === 'signup' && password.length < 8) { err.textContent = 'The password needs at least 8 characters.'; $a('auth-password').focus(); return; }
+  $a('auth-go').disabled = true;
   try {
-    const r = await fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: document.getElementById('key').value }) });
-    if (!r.ok) { err.textContent = 'That key is not right. Copy it again and paste it here.'; return; }
-    location.href = '/';
-  } catch (x) { err.textContent = 'The server could not be reached. Check your connection and try again.'; }
+    let r;
+    if (m === 'login') r = await post('/api/login', { email, password });
+    else if (m === 'key') r = await post('/api/login', { key: $a('auth-key').value.trim() });
+    else if (m === 'signup') r = await post('/api/signup', { email, password, name: $a('auth-name').value.trim() });
+    else r = await post('/api/forgot', { email });
+    if (r.ok && m === 'forgot') { $a('auth-note').textContent = 'If there is an account with this email, the link is on its way. Check your inbox and spam folder.'; return; }
+    if (r.ok) { location.href = m === 'signup' ? '/?welcome=1' : '/'; return; }
+    err.textContent = r.detail || (r.status === 401 ? 'That email and password do not match.' : 'Something went wrong. Please try again.');
+  } catch (x) {
+    err.textContent = 'The server could not be reached. Check your connection and try again.';
+  } finally { $a('auth-go').disabled = false; }
 };
+
+const asked = new URLSearchParams(location.search);
+if (asked.get('link') === 'expired') {
+  openAuth('login');
+  $a('auth-error').textContent = 'That link has expired or was already used. Log in, or ask for a new link.';
+  history.replaceState(null, '', '/');
+} else if (asked.has('login')) { openAuth('login'); history.replaceState(null, '', '/'); }
+else if (asked.has('signup')) { openAuth('signup'); history.replaceState(null, '', '/'); }
 </script>
 </body>
 </html>

@@ -18,13 +18,15 @@ function exportRow(e) {
   const how = document.createElement('div'); how.className = 'how';
   const states = { waiting: 'Waiting to start', working: 'Working', done: 'Finished', stopped: 'Stopped' };
   how.textContent = `${states[e.state]}: ${e.done} of ${e.total} done` + (e.failed ? `, ${e.failed} failed` : '') +
+    (e.skipped ? `, ${e.skipped} not made (credits given back)` : '') +
     (e.state === 'working' ? timeLeft(e) : '') + (e.bytes ? ` · ${mb(e.bytes)}` : '') +
     (e.seconds_each ? ` · ${e.seconds_each} s a photo` : '');
   const bar = document.createElement('progress'); bar.max = e.total; bar.value = e.done + e.failed;
   const row = document.createElement('div'); row.className = 'row';
   const button = (label, cls, fn) => { const b = document.createElement('button'); b.type = 'button'; b.className = cls; b.textContent = label; b.onclick = fn; row.append(b); };
-  if (e.state === 'waiting' || e.state === 'working') button('Stop', 'quiet', async () => { await api(`/api/exports/${e.id}/stop`, { method: 'POST' }); refreshExports(); });
-  else button('Remove', 'quiet', async () => { await api(`/api/exports/${e.id}`, { method: 'DELETE' }); refreshExports(); });
+  const after = () => { refreshExports(); if (window.refreshCredits) refreshCredits().then(exportCost); };
+  if (e.state === 'waiting' || e.state === 'working') button('Stop', 'quiet', async () => { await api(`/api/exports/${e.id}/stop`, { method: 'POST' }); after(); });
+  else button('Remove', 'quiet', async () => { await api(`/api/exports/${e.id}`, { method: 'DELETE' }); after(); });
   if (e.done && e.state !== 'working' && e.state !== 'waiting') {
     const a = document.createElement('a'); a.className = 'button'; a.href = `/api/exports/${e.id}/zip`; a.textContent = `Download ${e.done} photos (zip)`;
     row.append(a);
@@ -49,9 +51,18 @@ $('export-open').onclick = () => {
   const whole = new Option(`Whole wedding (${S.wedding.photos} photos)`, '');
   $('export-scope').replaceChildren(whole, ...S.wedding.folders.map((f) => new Option(`Only “${f.name}”`, f.id)));
   $('export-error').textContent = '';
+  exportCost();
   $('export').showModal();
   refreshExports();
 };
+function exportCost() {
+  const scope = $('export-scope').value, ratings = $('export-ratings').value ? $('export-ratings').value.split(',') : [];
+  const n = S.photos.filter((p) => (scope === '' || p.folder === +scope) &&
+    (!ratings.length || ratings.includes(p.pick || (p.cull || {}).r))).length;
+  $('export-cost').textContent = window.costLine ? costLine(n, `${n} photo${n === 1 ? '' : 's'} at 1 credit each`) : '';
+}
+$('export-scope').onchange = exportCost;
+$('export-ratings').onchange = exportCost;
 $('export-close').onclick = () => { $('export').close(); clearTimeout(Ex.timer); };
 $('export-start').onclick = async () => {
   $('export-error').textContent = '';
@@ -64,5 +75,6 @@ $('export-start').onclick = async () => {
       ratings: $('export-ratings').value ? $('export-ratings').value.split(',') : [] } });
   } catch (err) { $('export-error').textContent = err.message; }
   $('export-start').disabled = false;
+  if (window.refreshCredits) refreshCredits().then(exportCost);
   refreshExports();
 };

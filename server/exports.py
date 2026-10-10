@@ -21,7 +21,7 @@ from pathlib import Path
 from .looks import effective_look
 
 SIZES = (2560, 4000, 0)                 # long edge in pixels; 0 keeps the size that was uploaded
-WAITING, DONE, FAILED, WORKING = 0, 1, 2, 3
+WAITING, DONE, FAILED, WORKING, SKIPPED = 0, 1, 2, 3, 4      # skipped: the export was stopped first
 STALE_SECONDS = 15 * 60                 # a claimed photo not finished in this time goes back on the list
 
 SCHEMA = """
@@ -40,20 +40,36 @@ CREATE INDEX IF NOT EXISTS export_items_waiting ON export_items (status, claimed
 """
 
 
+def _refund(db, export_id: str, photos: int, why: str) -> None:
+    """Give back the credits of photos an export did not make (failed, stopped or removed)."""
+    if photos <= 0:
+        return
+    r = db.execute("SELECT w.owner, w.name FROM exports e JOIN weddings w ON w.id=e.wedding_id WHERE e.id=?",
+                   (export_id,)).fetchone()
+    if r is None or not r["owner"]:
+        return
+    if db.execute("SELECT 1 FROM ledger WHERE ref=? AND kind='export' LIMIT 1", (export_id,)).fetchone() is None:
+        return                                             # made before credits existed: nothing was taken
+    db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created) VALUES (?,?,?,?,?,?,?)",
+               (r["owner"], photos, "refund", f"{why}: {r['name']}"[:200], export_id, photos, time.time()))
+
+
 def _safe(name: str) -> str:
     return re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", name).strip(" .") or "untitled"
 
 
 class Exports:
     def __init__(self, store):
+        from .accounts import SCHEMA as ACCOUNTS
         self.store = store
         with store._db() as db:
-            db.executescript(SCHEMA)
+            db.executescript(ACCOUNTS + SCHEMA)
 
     # ---- making and listing ------------------------------------------------
     def create(self, wedding_id: str, size: int, quality: int, watermark: str, folder_id: int | None,
-               ratings: tuple = ()) -> dict:
-        """ratings: export only photos rated so (keep / maybe / reject); empty means every photo."""
+               ratings: tuple = (), pay=None) -> dict:
+        """ratings: export only photos rated so (keep / maybe / reject); empty means every photo.
+        pay(export_id, photos) is called before anything is saved; if it raises, no export is made."""
         photos = self.store.photos(wedding_id, folder_id)
         scope_name = photos[0]["folder"] if photos and folder_id is not None else ""
         if ratings:
@@ -71,6 +87,8 @@ class Exports:
             seen.add((p["folder"], name.lower()))
             rows.append((export_id, p["id"], name + ".jpg", _safe(p["folder"])))
         scope = " · ".join(x for x in (scope_name, " + ".join(ratings)) if x)
+        if pay is not None:
+            pay(export_id, len(rows))
         with self.store._db() as db:
             db.execute("INSERT INTO exports (id, wedding_id, size, quality, watermark, scope, created) VALUES (?,?,?,?,?,?,?)",
                        (export_id, wedding_id, size, quality, watermark.strip()[:80], scope, time.time()))
@@ -87,10 +105,10 @@ class Exports:
             agg = db.execute("SELECT COALESCE(SUM(bytes),0), COALESCE(AVG(NULLIF(seconds,0)),0) FROM export_items "
                              "WHERE export_id=? AND status=?", (export_id, DONE)).fetchone()
         total = sum(counts.values())
-        done, failed = counts.get(DONE, 0), counts.get(FAILED, 0)
-        left = total - done - failed
-        state = "stopped" if e["stopped"] and left else "done" if not left else "working" if (done or failed or counts.get(WORKING)) else "waiting"
-        return {**dict(e), "total": total, "done": done, "failed": failed, "left": left, "state": state,
+        done, failed, skipped = counts.get(DONE, 0), counts.get(FAILED, 0), counts.get(SKIPPED, 0)
+        left = total - done - failed - skipped
+        state = "stopped" if e["stopped"] and (left or skipped) else "done" if not left else "working" if (done or failed or counts.get(WORKING)) else "waiting"
+        return {**dict(e), "total": total, "done": done, "failed": failed, "skipped": skipped, "left": left, "state": state,
                 "bytes": agg[0], "seconds_each": round(agg[1] or 0, 2)}
 
     def for_wedding(self, wedding_id: str) -> list[dict]:
@@ -99,8 +117,15 @@ class Exports:
         return [self.get(i) for i in ids]
 
     def stop(self, export_id: str) -> bool:
+        """Stop an export. Photos not started yet are taken off the list and their credits given back."""
         with self.store._db() as db:
-            return bool(db.execute("UPDATE exports SET stopped=1 WHERE id=?", (export_id,)).rowcount)
+            db.execute("BEGIN IMMEDIATE")
+            n = db.execute("UPDATE exports SET stopped=1 WHERE id=? AND stopped=0", (export_id,)).rowcount
+            if n:
+                left = db.execute("UPDATE export_items SET status=? WHERE export_id=? AND status=?",
+                                  (SKIPPED, export_id, WAITING)).rowcount
+                _refund(db, export_id, left, "Export stopped")
+            return bool(n)
 
     def failures(self, export_id: str) -> list[dict]:
         with self.store._db() as db:
@@ -150,8 +175,11 @@ class Exports:
 
     def finish(self, export_id: str, photo_id: str, ok: bool, size: int = 0, seconds: float = 0.0, error: str = "") -> None:
         with self.store._db() as db:
-            db.execute("UPDATE export_items SET status=?, bytes=?, seconds=?, error=? WHERE export_id=? AND photo_id=?",
-                       (DONE if ok else FAILED, size, seconds, error[:300], export_id, photo_id))
+            n = db.execute("UPDATE export_items SET status=?, bytes=?, seconds=?, error=? WHERE export_id=? AND photo_id=? "
+                           "AND status IN (?,?)", (DONE if ok else FAILED, size, seconds, error[:300], export_id, photo_id,
+                                                   WAITING, WORKING)).rowcount
+            if n and not ok:
+                _refund(db, export_id, 1, "Photo could not be exported")
             left = db.execute("SELECT COUNT(*) FROM export_items WHERE export_id=? AND status IN (?,?)",
                               (export_id, WAITING, WORKING)).fetchone()[0]
             if not left:
@@ -198,8 +226,12 @@ class Exports:
         if e is None:
             return False
         prefix = f"weddings/{e['wedding_id']}/exports/{export_id}/"
+        with self.store._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            left = db.execute("SELECT COUNT(*) FROM export_items WHERE export_id=? AND status IN (?,?)",
+                              (export_id, WAITING, WORKING)).fetchone()[0]
+            _refund(db, export_id, left, "Export removed before it finished")
+            db.execute("DELETE FROM exports WHERE id=?", (export_id,))
         self.store.blobs.delete_prefix(prefix)
         shutil.rmtree(self.store.root / prefix, ignore_errors=True)
-        with self.store._db() as db:
-            db.execute("DELETE FROM exports WHERE id=?", (export_id,))
         return True

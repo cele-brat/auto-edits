@@ -74,9 +74,16 @@ $('cull-open').onclick = () => {
   $('cull-scope').replaceChildren(new Option(`Whole wedding (${S.wedding.photos} photos)`, ''),
     ...S.wedding.folders.map((x) => new Option(`Only “${x.name}”`, x.id)));
   if (f) $('cull-scope').value = '';
+  cullCost();
   $('cull').showModal();
   refreshCull();
 };
+function cullCost() {
+  const scope = $('cull-scope').value;
+  const n = scope === '' ? S.wedding.photos : ((S.wedding.folders.find((x) => x.id === +scope) || {}).photos || 0);
+  $('cull-cost').textContent = window.costLine ? costLine(Math.ceil(n / 10), `${n} photos at 1 credit per 10`) : '';
+}
+$('cull-scope').onchange = cullCost;
 $('cull-close').onclick = () => $('cull').close();
 $('cull-start').onclick = async () => {
   const scope = $('cull-scope').value;
@@ -87,5 +94,6 @@ $('cull-start').onclick = async () => {
     Cull.wasBusy = true;
   } catch (err) { $('cull-progress').textContent = err.message; }
   $('cull-start').disabled = false;
+  if (window.refreshCredits) refreshCredits().then(cullCost);
   refreshCull();
 };

@@ -23,6 +23,16 @@ Stage 1 (accuracy and speed test) is in progress; first versions of auto correct
 The engine is our own approximation of Lightroom, not Adobe's code. Its strength constants are
 first guesses until `tools/fit_params.py` has been run on real Lightroom exports.
 
+## Accounts and credits
+
+| Part | State |
+| --- | --- |
+| `server/accounts.py` | Sign-up with email and password, sessions, confirm-email and reset links, one Lightroom key per photographer, credit ledger |
+| `server/mail.py` | Account emails through Google Workspace SMTP (`SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`); printed to the log when not set |
+| Separation | Every wedding, photo, export, cull and uploaded preset belongs to one account; others get 404 |
+| Credits | 50 free on confirming the email; export or apply in Lightroom 1 per photo every time; culling 1 per 10 photos every run; failed, stopped or removed exports give their credits back |
+| Studio account | `AUTOEDITS_ADMIN_EMAIL`; owns everything from before accounts; `AUTOEDITS_KEY` signs in as it; never stopped for credits, previews unmarked |
+
 ## Commands
 
     python -m pytest -q tests

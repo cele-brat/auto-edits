@@ -3,7 +3,10 @@
 #   - hard limits on memory and processor, so it cannot starve n8n and the rest
 #   - listens on this machine only (127.0.0.1); the existing Traefik proxy passes
 #     edits.cele-brat.solutions to it (same label pattern as the CCW app)
-# The key lives in a file named .env next to this one:  AUTOEDITS_KEY=<long secret>
+# Settings live in a file named .env next to this one:
+#   AUTOEDITS_KEY=<long secret>                 the studio key (the plug-in's key from before accounts)
+#   AUTOEDITS_ADMIN_EMAIL=<studio email>        the admin account; owns everything made before accounts
+#   SMTP_USER=<workspace account>  SMTP_PASSWORD=<Google app password>  MAIL_FROM=Auto Edits <no-reply@...>
 name: auto-edits
 services:
   server:
@@ -13,6 +16,14 @@ services:
     restart: unless-stopped
     environment:
       AUTOEDITS_KEY: ${AUTOEDITS_KEY:?put AUTOEDITS_KEY in deploy/.env}
+      AUTOEDITS_ADMIN_EMAIL: ${AUTOEDITS_ADMIN_EMAIL:?put AUTOEDITS_ADMIN_EMAIL in deploy/.env}
+      AUTOEDITS_BASE_URL: ${AUTOEDITS_BASE_URL:-https://edits.cele-brat.solutions}
+      # account emails through Google Workspace; without SMTP_USER they go to the log instead
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
       # Cloudflare R2: when these four are in deploy/.env the photos live there, not on this disk
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       R2_BUCKET: ${R2_BUCKET:-}
