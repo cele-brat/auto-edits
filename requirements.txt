@@ -1,6 +1,8 @@
 numpy
 scipy
-opencv-python-headless
+opencv-python-headless==4.11.0.86
 scikit-image
 rawpy
+pillow
+mediapipe
 pytest

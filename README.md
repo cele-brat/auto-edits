@@ -5,12 +5,16 @@ Plan: "Auto Edits: Build Plan" (Claude doc). This repository is built in the sta
 
 ## Status
 
-Stage 1 (accuracy and speed test) is in progress.
+Stage 1 (accuracy and speed test) is in progress; first versions of auto correction and culling are in place.
 
 | Part | State |
 | --- | --- |
 | `engine/presets.py` | Reads preset .xmp files; 500 Cele-Brat presets indexed by Product ID in `data/presets.json`; toggle rule implemented |
 | `engine/render.py` | Preview engine v0: exposure, white balance, calibration, contrast, highlights, shadows, whites, blacks, texture, clarity, point curves, colour mixer, vibrance, saturation, colour grading, vignette, grain |
+| `engine/auto.py` | Auto values for the nine toggles (exposure, highlights, shadows, whites, blacks, white balance, noise, straighten, lens) in Lightroom units |
+| `engine/faces.py` | Face finding: YuNet detector (MIT) for all faces, MediaPipe Face Landmarker (Apache 2.0) for closed eyes, smile, gaze |
+| `engine/cull.py` | Culling: focus, motion blur, exposure, closed eyes, group eyes, expression, framing, accidental frames, similar frames; 3 / 2 / 1 stars with reasons |
+| `tools/cull_folder.py` | Culls a RAW folder using the camera previews stored inside the files |
 | `tools/accuracy.py` | Compares the engine with real Lightroom exports (CIEDE2000) and writes side-by-side sheets |
 | `tools/fit_params.py` | Fits the engine's strength constants to Lightroom exports |
 | `tools/bench.py` | Render timing on the current machine |

@@ -44,3 +44,36 @@ def save_jpeg(img: np.ndarray, path: str | Path, quality: int = 92) -> None:
     out = (np.clip(img, 0, 1) * 255 + 0.5).astype(np.uint8)[..., ::-1]
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(path), out, [cv2.IMWRITE_JPEG_QUALITY, quality])
+
+
+def load_embedded_preview(path: str | Path, max_side: int | None = None):
+    """Camera-rendered JPEG stored inside a RAW file, plus basic shooting data.
+
+    Most cameras store a full-size JPEG in every RAW file. It shows the photo as
+    the camera rendered it, which is far closer to Lightroom's starting point
+    than an unprocessed RAW decode, and it needs no RAW conversion at all.
+    Returns (image or None, info dict).
+    """
+    import io
+    import rawpy
+    from PIL import Image, ImageOps
+    info = {}
+    with rawpy.imread(str(path)) as raw:
+        try:
+            thumb = raw.extract_thumb()
+        except Exception:
+            return None, info
+    if thumb.format != rawpy.ThumbFormat.JPEG:
+        return None, info
+    im = Image.open(io.BytesIO(thumb.data))
+    exif = im.getexif()
+    sub = exif.get_ifd(0x8769)
+    info = {"camera": str(exif.get(0x110, "")).strip(), "iso": sub.get(0x8827), "shutter": float(sub[0x829A]) if 0x829A in sub else None,
+            "aperture": float(sub[0x829D]) if 0x829D in sub else None, "taken": str(sub.get(0x9003, "")),
+            "width": im.size[0], "height": im.size[1]}
+    im = ImageOps.exif_transpose(im).convert("RGB")
+    if max_side:
+        im.draft("RGB", (max_side, max_side))
+        im.thumbnail((max_side, max_side), Image.LANCZOS)
+    img = np.asarray(im, np.float32) / 255.0
+    return np.ascontiguousarray(img), info
