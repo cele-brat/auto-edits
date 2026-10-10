@@ -821,4 +821,13 @@ $('strip').addEventListener('wheel', (e) => {
   $('strip').scrollLeft += e.deltaY;
 }, { passive: false });
 
+// Every window: a cross in the top corner, and a click on the dark area outside closes it too.
+for (const d of document.querySelectorAll('dialog')) {
+  const x = el('button', { type: 'button', className: 'x', textContent: '×', title: 'Close (Esc)' });
+  x.setAttribute('aria-label', 'Close');
+  x.onclick = () => { const own = d.querySelector('[id$=-close], #confirm-no'); if (own) own.click(); else d.close(); };
+  d.prepend(x);
+  d.addEventListener('mousedown', (e) => { if (e.target === d) x.click(); });
+}
+
 start().catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });
