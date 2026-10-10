@@ -124,7 +124,17 @@ function queueSave(key, run) {
 
 // live: a slider is being dragged. Only the numbers and the photo are redrawn (the photo at most
 // every 80 ms), so the slider follows the hand; everything else is redrawn when it is let go.
-let stageTimer = null;
+let stageTimer = null, liveBusy = false, liveAgain = false;
+// While dragging, one render at a time: the next starts when the last is on screen, always with
+// the newest slider position. Asking for every position in between would queue up on the server.
+function liveStage() {
+  if (liveBusy) { liveAgain = true; return; }
+  liveBusy = true;
+  drawStage().finally(() => {
+    liveBusy = false;
+    if (liveAgain) { liveAgain = false; if (stageLive) liveStage(); }
+  });
+}
 function change(patch, live = false) {
   const look = tidy({ ...panelLook(), ...patch });
   if (look.mode === 'preset_auto') S.lastToggles = look.toggles;
@@ -137,9 +147,10 @@ function change(patch, live = false) {
     f.settings = look;
     queueSave(`f${f.id}`, () => api(`/api/weddings/${S.wedding.id}/folders/${f.id}/look`, { method: 'PUT', body: look }));
   }
-  if (!live) { clearTimeout(stageTimer); stageTimer = null; drawPanel(); drawStage(); return; }
+  if (!live) { clearTimeout(stageTimer); stageTimer = null; stageLive = false; drawPanel(); drawStage(); return; }
   drawSliders(look);
-  if (!stageTimer) stageTimer = setTimeout(() => { stageTimer = null; drawStage(); }, 80);
+  stageLive = true;
+  if (!stageTimer) stageTimer = setTimeout(() => { stageTimer = null; liveStage(); }, 60);
 }
 
 // ---- drawing: folders, grid, strip ------------------------------------------
@@ -220,13 +231,24 @@ function markCurrent() {
 }
 
 // ---- drawing: the big photo ---------------------------------------------------
-let renderTurn = 0;
-const loadImage = (url) => new Promise((resolve, reject) => {
+let renderTurn = 0, busyTimer = null, stageLive = false;
+// Loads a picture and has it fully decoded before it is handed back, so putting it on screen
+// never shows a blank frame.
+async function loadImage(url) {
   const i = new Image();
-  i.onload = () => resolve(url);
-  i.onerror = () => reject(new Error('The photo could not be rendered.'));
+  i.decoding = 'sync';
   i.src = url;
-});
+  try { await i.decode(); } catch (e) { throw new Error('The photo could not be rendered.'); }
+  return i;
+}
+// Swap the big photo for an already-decoded one in a single step (no flicker).
+function showAfter(img) {
+  const old = $('after');
+  img.id = 'after'; img.alt = ''; img.draggable = false;
+  img.onload = placeDivider;
+  old.replaceWith(img);
+  placeDivider();
+}
 
 async function drawStage() {
   const empty = !S.wedding || !inFolder().length;
@@ -244,18 +266,20 @@ async function drawStage() {
   if (!before.src.endsWith(wanted)) before.src = wanted;
 
   const turn = ++renderTurn;
-  $('busy').hidden = false;
+  // "Rendering" only shows when a render is slow, so it does not blink on every small move
+  clearTimeout(busyTimer);
+  busyTimer = setTimeout(() => { if (turn === renderTurn) $('busy').hidden = false; }, 600);
   try {
-    for (const size of [800, 1600]) {
-      const url = await loadImage(afterUrl(p, size));
+    // while a slider is being dragged only the quick size is made; the sharp one follows on release
+    for (const size of (stageLive ? [800] : [800, 1600])) {
+      const img = await loadImage(afterUrl(p, size));
       if (turn !== renderTurn) return;
-      $('after').src = url;
-      placeDivider();
+      showAfter(img);
     }
   } catch (e) {
     if (turn === renderTurn) $('saved').textContent = e.message;
   }
-  if (turn === renderTurn) $('busy').hidden = true;
+  if (turn === renderTurn) { clearTimeout(busyTimer); $('busy').hidden = true; }
 }
 
 function drawCaption() {
@@ -446,7 +470,7 @@ function buildPanels() {
             const base = sliderBase(panelLook(), sl);
             setDelta(sl, Number(sl.input.value) - (base === null ? 0 : base), true);
           };
-          sl.input.onchange = () => { drawPanel(); drawStage(); };   // let go: redraw the rest
+          sl.input.onchange = () => { stageLive = false; drawPanel(); drawStage(); };   // let go: redraw the rest
           sl.input.ondblclick = () => setDelta(sl, 0);          // back to the preset's own value
           sl.out = el('button', { type: 'button', className: 'value', title: 'Click to type a value' });
           sl.out.onclick = () => typeValue(sl);
@@ -526,7 +550,7 @@ function drawMasks() {
       input.dataset.mask = `${kind}.${sl.key}`;
       paint(input, 0);
       input.oninput = () => { paint(input, 0); out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
-      input.onchange = () => { drawPanel(); drawStage(); };
+      input.onchange = () => { stageLive = false; drawPanel(); drawStage(); };
       input.ondblclick = () => { changeMask(kind, { [sl.key]: 0 }); drawMasks(); };
       body.append(el('label', { className: 'slider' }, [el('span', { textContent: sl.label }), input, out]));
     }
@@ -766,7 +790,7 @@ $('looks').onkeydown = (e) => {
 };
 for (const [id, key] of [['amount', 'amount']]) {
   $(id).oninput = (e) => { paint(e.target, 1); change({ [key]: Number(e.target.value) }, true); $(id).nextElementSibling.textContent = `${Math.round(e.target.value * 100)}%`; };
-  $(id).onchange = () => { drawPanel(); drawStage(); };
+  $(id).onchange = () => { stageLive = false; drawPanel(); drawStage(); };
   $(id).ondblclick = () => change({ [key]: key === 'amount' ? 1 : 0 });
 }
 $('reset').onclick = () => change(blankLook());
