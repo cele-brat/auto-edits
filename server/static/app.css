@@ -103,12 +103,18 @@ button[aria-pressed=true] { background: var(--marigold); border-color: var(--mar
 .slider { display: grid; grid-template-columns: 84px 1fr 52px; align-items: center; gap: 8px; margin-top: 12px; }
 .slider output { text-align: right; font-variant-numeric: tabular-nums; }
 input[type=range] { accent-color: var(--marigold); width: 100%; height: 24px; }
-#toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
-#toggles label { display: flex; align-items: center; gap: 10px; padding: 7px 4px; border-radius: 4px; cursor: pointer; }
-#toggles label:hover { background: var(--raise); }
-#toggles label:has(input:disabled) { cursor: default; }
-#toggles input { accent-color: var(--marigold); width: 20px; height: 20px; margin: 0; flex: none; cursor: inherit; }
-#toggles .later::after { content: " *"; color: var(--dim); }
+.hint { margin: 0 0 8px; font-size: 13px; }
+.hint b { color: var(--text); font-weight: 600; }
+#rows { display: grid; gap: 2px; }
+.adj { display: grid; grid-template-columns: 62px 86px 1fr 50px; align-items: center; gap: 8px; min-height: 40px; }
+.adj .auto { display: flex; align-items: center; gap: 6px; padding: 6px 4px; border-radius: 4px; cursor: pointer; font-size: 13px; color: var(--dim); }
+.adj .auto:hover { background: var(--raise); }
+.adj .auto:has(input:checked) { color: var(--marigold); }
+.adj .auto:has(input:disabled) { cursor: default; }
+.adj .auto input { accent-color: var(--marigold); width: 20px; height: 20px; margin: 0; flex: none; cursor: inherit; }
+.adj .name.later::after { content: " *"; color: var(--dim); }
+.adj output { text-align: right; font-variant-numeric: tabular-nums; }
+.adj.sub .name { color: var(--dim); }
 #reset { margin-top: 12px; }
 #saved { min-height: 1.4em; }
 

@@ -7,12 +7,12 @@ const TOGGLES = [
   ['blacks', 'Blacks'], ['white_balance', 'White balance'], ['noise', 'Noise'], ['straighten', 'Straighten'],
   ['lens', 'Lens fix'],
 ];
-const SHOWN_HERE = new Set(['exposure', 'highlights', 'shadows', 'whites', 'blacks', 'white_balance']);
+const SHOWN_HERE = new Set(['exposure', 'highlights', 'shadows', 'whites', 'blacks', 'white_balance', 'straighten']);
 const ALL_TOGGLES = TOGGLES.map((t) => t[0]);
 const MODE_NOTES = {
-  preset: 'Every photo gets the preset exactly as it is. Tick a setting below to have it worked out per photo instead.',
-  preset_auto: 'The ticked settings are worked out for each photo. Everything else comes from the preset.',
-  auto: 'No preset. Every setting below is worked out for each photo, so the ticks are fixed.',
+  preset: 'Every photo gets the preset exactly as it is. Tick Auto on a setting below to have it worked out per photo instead.',
+  preset_auto: 'Settings with Auto ticked are worked out for each photo. Everything else comes from the preset.',
+  auto: 'No preset. Every setting below is worked out for each photo, so the Auto ticks are fixed.',
 };
 
 const S = {
@@ -36,7 +36,21 @@ async function api(path, options = {}) {
 }
 
 // ---- looks ----------------------------------------------------------------
-const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0 });
+const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0,
+  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0 });
+// One line per setting: its Auto tick (toggle) and the slider for your own change (key).
+const ROWS = [
+  { toggle: 'exposure', label: 'Exposure', key: 'ev', min: -3, max: 3, step: 0.05, digits: 2 },
+  { toggle: 'highlights', label: 'Highlights', key: 'hl', min: -100, max: 100, step: 1 },
+  { toggle: 'shadows', label: 'Shadows', key: 'sh', min: -100, max: 100, step: 1 },
+  { toggle: 'whites', label: 'Whites', key: 'wh', min: -100, max: 100, step: 1 },
+  { toggle: 'blacks', label: 'Blacks', key: 'bl', min: -100, max: 100, step: 1 },
+  { toggle: 'white_balance', label: 'Warmth', key: 'temp', min: -100, max: 100, step: 1 },
+  { label: 'Tint', key: 'tint', min: -100, max: 100, step: 1, sub: true },
+  { toggle: 'straighten', label: 'Straighten', key: 'angle', min: -10, max: 10, step: 0.1, digits: 1 },
+  { toggle: 'noise', label: 'Noise', key: 'noise', min: -50, max: 50, step: 1, later: true },
+  { toggle: 'lens', label: 'Lens fix', later: true },
+];
 
 function tidy(look) {
   const l = { ...blankLook(), ...look };
@@ -55,7 +69,7 @@ const panelLook = () => (editingPhoto() ? lookOf(photo()) : folderLook());
 function describe(look) {
   if (look.mode === 'auto') return 'Auto Correct';
   const p = S.byPreset.get(look.preset);
-  if (!p) return look.ev || look.temp || look.tint ? 'Your own adjustment' : 'Not edited yet';
+  if (!p) return ROWS.some((r) => r.key && look[r.key]) ? 'Your own adjustment' : 'Not edited yet';
   return p.name + (look.mode === 'preset_auto' && look.toggles.length ? ' + auto' : '');
 }
 
@@ -310,6 +324,33 @@ function stepPreset(by) {
   if (b) b.scrollIntoView({ block: 'nearest' });
 }
 
+function buildRows() {
+  $('rows').replaceChildren(...ROWS.map((r) => {
+    const row = el('div', { className: `adj${r.sub ? ' sub' : ''}` });
+    if (r.toggle) {
+      // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
+      r.box = el('input', { type: 'checkbox' });
+      r.box.setAttribute('aria-label', `Auto ${r.label.toLowerCase()}`);
+      r.box.onchange = () => {
+        const now = new Set(panelLook().toggles);
+        if (r.box.checked) now.add(r.toggle); else now.delete(r.toggle);
+        change({ mode: 'preset_auto', toggles: [...now] });
+      };
+      row.append(el('label', { className: 'auto' }, [r.box, r.key ? 'Auto' : 'On']));
+    } else row.append(el('span'));
+    row.append(el('span', { className: `name${r.later ? ' later' : ''}`, textContent: r.label }));
+    if (r.key) {
+      r.input = el('input', { type: 'range', min: r.min, max: r.max, step: r.step, value: 0 });
+      r.input.setAttribute('aria-label', `${r.label}, your own change`);
+      r.input.oninput = () => change({ [r.key]: Number(r.input.value) });
+      r.input.ondblclick = () => change({ [r.key]: 0 });
+      r.out = el('output');
+      row.append(r.input, r.out);
+    }
+    return row;
+  }));
+}
+
 function setSlider(id, value, text) {
   const input = $(id);
   if (document.activeElement !== input) input.value = value;
@@ -329,11 +370,11 @@ async function drawAutoValues(look) {
   try {
     const d = await api(`${base(p)}/develop?look=${encodeURIComponent(JSON.stringify(lookOf(p)))}`);
     if (turn !== autoTurn) return;
-    const names = { Exposure2012: 'exposure', Highlights2012: 'highlights', Shadows2012: 'shadows', Whites2012: 'whites', Blacks2012: 'blacks' };
+    const names = { Exposure2012: 'exposure', Highlights2012: 'highlights', Shadows2012: 'shadows', Whites2012: 'whites', Blacks2012: 'blacks', CropAngle: 'straighten' };
     const bits = Object.entries(names).filter(([k]) => k in d.auto)
-      .map(([k, n]) => `${n} ${signed(d.auto[k], k === 'Exposure2012' ? 2 : 0)}`);
+      .map(([k, n]) => `${n} ${signed(d.auto[k], k === 'Exposure2012' ? 2 : k === 'CropAngle' ? 1 : 0)}`);
     if ('temp' in d.auto_wb) bits.push(`warmth ${signed(d.auto_wb.temp)}`, `tint ${signed(d.auto_wb.tint)}`);
-    out.textContent = (bits.length ? `For this photo: ${bits.join(', ')}. ` : '') +
+    out.textContent = (bits.length ? `Auto chose for this photo: ${bits.join(', ')}. ` : '') +
       (look.toggles.some((t) => !SHOWN_HERE.has(t)) ? '* Applied in Lightroom, not shown in this preview.' : '');
   } catch (e) { /* the photo itself will report the problem */ }
 }
@@ -372,20 +413,17 @@ function drawPanel() {
   $('preset-box').toggleAttribute('data-off', look.mode === 'auto');
   drawLooks();
 
-  $('toggles').replaceChildren(...TOGGLES.map(([key, label]) => {
-    // In "Preset", ticking one moves to "Preset + auto". In "Auto Correct" all are on and fixed.
-    const box = el('input', { type: 'checkbox', checked: look.toggles.includes(key), disabled: look.mode === 'auto' });
-    box.onchange = () => {
-      const now = new Set(panelLook().toggles);
-      if (box.checked) now.add(key); else now.delete(key);
-      change({ mode: 'preset_auto', toggles: [...now] });
-    };
-    return el('label', { className: SHOWN_HERE.has(key) ? '' : 'later' }, [box, label]);
-  }));
+  for (const r of ROWS) {
+    if (r.box) {
+      r.box.checked = look.toggles.includes(r.toggle);
+      r.box.disabled = look.mode === 'auto';
+    }
+    if (r.input) {
+      if (document.activeElement !== r.input) r.input.value = look[r.key];
+      r.out.textContent = signed(look[r.key], r.digits || 0);
+    }
+  }
   setSlider('amount', look.amount, `${Math.round(look.amount * 100)}%`);
-  setSlider('ev', look.ev, signed(look.ev, 2));
-  setSlider('temp', look.temp, signed(look.temp));
-  setSlider('tint', look.tint, signed(look.tint));
   drawAutoValues(look);
 }
 
@@ -448,6 +486,7 @@ async function start() {
   S.presets = presets.presets;
   S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
   buildLooks();
+  buildRows();
   S.weddings = weddings.weddings;
   $('wedding').replaceChildren(...S.weddings.map((w) => el('option', { value: w.id, textContent: w.name })));
   if (!S.weddings.length) {
@@ -490,7 +529,7 @@ $('search').oninput = (e) => { S.query = e.target.value; drawLooks(); };
 $('looks').onkeydown = (e) => {
   if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); stepPreset(e.key === 'ArrowDown' ? 1 : -1); $('looks').focus(); }
 };
-for (const [id, key] of [['amount', 'amount'], ['ev', 'ev'], ['temp', 'temp'], ['tint', 'tint']]) {
+for (const [id, key] of [['amount', 'amount']]) {
   $(id).oninput = (e) => change({ [key]: Number(e.target.value) });
   $(id).ondblclick = () => change({ [key]: key === 'amount' ? 1 : 0 });
 }

@@ -6,7 +6,11 @@ its own settings:
     {"mode": "preset" | "preset_auto" | "auto",
      "preset": preset id or None, "amount": 0..2,
      "toggles": ["exposure", ...],          # used in mode "preset_auto"
-     "ev": -5..5, "temp": -100..100, "tint": -100..100}
+     "ev": -5..5, "temp": -100..100, "tint": -100..100,       # your own adjustment, added on top
+     "hl", "sh", "wh", "bl": -100..100, "noise": -100..100, "angle": -15..15}
+
+Every "own adjustment" is added to whatever sets that slider: the preset's value,
+or the automatic value when its toggle is on.
 
 Rule: a switched-on toggle is set automatically per photo and the preset's own
 value for it is skipped; everything else comes from the preset. Auto Correct
@@ -35,8 +39,14 @@ PRESETS_FILE = Path(__file__).resolve().parent.parent / "data" / "presets.json"
 PREVIEWED = ("exposure", "highlights", "shadows", "whites", "blacks", "white_balance")
 
 
+# own adjustment -> (Lightroom setting it is added to, lowest, highest value of that setting)
+ADJUST = {"hl": ("Highlights2012", -100, 100), "sh": ("Shadows2012", -100, 100), "wh": ("Whites2012", -100, 100),
+          "bl": ("Blacks2012", -100, 100), "noise": ("LuminanceSmoothing", 0, 100), "angle": ("CropAngle", -45, 45)}
+
+
 def default_look() -> dict:
-    return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0}
+    return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
+            "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -65,6 +75,9 @@ def clean_look(raw, preset_ids=None) -> dict:
     look["ev"] = _number(raw.get("ev"), -5.0, 5.0)
     look["temp"] = _number(raw.get("temp"), -100.0, 100.0)
     look["tint"] = _number(raw.get("tint"), -100.0, 100.0)
+    for key in ("hl", "sh", "wh", "bl", "noise"):
+        look[key] = _number(raw.get(key), -100.0, 100.0)
+    look["angle"] = _number(raw.get("angle"), -15.0, 15.0)
     if look["mode"] == "auto":
         look["preset"], look["toggles"] = None, list(TOGGLES)
     elif look["mode"] == "preset":
@@ -75,6 +88,17 @@ def clean_look(raw, preset_ids=None) -> dict:
 def effective_look(photo_settings, folder_settings) -> dict:
     """The look a photo is shown with: its own if it has one, otherwise its folder's."""
     return clean_look(photo_settings if photo_settings else folder_settings)
+
+
+def straighten(img: np.ndarray, angle: float) -> np.ndarray:
+    """Turn the picture by a few degrees and zoom just enough that no empty corners show."""
+    if abs(angle) < 0.05:
+        return img
+    h, w = img.shape[:2]
+    a = np.radians(abs(angle))
+    zoom = float(np.cos(a) + max(w / h, h / w) * np.sin(a))
+    m = cv2.getRotationMatrix2D((w / 2, h / 2), -angle, zoom)      # positive angle turns the picture clockwise
+    return cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
 
 
 class _Cache:
@@ -160,9 +184,13 @@ class Renderer:
         settings, curves = effective_settings(preset, set(look["toggles"])) if preset else ({}, {})
         auto = self.auto_values(path, look["toggles"], iso)
         settings, manual = combine(settings, auto)
+        for key, (name, lo, hi) in ADJUST.items():
+            if look[key]:
+                settings[name] = min(hi, max(lo, float(settings.get(name) or 0) + look[key]))
         manual = {"temp": float(manual.get("temp", 0.0)) + look["temp"],
                   "tint": float(manual.get("tint", 0.0)) + look["tint"], "exposure": look["ev"]}
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
+                "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None}
 
     def base(self, path: Path, size: int) -> bytes:
@@ -172,4 +200,4 @@ class Renderer:
         d = self.develop(path, look, iso)
         img = self._load(path, size)
         out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
-        return self._jpeg(out)
+        return self._jpeg(straighten(out, d["angle"]))

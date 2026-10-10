@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=2">
+<link rel="stylesheet" href="/static/app.css?v=3">
 </head>
 <body>
 <div id="signin" hidden>
@@ -89,17 +89,11 @@
       <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
     </section>
 
-    <section id="auto-box">
-      <h2>Set automatically, per photo</h2>
-      <div id="toggles"></div>
+    <section id="adjust-box">
+      <h2>Adjust</h2>
+      <p class="hint">Tick <b>Auto</b> to have a setting worked out for each photo. The slider is your own change, added on top.</p>
+      <div id="rows"></div>
       <p id="auto-values"></p>
-    </section>
-
-    <section>
-      <h2>Your own adjustment</h2>
-      <label class="slider"><span>Exposure</span><input id="ev" type="range" min="-3" max="3" step="0.05"><output></output></label>
-      <label class="slider"><span>Warmth</span><input id="temp" type="range" min="-100" max="100" step="1"><output></output></label>
-      <label class="slider"><span>Tint</span><input id="tint" type="range" min="-100" max="100" step="1"><output></output></label>
       <button id="reset" type="button" class="quiet">Reset these settings</button>
     </section>
     <p id="saved" aria-live="polite"></p>
@@ -113,6 +107,6 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

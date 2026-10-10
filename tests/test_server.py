@@ -129,3 +129,25 @@ def test_looks_per_folder_and_per_photo(client):
     assert client.get(url + "/image?size=123", headers=H).status_code == 422
     assert client.get(url + "/image?size=800&look=%7Bbroken", headers=H).status_code == 422
     assert client.put(f"/api/weddings/{w['id']}/folders/999/look", headers=H, json={}).status_code == 404
+
+
+def test_own_adjustments_add_on_top(client, tmp_path):
+    from pathlib import Path
+    from server.looks import Renderer, clean_look, straighten
+    import numpy as np
+    r = Renderer()
+    photo = tmp_path / "p.jpg"
+    Image.effect_noise((320, 240), 40).convert("RGB").save(photo, "JPEG")
+    preset = next(p for p in r.presets.values() if p["settings"].get("Highlights2012"))
+    base = preset["settings"]["Highlights2012"]
+    d = r.develop(photo, {"mode": "preset", "preset": preset["id"], "hl": -20, "noise": 30, "angle": 2.5})
+    assert d["settings"]["Highlights2012"] == max(-100, base - 20)          # preset value plus your own change
+    assert d["settings"]["LuminanceSmoothing"] == min(100, (preset["settings"].get("LuminanceSmoothing") or 0) + 30)
+    assert d["angle"] == 2.5
+    auto = r.develop(photo, {"mode": "preset_auto", "preset": preset["id"], "toggles": ["highlights"], "hl": 10})
+    assert auto["settings"]["Highlights2012"] == min(100, auto["auto"]["Highlights2012"] + 10)   # auto value plus your own change
+    assert clean_look({"hl": 900, "angle": -99})["hl"] == 100 and clean_look({"angle": -99})["angle"] == -15
+    img = np.zeros((60, 90, 3), np.float32); img[:, :45] = 1
+    turned = straighten(img, 5)
+    assert turned.shape == img.shape and not np.array_equal(turned, img) and straighten(img, 0) is img
+    assert r.render(photo, {"mode": "preset", "angle": 3}, 360) != r.render(photo, {"mode": "preset"}, 360)
