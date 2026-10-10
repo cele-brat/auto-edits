@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from . import VERSION
 from engine.presets import parse_xmp
 
-from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look
+from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -292,6 +292,32 @@ def create_app(data_dir: str | None = None, key: str | None = None) -> FastAPI:
         d = renderer.develop(store.preview_path(wedding_id, photo_id), chosen, iso)
         return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"],
                 "preset_masks": d["corrections"]}
+
+    # ---- back to Lightroom ---------------------------------------------------
+    @app.get("/api/weddings/{wedding_id}/apply", dependencies=api)
+    def apply_list(wedding_id: str, offset: int = 0, limit: int = 200):
+        """For the plug-in: what Lightroom should do to each photo, a page at a time.
+        "done" is true when Lightroom has already applied exactly this edit."""
+        wedding_or_404(wedding_id)
+        rows = store.photos(wedding_id)
+        page = rows[max(0, offset):max(0, offset) + max(1, min(500, limit))]
+        folders = {f["id"]: f["settings"] for f in store.wedding(wedding_id)["folders"]}
+        out = []
+        for r in page:
+            look = effective_look(r["settings"], folders.get(r["folder_id"]))
+            iso = r["meta"].get("iso") if isinstance(r["meta"].get("iso"), (int, float)) else None
+            edit = lightroom_edit(renderer, store.preview_path(wedding_id, r["id"]), look, iso)
+            item = {"uuid": r["lr_uuid"], "name": r["file_name"], "folder": r["folder"], "edit": edit}
+            if edit:
+                item["stamp"] = hashlib.sha1(json.dumps(edit, sort_keys=True).encode()).hexdigest()[:16]
+                item["done"] = r["applied"] == item["stamp"]
+            out.append(item)
+        return {"total": len(rows), "offset": offset, "photos": out}
+
+    @app.post("/api/weddings/{wedding_id}/applied", dependencies=api)
+    def applied(wedding_id: str, stamps: dict = Body(...)):
+        wedding_or_404(wedding_id)
+        return {"marked": store.mark_applied(wedding_id, stamps)}
 
     @app.get("/")
     def home():

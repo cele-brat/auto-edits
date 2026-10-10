@@ -196,3 +196,85 @@ def test_open_the_app_signs_the_browser_in_once(rig):
     rig.mock.prefs.serverKey = ""
     rig.run("OpenApp.lua")
     assert "server key is not set" in rig.messages()[-1][1]
+
+
+def _setup_looks(rig):
+    """Three photos sent, a look on the Haldi folder, a mask preset on Sangeet."""
+    a = rig.add_photo("u1", "A.NEF", "Haldi")
+    b = rig.add_photo("u2", "B.JPG", "Haldi", develop={"Temperature": None, "IncrementalTemperature": 0, "IncrementalTint": 0})
+    c = rig.add_photo("u3", "C.NEF", "Sangeet", develop={"Contrast2012": 40})
+    d = rig.add_photo("u4", "D.NEF", "Mehndi")
+    rig.mock.dialogEdits.wedding = "Asha & Rohan"
+    rig.run()
+    (w,) = rig.weddings()
+    folders = {f["name"]: f["id"] for f in w["folders"]}
+    H = {"X-Auto-Edits-Key": KEY}
+    presets = rig.client.get("/api/presets", headers=H).json()["presets"]
+    rig.client.put(f"/api/weddings/{w['id']}/folders/{folders['Haldi']}/look", headers=H,
+                   json={"mode": "preset_auto", "preset": presets[0]["id"], "toggles": ["exposure"], "temp": 30, "tint": 10, "sh": 12})
+    xmp = (ROOT / "tests" / "fixtures" / "polished_bright_2.xmp").read_bytes()
+    pid = rig.client.post("/api/presets", headers=H, files=[("files", ("p.xmp", xmp))]).json()["results"][0]["id"]
+    rig.client.put(f"/api/weddings/{w['id']}/folders/{folders['Sangeet']}/look", headers=H,
+                   json={"mode": "preset_auto", "preset": pid, "toggles": ["exposure"]})
+    rig.mock.dialogEdits.wedding = w["id"]                      # the apply dialog chooses by id
+    return w, a, b, c, d, presets[0], pid
+
+
+def test_bring_back_and_apply(rig):
+    w, a, b, c, d, preset, pid = _setup_looks(rig)
+    lua = rig.lua
+    rig.mock.installed["8EF01EEA28314F66B346C52D6E20C54A"] = lua.table_from(
+        {"name": "Polished Bright 2", "settings": lua.table_from({"Contrast2012": 11, "Vibrance": 7})})
+    rig.run("ApplyEdits.lua")
+
+    assert "3 photos" in rig.mock.confirms[1] and "1 have nothing chosen" in rig.mock.confirms[1]
+    title, text = rig.messages()[-1]
+    assert "edits applied" in title and "Edited now: 3 of 3" in text and "Snapshots" in text
+
+    # a normal preset: laid over a no-edit start, then white balance shifted from the photo's own Kelvin
+    assert list(a.snapshots.values()) == ["Before Auto Edits"]
+    assert list(a.steps.values()) == ["Auto Edits", "Auto Edits: per photo"]
+    assert a.develop.WhiteBalance == "Custom" and a.develop.Temperature > 5200 and a.develop.Temperature % 50 == 0
+    assert a.develop.Tint == 8 + 3                                   # app tint 10 is 3 in Lightroom
+    assert a.develop.Vibrance is not None and a.develop.ParametricDarks is not None
+    assert len(list(a.develop.ToneCurvePV2012.values())) >= 4
+    # a JPEG has no Kelvin: its relative sliders move instead
+    assert b.develop.IncrementalTemperature == 30 and b.develop.IncrementalTint == 10 and b.develop.Temperature is None
+    # a preset of his own with AI masks: Lightroom applies the preset, then only the per-photo values go on top
+    assert list(c.steps.values())[0] == "preset Polished Bright 2" and c.develop.Contrast2012 == 11
+    assert "Exposure2012" in dict(c.develop.items()) and list(c.steps.values())[-1] == "Auto Edits: per photo"
+    assert "preset with AI masks" in text and "Update AI Settings" in text
+    assert list(d.steps.values()) == [] and list(d.snapshots.values()) == []      # nothing chosen: untouched
+
+    # run again: everything is done already
+    before = (len(list(a.steps.values())), len(rig.mock.confirms))
+    rig.run("ApplyEdits.lua")
+    assert "Nothing to apply" in rig.messages()[-1][1] and "3 photos already have their edit" in rig.messages()[-1][1]
+    assert (len(list(a.steps.values())), len(rig.mock.confirms)) == before
+    # change the look in the app: only that folder is due again
+    H = {"X-Auto-Edits-Key": KEY}
+    haldi = [f["id"] for f in rig.weddings()[0]["folders"] if f["name"] == "Haldi"][0]
+    rig.client.put(f"/api/weddings/{w['id']}/folders/{haldi}/look", headers=H, json={"mode": "auto"})
+    rig.run("ApplyEdits.lua")
+    assert "Edited now: 2 of 2" in rig.messages()[-1][1] and "Already done, skipped: 1" in rig.messages()[-1][1]
+    rig.client.delete(f"/api/presets/{pid}", headers=H)
+
+
+def test_bring_back_reports_what_it_could_not_do(rig):
+    w, a, b, c, d, preset, pid = _setup_looks(rig)
+    a.develop.Temperature = None                                  # Lightroom sometimes gives no Kelvin value
+    rig.run("ApplyEdits.lua")                                     # and the mask preset is not installed here
+    text = rig.messages()[-1][1]
+    assert "not installed in this Lightroom" in text and "Polished Bright 2" in text
+    assert "White balance was left as shot on 1 photos" in text
+    assert list(c.steps.values()) == [] and list(c.snapshots.values()) == []     # its preset is missing: untouched
+    H = {"X-Auto-Edits-Key": KEY}
+    due = {p["uuid"]: p["done"] for p in rig.client.get(f"/api/weddings/{w['id']}/apply", headers=H).json()["photos"] if p["edit"]}
+    assert due == {"u1": True, "u2": True, "u3": False}          # the one without its preset stays due
+
+    rig.mock.confirmAnswer = "cancel"
+    rig.client.put(f"/api/weddings/{w['id']}/photos/{rig.photos(w['id'])[0]['id']}/look", headers=H, json={"mode": "auto"})
+    steps = len(list(a.steps.values())) + len(list(b.steps.values()))
+    rig.run("ApplyEdits.lua")
+    assert len(list(a.steps.values())) + len(list(b.steps.values())) == steps    # said Cancel: nothing touched
+    rig.client.delete(f"/api/presets/{pid}", headers=H)

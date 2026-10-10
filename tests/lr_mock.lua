@@ -1,6 +1,6 @@
 -- A stand-in for the parts of the Lightroom SDK the plug-in uses, for tests.
 -- `py` is provided by the test: py.http(method, url, body, headers, filePath), py.writeJpeg(path), py.remove(path)
-local M = { messages = {}, prefs = {}, photos = {}, dialogAnswer = 'ok', dialogEdits = {}, cleanup = {}, history = {} }
+local M = { installed = {}, confirmAnswer = 'ok', confirms = {}, messages = {}, prefs = {}, photos = {}, dialogAnswer = 'ok', dialogEdits = {}, cleanup = {}, history = {} }
 
 local function anything()
     local t = {}
@@ -20,7 +20,8 @@ local function http(method, url, body, headers, filePath)
 end
 
 local modules = {
-    LrApplication = { activeCatalog = function() return M.catalog end },
+    LrApplication = { activeCatalog = function() return M.catalog end,
+                      developPresetByUuid = function(uuid) return M.installed[uuid] end },
     LrBinding = { makePropertyTable = function() M.props = {}; return M.props end, keyEquals = function() return {} end },
     LrDate = { timeToW3CDate = function(t) return 'T' .. string.format('%.0f', t) end },
     LrDialogs = {
@@ -29,6 +30,7 @@ local modules = {
             for k, v in pairs(M.dialogEdits) do M.props[k] = v end
             return M.dialogAnswer
         end,
+        confirm = function(title, text) M.confirms[#M.confirms + 1] = text; return M.confirmAnswer end,
         attachErrorDialogToFunctionContext = function() end,
     },
     LrExportSession = function(args)
@@ -90,13 +92,22 @@ function M.photo(spec)
     function p:getRawMetadata(k) return self.spec.raw[k] end
     function p:getDevelopSettings() return self.develop end
     function p:createDevelopSnapshot(name) self.snapshots[#self.snapshots + 1] = name end
-    function p:applyDevelopSettings(s) for k, v in pairs(s) do self.develop[k] = v end end
+    p.steps = {}
+    function p:applyDevelopSettings(s, name) self.steps[#self.steps + 1] = name or 'settings'; for k, v in pairs(s) do self.develop[k] = v end end
+    function p:applyDevelopPreset(preset)
+        self.steps[#self.steps + 1] = 'preset ' .. preset.name
+        for k, v in pairs(preset.settings) do self.develop[k] = v end
+    end
     return p
 end
 
 M.catalog = {
     selected = true,
     getTargetPhotos = function() return M.photos end,
+    findPhotoByUuid = function(_, uuid)
+        for _, p in ipairs(M.photos) do if p.spec.raw.uuid == uuid then return p end end
+        return nil
+    end,
     getTargetPhoto = function() return M.catalog.selected and M.photos[1] or nil end,
     getPath = function() return '/Users/b/Weddings 2026.lrcat' end,
     batchGetRawMetadata = function(_, photos, keys)

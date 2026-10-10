@@ -216,3 +216,47 @@ def test_upload_a_lightroom_preset_with_ai_masks(client):
     assert client.delete(f"/api/presets/{library}", headers=H).status_code == 404   # the built-in ones stay
     assert client.delete(f"/api/presets/{pid}", headers=H).json()["deleted"]
     assert not any(p["mine"] for p in client.get("/api/presets", headers=H).json()["presets"])
+
+
+def test_edits_for_lightroom(client):
+    from pathlib import Path
+    w = client.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    buf = io.BytesIO(); Image.effect_noise((320, 240), 40).convert("RGB").save(buf, "JPEG")
+    for u, folder in (("u1", "Haldi"), ("u2", "Haldi"), ("u3", "Sangeet")):
+        send(client, w["id"], u, folder, u + ".NEF", buf.getvalue())
+    folders = {f["name"]: f["id"] for f in client.get(f"/api/weddings/{w['id']}", headers=H).json()["folders"]}
+    presets = client.get("/api/presets", headers=H).json()["presets"]
+    preset = presets[0]["id"]
+    client.put(f"/api/weddings/{w['id']}/folders/{folders['Haldi']}/look", headers=H,
+               json={"mode": "preset_auto", "preset": preset, "toggles": ["exposure", "white_balance"], "ev": 0.3,
+                     "hl": -10, "temp": 20, "angle": 2})
+    got = client.get(f"/api/weddings/{w['id']}/apply", headers=H).json()
+    assert got["total"] == 3
+    by = {p["uuid"]: p for p in got["photos"]}
+    assert by["u3"]["edit"] is None                                  # a folder with no look is left alone
+    e = by["u1"]["edit"]
+    assert e["preset"] == presets[0]["name"] and e["preset_uuid"] is None and e["from_no_edit"]
+    d = client.get(f"/api/weddings/{w['id']}/photos/{[p for p in client.get(f'/api/weddings/{w['id']}/photos?compact=1', headers=H).json()['photos'] if p['name']=='u1.NEF'][0]['id']}/develop", headers=H).json()
+    assert abs(e["settings"]["Exposure2012"] - (d["auto"]["Exposure2012"] + 0.3)) < 0.002     # auto value plus your own change
+    assert "CropAngle" not in e["settings"] and e["not_yet"] == ["straighten"]
+    assert e["wb"]["mired"] < 0 and e["wb"]["relative_temp"] == d["auto_wb"]["temp"] + 20      # warmer = fewer mired
+    assert all(len(v) % 2 == 0 and len(v) >= 4 for v in e["curves"].values())
+    assert by["u1"]["done"] is False and len(by["u1"]["stamp"]) == 16
+
+    assert client.post(f"/api/weddings/{w['id']}/applied", headers=H, json={"u1": by["u1"]["stamp"]}).json()["marked"] == 1
+    again = {p["uuid"]: p for p in client.get(f"/api/weddings/{w['id']}/apply", headers=H).json()["photos"]}
+    assert again["u1"]["done"] is True and again["u2"]["done"] is False
+    client.put(f"/api/weddings/{w['id']}/folders/{folders['Haldi']}/look", headers=H, json={"mode": "preset", "preset": preset})
+    changed = {p["uuid"]: p for p in client.get(f"/api/weddings/{w['id']}/apply", headers=H).json()["photos"]}
+    assert changed["u1"]["done"] is False                            # the look changed, so it is due again
+    assert len(client.get(f"/api/weddings/{w['id']}/apply?offset=1&limit=1", headers=H).json()["photos"]) == 1
+
+    # a preset uploaded from Lightroom with AI masks is applied by Lightroom itself
+    xmp = (Path(__file__).parent / "fixtures" / "polished_bright_2.xmp").read_bytes()
+    pid = client.post("/api/presets", headers=H, files=[("files", ("p.xmp", xmp))]).json()["results"][0]["id"]
+    client.put(f"/api/weddings/{w['id']}/folders/{folders['Sangeet']}/look", headers=H,
+               json={"mode": "preset_auto", "preset": pid, "toggles": ["exposure"], "sh": 5})
+    m = {p["uuid"]: p for p in client.get(f"/api/weddings/{w['id']}/apply", headers=H).json()["photos"]}["u3"]["edit"]
+    assert m["preset_uuid"] == "8EF01EEA28314F66B346C52D6E20C54A" and not m["from_no_edit"] and m["curves"] == {}
+    assert set(m["settings"]) <= {"Exposure2012", "Shadows2012"} and "Exposure2012" in m["settings"]   # only what differs
+    client.delete(f"/api/presets/{pid}", headers=H)

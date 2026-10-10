@@ -353,3 +353,57 @@ class Renderer:
             if show in masks:
                 out = show_mask(out, masks[show])
         return self._jpeg(straighten(out, d["angle"]))
+
+
+# ---- handing the edits to Lightroom ------------------------------------------
+# Measured on Lightroom exports: one "stop" of the app's warmth equals this many mired in
+# Lightroom's Temperature, and Lightroom's Tint moves this much per unit of the app's tint.
+MIRED_PER_STOP = 156.0
+LR_TINT_PER_UNIT = 0.30
+_WB_KEYS = ("WhiteBalance", "Temperature", "Tint", "IncrementalTemperature", "IncrementalTint")
+
+
+def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> dict | None:
+    """What Lightroom should do to one photo for this look, or None when the look changes nothing.
+
+    Two ways to apply a preset:
+      * a preset uploaded from Lightroom with AI masks is applied by Lightroom itself
+        ("preset_uuid"), so Lightroom makes its own masks; "settings" then holds only
+        what differs from the preset (automatic values, your own changes);
+      * otherwise "settings" is everything, laid over a no-edit starting point.
+    White balance changes travel as a shift ("wb"), because only Lightroom knows the
+    photo's as-shot Kelvin value.
+    """
+    look = clean_look(look, renderer.presets)
+    d = renderer.develop(path, look, iso)
+    preset = renderer.presets.get(look["preset"]) if look["preset"] else None
+    settings = dict(d["settings"])
+    if d["manual"].get("exposure"):
+        settings["Exposure2012"] = round(float(settings.get("Exposure2012") or 0) + d["manual"]["exposure"], 3)
+    not_yet = []
+    if abs(float(settings.pop("CropAngle", 0) or 0)) >= 0.05 or "straighten" in look["toggles"]:
+        not_yet.append("straighten")
+    settings.pop("PerspectiveUpright", None), settings.pop("UprightVersion", None)
+    if look["masks"]:
+        not_yet.append("your own masks")
+    temp, tint = float(d["manual"].get("temp") or 0), float(d["manual"].get("tint") or 0)
+    wb = None
+    if temp or tint:
+        stops = temp / 100.0 * _r.DEFAULT_PARAMS["wb_temp"]
+        wb = {"mired": round(-MIRED_PER_STOP * stops, 2), "tint": round(LR_TINT_PER_UNIT * tint, 2),
+              "relative_temp": round(temp, 1), "relative_tint": round(tint, 1)}
+
+    by_lightroom = bool(preset and preset["id"] not in renderer.library and preset.get("masks") and look["preset_masks"])
+    if by_lightroom:
+        own = preset["settings"]
+        settings = {k: v for k, v in settings.items() if own.get(k) != v}
+        if "white_balance" in look["toggles"] and any(k in own for k in _WB_KEYS):
+            settings["WhiteBalance"] = "As Shot"          # the toggle skips the preset's own white balance
+    curves = {} if by_lightroom else {k: [v for point in pts for v in point] for k, pts in d["curves"].items()}
+    if preset and preset.get("masks") and not by_lightroom:
+        not_yet.append("the preset's masks")
+    if not (preset or settings or wb or not_yet):
+        return None
+    return {"preset": preset["display_name"] if preset else None,
+            "preset_uuid": preset.get("uuid") if by_lightroom else None,
+            "from_no_edit": not by_lightroom, "settings": settings, "curves": curves, "wb": wb, "not_yet": not_yet}

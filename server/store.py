@@ -50,6 +50,8 @@ class Store:
             columns = {r["name"] for r in db.execute("PRAGMA table_info(photos)")}
             if "settings" not in columns:            # a photo's own look; empty means "as the folder"
                 db.execute("ALTER TABLE photos ADD COLUMN settings TEXT NOT NULL DEFAULT ''")
+            if "applied" not in columns:             # stamp of the edit last applied to this photo in Lightroom
+                db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
 
     @contextmanager
     def _db(self):
@@ -149,7 +151,7 @@ class Store:
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
-        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, "
+        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -205,6 +207,12 @@ class Store:
     def delete_preset(self, preset_id: str) -> bool:
         with self._db() as db:
             return bool(db.execute("DELETE FROM presets WHERE id=?", (preset_id,)).rowcount)
+
+    def mark_applied(self, wedding_id: str, stamps: dict) -> int:
+        """Remember which edit Lightroom has applied to each photo (Lightroom id -> stamp)."""
+        with self._db() as db:
+            return sum(db.execute("UPDATE photos SET applied=? WHERE wedding_id=? AND lr_uuid=?",
+                                  (str(stamp), wedding_id, str(uuid))).rowcount for uuid, stamp in stamps.items())
 
     def cache_dir(self, wedding_id: str) -> Path:
         d = self.wedding_dir(wedding_id) / "cache"
