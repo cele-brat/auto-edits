@@ -41,3 +41,28 @@ def test_full_names(library):
     from engine.presets import split_name
     assert split_name("Cele-Brat Bottega53 01 Signature", "Cele-Brat - Bottega53 Look")[2] == "Bottega53 01 Signature"
     assert split_name("Cele-Brat Marco Grob 01 Signature", "Cele-Brat - Marco Grob Look")[2] == "Marco Grob 01 Signature"
+
+
+def test_ai_mask_preset():
+    from pathlib import Path
+    from engine.presets import parse_xmp, effective_settings
+    p = parse_xmp((Path(__file__).parent / "fixtures" / "polished_bright_2.xmp").read_text(), "polished_bright_2.xmp")
+    assert p.id == "112502V1" and p.uuid == "8EF01EEA28314F66B346C52D6E20C54A"      # not a mask's UUID
+    assert p.name == p.display_name == "Polished Bright 2"
+    s = p.settings
+    assert s["Exposure2012"] == 0.15 and s["Highlights2012"] == -64 and s["Blacks2012"] == 24
+    assert s["LuminanceSmoothing"] == 4 and s["ColorNoiseReduction"] == 7
+    assert not any(k.startswith(("Local", "Table_", "Mask", "Correction")) for k in s)   # mask values stay out
+    assert p.curves["ToneCurvePV2012"][0] == [0, 3] and p.curves["ToneCurvePV2012Green"][1] == [109, 108]
+    assert p.has_masks and len(p.masks) == 10
+    kinds = [m["masks"][0]["kind"] for m in p.masks]
+    assert kinds == ["subject", "background", "clothes", "face_skin", "face_skin", "face_skin", "face_skin",
+                     "eye_sclera", "iris_pupil", "teeth"]
+    bg = p.masks[1]
+    assert bg["name"] == "Scene Background - Filmy Fade" and bg["masks"][0]["inverted"]
+    assert bg["curve"] == [[0, 26], [68, 79], [161, 181], [255, 238]]
+    assert abs(bg["adjust"]["Highlights2012"] + 0.435612) < 1e-9
+    assert p.masks[2]["adjust"] == {"Saturation": 0.496289}
+    # the noise toggle skips the preset's own noise values, nothing else
+    cut, _ = effective_settings(p, {"noise"})
+    assert "LuminanceSmoothing" not in cut and "ColorNoiseReduction" not in cut and cut["Contrast2012"] == 7
