@@ -13,6 +13,7 @@ import traceback
 
 from . import blobs as blob_store
 from .exports import Exports
+from .culling import Culls
 from .looks import Renderer
 from .store import Store
 
@@ -22,10 +23,18 @@ def work(idle_exit: bool = False, data_dir: str | None = None, blobs=None) -> in
     store = Store(data_dir or os.environ.get("AUTOEDITS_DATA", "data/server"),
                   blobs if blobs is not None else blob_store.from_environment())
     exports = Exports(store)
+    culls = Culls(store)
     renderer = Renderer()
     known = 0
     made = 0
     while True:
+        job = culls.claim()
+        if job:
+            try:
+                culls.run(job, renderer)
+            except Exception:
+                traceback.print_exc()
+            continue
         items = exports.claim(2)
         if not items:
             if idle_exit:

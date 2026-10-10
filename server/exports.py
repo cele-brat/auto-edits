@@ -51,8 +51,13 @@ class Exports:
             db.executescript(SCHEMA)
 
     # ---- making and listing ------------------------------------------------
-    def create(self, wedding_id: str, size: int, quality: int, watermark: str, folder_id: int | None) -> dict:
+    def create(self, wedding_id: str, size: int, quality: int, watermark: str, folder_id: int | None,
+               ratings: tuple = ()) -> dict:
+        """ratings: export only photos rated so (keep / maybe / reject); empty means every photo."""
         photos = self.store.photos(wedding_id, folder_id)
+        scope_name = photos[0]["folder"] if photos and folder_id is not None else ""
+        if ratings:
+            photos = [p for p in photos if (p["pick"] or (p["cull"] or {}).get("r")) in ratings]
         if not photos:
             raise ValueError("there are no photos to export")
         export_id = uuid.uuid4().hex[:12]
@@ -65,7 +70,7 @@ class Exports:
                 name, n = f"{stem}-{n}", n + 1
             seen.add((p["folder"], name.lower()))
             rows.append((export_id, p["id"], name + ".jpg", _safe(p["folder"])))
-        scope = photos[0]["folder"] if folder_id is not None else ""
+        scope = " · ".join(x for x in (scope_name, " + ".join(ratings)) if x)
         with self.store._db() as db:
             db.execute("INSERT INTO exports (id, wedding_id, size, quality, watermark, scope, created) VALUES (?,?,?,?,?,?,?)",
                        (export_id, wedding_id, size, quality, watermark.strip()[:80], scope, time.time()))

@@ -18,7 +18,7 @@ const MODE_NOTES = {
 const S = {
   weddings: [], wedding: null, folderId: null, photos: [], presets: [], byPreset: new Map(), looks: [],
   photoId: null, view: 'grid', scope: 'folder', split: true, holdBefore: false, dividerAt: 0.5,
-  panels: [], pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
+  rating: null, panels: [], pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
 };
 
 // ---- talking to the server ------------------------------------------------
@@ -163,13 +163,20 @@ function drawFolders() {
   }));
 }
 
-const inFolder = () => S.photos.filter((p) => p.folder === S.folderId);
+// A photo's rating: the photographer's own if set, else the automatic one, else none.
+const ratingOf = (p) => p.pick || (p.cull ? p.cull.r : null);
+const wholeFolder = () => S.photos.filter((p) => p.folder === S.folderId);
+const inFolder = () => wholeFolder().filter((p) => !S.rating || ratingOf(p) === S.rating);
+const RATING_NAMES = { keep: 'Keep', maybe: 'Maybe', reject: 'Reject' };
 
 function thumb(p, withName) {
   const b = el('button', { type: 'button', title: p.name });
   b.dataset.id = p.id;
   b.append(el('img', { loading: 'lazy', alt: p.name, src: thumbUrl(p) }));
   if (p.look) b.append(el('span', { className: 'own', title: 'Has its own settings' }));
+  const r = ratingOf(p);
+  if (r) b.append(el('span', { className: `rate ${r}${p.pick ? ' mine' : ''}`, textContent: RATING_NAMES[r],
+    title: p.pick ? 'Set by you' : (p.cull.why.join(', ') || 'Nothing wrong found') }));
   if (withName) b.append(el('span', { className: 'name', textContent: p.name }));
   b.setAttribute('aria-current', String(p.id === S.photoId));
   return b;
@@ -258,6 +265,11 @@ function drawCaption() {
   if (p.camera) bits.push(el('span', { textContent: p.camera }));
   if (p.iso) bits.push(el('span', { textContent: `ISO ${p.iso}` }));
   if (p.edited) bits.push(el('span', { textContent: 'Came from Lightroom with edits already on it' }));
+  const r = ratingOf(p);
+  if (r) {
+    const why = p.pick ? 'set by you' : (p.cull.why.join(', ') || 'nothing wrong found');
+    bits.push(el('span', { className: `rate ${r}`, textContent: RATING_NAMES[r] }), el('span', { textContent: why }));
+  }
   $('caption').replaceChildren(...bits);
 }
 
@@ -598,6 +610,8 @@ function openFolder(id) {
   S.photoId = (inFolder()[0] || {}).id || null;
   S.scope = 'folder';
   S.openLook = null;
+  S.rating = null;
+  if (window.drawRatings) drawRatings();
   drawFolders(); drawGrid(); drawPanel(); drawStage();
 }
 
@@ -635,6 +649,7 @@ async function openWedding(id) {
   S.view = 'grid';
   drawFolders();
   openFolder((S.wedding.folders[0] || {}).id || null);
+  if (window.refreshCull) refreshCull();
 }
 
 function showSignIn() {
@@ -793,9 +808,17 @@ document.addEventListener('keydown', (e) => {
   if (typing || t.matches('input[type=range]') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+  else if (!typing && typeof Cull !== 'undefined' && Cull.key(e.key)) e.preventDefault();
   else if (e.key === 'g' || e.key === 'G' || e.key === 'Escape') setView('grid');
   else if (e.key === 'Enter' && S.view === 'grid' && !t.matches('button, summary')) setView('loupe');
 });
 document.addEventListener('keyup', (e) => { if (e.key === '\\' && S.holdBefore) { S.holdBefore = false; placeDivider(); } });
+
+// The strip of small photos: a mouse wheel moves it sideways.
+$('strip').addEventListener('wheel', (e) => {
+  if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;         // a sideways swipe already scrolls it
+  e.preventDefault();
+  $('strip').scrollLeft += e.deltaY;
+}, { passive: false });
 
 start().catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });

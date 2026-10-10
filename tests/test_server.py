@@ -419,3 +419,32 @@ def test_fast_export_renderer_matches_the_exact_one(tmp_path):
             exact = render(img, s, c, {"temp": 6, "tint": -4, "exposure": 0.25}, amount=amount)
             fast = render8(img8, s, c, {"temp": 6, "tint": -4, "exposure": 0.25}, amount=amount).astype(np.float32) / 255
             assert np.abs(exact - fast).mean() < 0.006, p["display_name"]      # under 1.5 levels of 255 on average
+
+
+def test_cull_a_wedding_then_change_a_rating_by_hand_and_export_the_keepers(tmp_path):
+    from server.worker import work
+    c = TestClient(create_app(str(tmp_path), KEY))
+    w, folders = _wedding_with_looks(c)
+    assert c.post(f"/api/weddings/{w['id']}/cull", headers=H, json={"strictness": "fussy"}).status_code == 422
+    jobs = c.post(f"/api/weddings/{w['id']}/cull", headers=H, json={"strictness": "normal"}).json()["culls"]
+    assert sorted(j["folder"] for j in jobs) == ["Haldi", "Sangeet"] and all(j["state"] == "waiting" for j in jobs)
+    work(idle_exit=True, data_dir=str(tmp_path))
+    jobs = c.get(f"/api/weddings/{w['id']}/cull", headers=H).json()["culls"]
+    assert all(j["state"] == "done" and j["done"] == j["total"] for j in jobs)
+    photos = c.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"]
+    assert all(p["cull"]["r"] in ("keep", "maybe", "reject") and p["pick"] is None for p in photos)
+
+    first = photos[0]
+    url = f"/api/weddings/{w['id']}/photos/{first['id']}/pick"
+    assert c.put(url, headers=H, json={"pick": "lovely"}).status_code == 422
+    assert c.put(url, headers=H, json={"pick": "keep"}).json() == {"pick": "keep"}
+    c.post(f"/api/weddings/{w['id']}/cull", headers=H, json={"strictness": "strict", "folder": first["folder"]})
+    work(idle_exit=True, data_dir=str(tmp_path))                                  # a new cull leaves the hand rating alone
+    again = {p["id"]: p for p in c.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"]}
+    assert again[first["id"]]["pick"] == "keep"
+
+    rated = lambda p: p["pick"] or p["cull"]["r"]
+    keepers = [p for p in again.values() if rated(p) == "keep"]
+    e = c.post(f"/api/weddings/{w['id']}/exports", headers=H, json={"size": 2560, "ratings": ["keep"]}).json()
+    assert e["total"] == len(keepers) >= 1 and e["scope"] == "keep"
+    assert c.put(url, headers=H, json={"pick": None}).json() == {"pick": None}

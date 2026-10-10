@@ -60,7 +60,8 @@ $('export-start').onclick = async () => {
     const scope = $('export-scope').value;
     await api(`/api/weddings/${S.wedding.id}/exports`, { method: 'POST', body: {
       size: +$('export-size').value, quality: +$('export-quality').value,
-      watermark: $('export-watermark').value.trim(), folder: scope === '' ? null : +scope } });
+      watermark: $('export-watermark').value.trim(), folder: scope === '' ? null : +scope,
+      ratings: $('export-ratings').value ? $('export-ratings').value.split(',') : [] } });
   } catch (err) { $('export-error').textContent = err.message; }
   $('export-start').disabled = false;
   refreshExports();

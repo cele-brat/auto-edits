@@ -24,6 +24,7 @@ from . import VERSION, adjustments, blobs as blob_store
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
+from .culling import RATINGS, Culls
 from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
 from .store import Store
 
@@ -50,6 +51,17 @@ class NewExport(BaseModel):
     quality: int = 90
     watermark: str = ""
     folder: int | None = None
+    ratings: list[str] = []
+
+
+class NewCull(BaseModel):
+    folder: int | None = None
+    strictness: str = "normal"
+    best_only: bool = False
+
+
+class Pick(BaseModel):
+    pick: str | None = None
 
 
 def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) -> FastAPI:
@@ -62,6 +74,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
     app.state.store = store
     exports = Exports(store)
     app.state.exports = exports
+    culls = Culls(store)
 
     if store.blobs.on and os.environ.get("AUTOEDITS_WARM_UP") == "1":
         import threading
@@ -203,7 +216,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
             rows = [{"id": r["id"], "name": r["file_name"], "folder": r["folder_id"], "look": r["settings"],
                      "v": int(r["received"]), "w": r["meta"].get("width"), "h": r["meta"].get("height"),
                      "iso": r["meta"].get("iso"), "taken": r["taken"], "camera": r["meta"].get("camera"),
-                     "edited": len(r["meta"].get("edited") or [])} for r in rows]
+                     "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None} for r in rows]
         return {"photos": rows}
 
     def photo_or_404(wedding_id: str, photo_id: str) -> dict:
@@ -324,6 +337,32 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
         return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"],
                 "preset_masks": d["corrections"]}
 
+    # ---- culling ----------------------------------------------------------------
+    @app.post("/api/weddings/{wedding_id}/cull", dependencies=api)
+    def start_cull(wedding_id: str, body: NewCull):
+        w = wedding_or_404(wedding_id)
+        ids = [f["id"] for f in w["folders"] if body.folder is None or f["id"] == body.folder]
+        if not ids:
+            raise HTTPException(404, "no such folder")
+        try:
+            return {"culls": culls.start(wedding_id, ids, body.strictness, body.best_only)}
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/weddings/{wedding_id}/cull", dependencies=api)
+    def cull_progress(wedding_id: str):
+        wedding_or_404(wedding_id)
+        return {"culls": culls.for_wedding(wedding_id)}
+
+    @app.put("/api/weddings/{wedding_id}/photos/{photo_id}/pick", dependencies=api)
+    def set_pick(wedding_id: str, photo_id: str, body: Pick):
+        """The photographer's own rating; null goes back to the automatic one."""
+        if body.pick is not None and body.pick not in RATINGS:
+            raise HTTPException(422, "pick must be keep, maybe, reject or null")
+        if not store.set_pick(wedding_id, photo_id, body.pick or ""):
+            raise HTTPException(404, "no such photo")
+        return {"pick": body.pick}
+
     # ---- exports made on the server ---------------------------------------------
     @app.post("/api/weddings/{wedding_id}/exports", dependencies=api)
     def start_export(wedding_id: str, body: NewExport):
@@ -331,7 +370,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
         if body.size not in EXPORT_SIZES:
             raise HTTPException(422, f"size must be one of {EXPORT_SIZES}")
         try:
-            return exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder)
+            return exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder,
+                                  tuple(r for r in RATINGS if r in body.ratings))
         except ValueError as e:
             raise HTTPException(422, str(e))
 

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=9">
+<link rel="stylesheet" href="/static/app.css?v=10">
 </head>
 <body>
 <div id="signin" hidden>
@@ -26,7 +26,14 @@
     <select id="wedding" aria-label="Wedding"></select>
     <span id="count"></span>
     <button id="add-photos" type="button">Add photos</button>
+    <button id="cull-open" type="button">Cull</button>
     <button id="export-open" type="button">Export</button>
+    <div id="ratings" class="seg" role="group" aria-label="Show photos rated" hidden>
+      <button type="button" data-rating="" aria-pressed="true">All</button>
+      <button type="button" data-rating="keep" aria-pressed="false" title="Rate with key 3">Keep</button>
+      <button type="button" data-rating="maybe" aria-pressed="false" title="Rate with key 2">Maybe</button>
+      <button type="button" data-rating="reject" aria-pressed="false" title="Rate with key 1">Reject</button>
+    </div>
     <span class="grow"></span>
     <div class="seg" role="group" aria-label="View">
       <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
@@ -137,11 +144,40 @@
   </div>
 </dialog>
 
+<dialog id="cull">
+  <h2 class="title">Cull photos</h2>
+  <p>The server looks at focus, motion blur, exposure, closed eyes, expressions and near-identical shots, and rates each photo Keep, Maybe or Reject. Nothing is deleted. Ratings you set yourself are never changed.</p>
+  <label class="field">Which photos
+    <select id="cull-scope"></select>
+  </label>
+  <label class="field">How strict
+    <select id="cull-strictness">
+      <option value="relaxed">Relaxed (rejects only clear failures)</option>
+      <option value="normal" selected>Normal</option>
+      <option value="strict">Strict (keeps fewer)</option>
+    </select>
+  </label>
+  <label class="check"><input id="cull-best" type="checkbox"> Among near-identical shots, keep only the best one (the others go to Maybe)</label>
+  <p id="cull-progress" aria-live="polite"></p>
+  <div class="row end">
+    <button id="cull-close" type="button" class="quiet">Close</button>
+    <button id="cull-start" type="button" class="primary">Start culling</button>
+  </div>
+  <p class="keys">Change a rating yourself: select a photo and press <b>3</b> Keep, <b>2</b> Maybe, <b>1</b> Reject, <b>0</b> back to automatic.</p>
+</dialog>
+
 <dialog id="export">
   <h2 class="title">Export finished photos</h2>
   <p>The server makes the JPEGs with each photo's look. You can close this window or the browser: it carries on.</p>
   <label class="field">Which photos
     <select id="export-scope"></select>
+  </label>
+  <label class="field">Ratings
+    <select id="export-ratings">
+      <option value="">Every photo</option>
+      <option value="keep">Keep only</option>
+      <option value="keep,maybe">Keep and Maybe</option>
+    </select>
   </label>
   <label class="field">Size
     <select id="export-size">
@@ -174,8 +210,9 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=9"></script>
-<script src="/static/addfolder.js?v=9"></script>
-<script src="/static/export.js?v=9"></script>
+<script src="/static/app.js?v=10"></script>
+<script src="/static/addfolder.js?v=10"></script>
+<script src="/static/cull.js?v=10"></script>
+<script src="/static/export.js?v=10"></script>
 </body>
 </html>

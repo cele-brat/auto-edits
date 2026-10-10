@@ -55,6 +55,9 @@ class Store:
                 db.execute("ALTER TABLE photos ADD COLUMN settings TEXT NOT NULL DEFAULT ''")
             if "stored" not in columns:              # 1 once the preview is safely in the storage bucket
                 db.execute("ALTER TABLE photos ADD COLUMN stored INTEGER NOT NULL DEFAULT 0")
+            if "cull" not in columns:                # the automatic rating (JSON) and the photographer's own
+                db.execute("ALTER TABLE photos ADD COLUMN cull TEXT NOT NULL DEFAULT ''")
+                db.execute("ALTER TABLE photos ADD COLUMN pick TEXT NOT NULL DEFAULT ''")
             if "applied" not in columns:             # stamp of the edit last applied to this photo in Lightroom
                 db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
 
@@ -223,7 +226,7 @@ class Store:
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
-        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, "
+        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.cull, p.pick, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -232,7 +235,7 @@ class Store:
             args.append(folder_id)
         with self._db() as db:
             rows = db.execute(q + " ORDER BY f.name, p.taken, p.file_name", args).fetchall()
-        return [{**dict(r), "meta": json.loads(r["meta"]),
+        return [{**dict(r), "meta": json.loads(r["meta"]), "cull": json.loads(r["cull"]) if r["cull"] else None,
                  "settings": json.loads(r["settings"]) if r["settings"] else None} for r in rows]
 
     def photo(self, wedding_id: str, photo_id: str) -> dict | None:
@@ -257,6 +260,11 @@ class Store:
         with self._db() as db:
             return bool(db.execute("UPDATE photos SET settings=? WHERE wedding_id=? AND id=?",
                                    (value, wedding_id, photo_id)).rowcount)
+
+    def set_pick(self, wedding_id: str, photo_id: str, pick: str) -> bool:
+        """The photographer's own rating: keep, maybe, reject, or '' to go back to the automatic one."""
+        with self._db() as db:
+            return bool(db.execute("UPDATE photos SET pick=? WHERE wedding_id=? AND id=?", (pick, wedding_id, photo_id)).rowcount)
 
     # ---- presets uploaded from Lightroom --------------------------------------
     def save_preset(self, preset: dict, xmp: str) -> bool:
