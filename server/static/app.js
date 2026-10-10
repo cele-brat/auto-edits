@@ -696,7 +696,7 @@ $('signin-form').onsubmit = async (e) => {
   $('key').value = '';
   start();
 };
-$('signout').onclick = async () => { await api('/api/logout', { method: 'POST' }); showSignIn(); };
+$('signout').onclick = async () => { await api('/api/logout', { method: 'POST' }); location.href = '/'; };
 $('wedding').onchange = (e) => openWedding(e.target.value);
 $('view-grid').onclick = () => setView('grid');
 $('view-loupe').onclick = () => setView('loupe');

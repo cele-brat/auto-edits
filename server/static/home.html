@@ -1,0 +1,468 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Auto Edits: cull, edit and deliver a whole wedding</title>
+<meta name="description" content="Auto Edits rates every photo of a wedding, applies your Lightroom presets with per-photo corrections, and makes the finished JPEGs on the server.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Hanken+Grotesk:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* A lightbox: cool pale glass, ink, and the two colours of an Indian wedding at night,
+   peacock and marigold. Red grease pencil is kept for the marks on the contact sheet. */
+:root {
+  --glass: #e9edeb; --paper: #f7f9f8; --ink: #17201f; --soft: #56625f; --rule: #cbd3d0;
+  --peacock: #0d5b61; --peacock-deep: #083f44; --marigold: #f2a900; --pencil: #c5281c;
+  --display: "Bodoni Moda", "Didot", "Bodoni MT", Georgia, serif;
+  --body: "Hanken Grotesk", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --edge: clamp(20px, 6vw, 96px);
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; overflow-x: hidden; background: var(--glass); color: var(--ink); font: 400 18px/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+:focus-visible { outline: 3px solid var(--marigold); outline-offset: 3px; border-radius: 2px; }
+h1, h2, h3 { font-family: var(--display); font-weight: 400; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(44px, 7.4vw, 112px); line-height: 0.98; max-width: 13ch; }
+h2 { font-size: clamp(34px, 4.4vw, 60px); line-height: 1.05; max-width: 18ch; }
+h3 { font-size: 26px; line-height: 1.2; }
+p { margin: 0; max-width: 62ch; }
+.soft { color: var(--soft); }
+
+.top { display: flex; align-items: center; flex-wrap: wrap; gap: 14px 28px; padding: 22px var(--edge); }
+.brand { font: italic 500 26px/1 var(--display); text-decoration: none; margin-right: auto; }
+.top nav { display: flex; gap: 26px; }
+.top nav a { text-decoration: none; font-size: 16px; color: var(--soft); }
+.top nav a:hover { color: var(--ink); }
+.button { font: 600 16px/1 var(--body); padding: 13px 22px; border-radius: 999px; border: 1.5px solid var(--ink); background: var(--ink); color: var(--paper); cursor: pointer; text-decoration: none; display: inline-block; }
+.button:hover { background: var(--peacock-deep); border-color: var(--peacock-deep); }
+.button.line { background: none; color: var(--ink); }
+.button.line:hover { background: var(--ink); color: var(--paper); }
+
+.hero { padding: clamp(28px, 6vw, 84px) var(--edge) 0; }
+.hero .lede { font-size: clamp(19px, 1.6vw, 23px); margin-top: 28px; max-width: 54ch; color: var(--soft); }
+.hero .actions { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 34px; }
+
+/* the before and after frame */
+.compare { margin: clamp(36px, 6vw, 80px) var(--edge) 0; position: relative; aspect-ratio: 21 / 9; border-radius: 6px; overflow: hidden; background: #0b1f23; touch-action: pan-y; user-select: none; cursor: ew-resize; box-shadow: 0 30px 60px -30px rgba(8, 63, 68, .55); }
+.compare svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.compare .before { clip-path: inset(0 calc(100% - var(--at, 50%)) 0 0); filter: brightness(.6) saturate(.62) sepia(.55) hue-rotate(-14deg) contrast(.82); }
+.compare .line { position: absolute; top: 0; bottom: 0; left: var(--at, 50%); width: 2px; margin-left: -1px; background: #fff; }
+.compare .knob { position: absolute; top: 50%; left: var(--at, 50%); width: 46px; height: 46px; margin: -23px 0 0 -23px; border-radius: 50%; background: #fff; border: 0; cursor: ew-resize; display: grid; place-items: center; }
+.compare .knob::before, .compare .knob::after { content: ""; position: absolute; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: solid var(--ink); border-width: 0 0 2px 2px; }
+.compare .knob::before { left: 12px; transform: rotate(45deg); }
+.compare .knob::after { right: 12px; transform: rotate(-135deg); }
+.compare .tag { position: absolute; top: 16px; font: 500 14px/1 var(--body); color: #fff; background: rgba(0, 0, 0, .5); padding: 7px 11px; border-radius: 999px; }
+.compare .tag.b { left: 16px; } .compare .tag.a { right: 16px; }
+.caption { margin: 14px var(--edge) 0; font-size: 15px; color: var(--soft); }
+
+section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
+.intro { display: grid; gap: 22px; }
+
+/* the four steps: a real sequence, so they are numbered */
+.steps { list-style: none; margin: clamp(36px, 5vw, 64px) 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1.5px solid var(--ink); counter-reset: step; }
+.steps li { padding: 26px 28px 0 0; counter-increment: step; }
+.steps li + li { padding-left: 28px; border-left: 1px solid var(--rule); }
+.steps li::before { content: counter(step); font: italic 400 54px/1 var(--display); color: var(--peacock); display: block; margin-bottom: 16px; }
+.steps h3 { margin-bottom: 10px; }
+.steps p { font-size: 16.5px; color: var(--soft); }
+
+.split { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
+.split.flip > :first-child { order: 2; }
+.points { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 18px; }
+.points li { padding-left: 22px; position: relative; max-width: 52ch; }
+.points li::before { content: ""; position: absolute; left: 0; top: .62em; width: 9px; height: 9px; border-radius: 50%; background: var(--marigold); }
+.points b { font-weight: 600; }
+
+/* contact sheet */
+.sheet { background: #10191a; border-radius: 6px; padding: clamp(14px, 2vw, 26px); display: grid; grid-template-columns: repeat(4, 1fr); gap: clamp(8px, 1.2vw, 16px); box-shadow: 0 30px 60px -34px rgba(8, 63, 68, .6); }
+.frame { position: relative; aspect-ratio: 3 / 2; border-radius: 2px; overflow: hidden; }
+.frame i { position: absolute; left: 6px; bottom: 4px; font: 500 11px/1 var(--body); color: rgba(255, 255, 255, .75); font-style: normal; font-variant-numeric: tabular-nums; }
+.frame svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.frame.soft-focus .pic { filter: blur(3px); }
+.frame.dark .pic { filter: brightness(.35); }
+.pic { position: absolute; inset: 0; }
+.legend { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 18px; font-size: 15px; color: var(--soft); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend svg { width: 26px; height: 20px; }
+
+/* the panel list */
+.panels { background: #1c1c1c; color: #dedede; border-radius: 6px; padding: 10px 22px; font-size: 16px; box-shadow: 0 30px 60px -34px rgba(8, 63, 68, .6); }
+.panels div { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 13px 0; border-bottom: 1px solid #333; }
+.panels div:last-child { border-bottom: 0; }
+.panels small { color: #9a9a9a; font-size: 14px; }
+.panels .on { color: var(--marigold); }
+.masks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 26px; }
+.masks span { font-size: 15px; padding: 6px 13px; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); }
+
+/* pricing */
+.price { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: clamp(32px, 6vw, 96px); align-items: center; }
+.tag-card { background: var(--paper); border: 1.5px solid var(--ink); border-radius: 6px; padding: clamp(28px, 4vw, 52px); }
+.tag-card .per { font-size: 16px; color: var(--soft); }
+.tag-card .amount { font-family: var(--display); line-height: 1; margin: 6px 0 14px; display: flex; align-items: baseline; gap: 22px; }
+.tag-card .amount s { font-size: clamp(40px, 5vw, 64px); color: var(--soft); text-decoration-color: var(--pencil); text-decoration-thickness: 3px; }
+.tag-card .amount strong { font-size: clamp(88px, 11vw, 150px); font-weight: 400; color: var(--peacock-deep); }
+.tag-card .rs { font-family: var(--body); font-weight: 400; font-size: .62em; margin-right: .06em; }
+.tag-card .until { font-weight: 600; }
+.tag-card dl { margin: 28px 0 0; border-top: 1px solid var(--rule); }
+.tag-card dl div { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+.tag-card dt { color: var(--soft); } .tag-card dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.tag-card dd s { font-weight: 400; color: var(--soft); margin-right: 10px; }
+
+/* two routes: a comparison, so two equal columns */
+.routes { display: grid; grid-template-columns: 1fr 1fr; margin-top: clamp(36px, 5vw, 64px); background: var(--peacock-deep); color: #eaf3f1; border-radius: 6px; overflow: hidden; }
+.routes article { padding: clamp(28px, 4vw, 56px); display: grid; gap: 16px; align-content: start; }
+.routes article + article { background: var(--peacock); }
+.routes h3 { font-size: 32px; }
+.routes p { color: #c4d9d6; font-size: 17px; }
+.routes ul { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; font-size: 16.5px; }
+.routes li { padding-left: 20px; position: relative; }
+.routes li::before { content: ""; position: absolute; left: 0; top: .7em; width: 10px; height: 1.5px; background: var(--marigold); }
+
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(28px, 4vw, 64px); margin-top: clamp(36px, 5vw, 64px); }
+.facts h3 { margin-bottom: 10px; }
+.facts p { color: var(--soft); font-size: 16.5px; }
+
+.close { text-align: left; padding-bottom: clamp(72px, 10vw, 140px); }
+.close h2 { max-width: 16ch; margin-bottom: 30px; }
+footer { border-top: 1px solid var(--rule); padding: 26px var(--edge) 40px; display: flex; gap: 20px; flex-wrap: wrap; font-size: 15px; color: var(--soft); }
+footer span:first-child { margin-right: auto; }
+
+dialog { border: 0; border-radius: 8px; padding: 34px; width: min(440px, 92vw); background: var(--paper); color: var(--ink); box-shadow: 0 40px 80px -30px rgba(0, 0, 0, .5); }
+dialog::backdrop { background: rgba(8, 40, 44, .62); }
+dialog h2 { font-size: 34px; margin-bottom: 10px; }
+dialog p { font-size: 16px; color: var(--soft); }
+dialog label { display: block; margin: 22px 0 6px; font-size: 15px; font-weight: 500; }
+dialog input { width: 100%; font: inherit; padding: 12px 14px; border: 1.5px solid var(--rule); border-radius: 6px; background: #fff; color: var(--ink); }
+dialog input:focus { border-color: var(--peacock); outline: none; }
+dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 22px; }
+#login-error { color: var(--pencil); min-height: 1.5em; margin-top: 10px; }
+
+@media (max-width: 900px) {
+  body { font-size: 17px; }
+  .top nav { display: none; }
+  .steps { grid-template-columns: 1fr 1fr; }
+  .steps li { padding: 24px 20px 24px 0; }
+  .steps li + li { padding-left: 0; border-left: 0; }
+  .steps li:nth-child(even) { padding-left: 20px; border-left: 1px solid var(--rule); }
+  .split, .routes, .facts, .price { grid-template-columns: 1fr; }
+  .split.flip > :first-child { order: 0; }
+  .compare { aspect-ratio: 4 / 3; }
+}
+@media (max-width: 520px) {
+  .steps { grid-template-columns: 1fr; }
+  .steps li:nth-child(even) { padding-left: 0; border-left: 0; }
+  .sheet { grid-template-columns: repeat(3, 1fr); }
+  .sheet .frame:nth-child(n+10) { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="/">Auto Edits</a>
+  <nav aria-label="On this page">
+    <a href="#how">How it works</a>
+    <a href="#cull">Culling</a>
+    <a href="#edit">Editing</a>
+    <a href="#routes">Lightroom</a>
+    <a href="#export">Export</a>
+    <a href="#pricing">Pricing</a>
+  </nav>
+  <button class="button line" type="button" data-login>Log in</button>
+</header>
+
+<main>
+<div class="hero">
+  <h1>A whole wedding, culled and edited while you rest.</h1>
+  <p class="lede">Auto Edits rates every photo, applies your own Lightroom presets with corrections worked out for each frame, and makes the finished JPEGs on a server. You start it and walk away.</p>
+  <div class="actions">
+    <button class="button" type="button" data-login>Log in</button>
+    <a class="button line" href="#how">See how it works</a>
+  </div>
+</div>
+
+<div class="compare" id="compare">
+  <svg class="scene" viewBox="0 0 2100 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+  <svg class="scene before" viewBox="0 0 2100 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true"></svg>
+  <span class="line"></span>
+  <span class="tag b">Before</span><span class="tag a">After</span>
+  <button class="knob" type="button" role="slider" aria-label="Before and after divider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"></button>
+</div>
+<p class="caption">Drag the line. Every photo in the app opens like this, so you see exactly what a preset and the automatic corrections changed. The picture here is a drawing, not a client's photo.</p>
+
+<section id="how">
+  <div class="intro">
+    <h2>From memory card to delivery in four steps</h2>
+    <p class="soft">Each step runs on the server. Your computer only shows you the result.</p>
+  </div>
+  <ol class="steps">
+    <li><h3>Add photos</h3><p>Pick the wedding's folder. Raw files stay on your computer: only the preview inside each one is uploaded. Sub-folders such as Haldi or Sangeet become event folders.</p></li>
+    <li><h3>Cull</h3><p>Every photo is rated Keep, Maybe or Reject, with the reason shown. Change any rating with one key.</p></li>
+    <li><h3>Edit</h3><p>Choose a preset for each event folder, tick what should be worked out per photo, and fine-tune any single frame.</p></li>
+    <li><h3>Export</h3><p>Pick the size, quality and watermark. The server makes the JPEGs and hands you one zip.</p></li>
+  </ol>
+</section>
+
+<section id="cull">
+  <div class="split">
+    <div>
+      <h2>Culling that explains itself</h2>
+      <p class="soft" style="margin-top:22px">The server looks at each frame the way you would on a contact sheet, and tells you why it marked it.</p>
+      <ul class="points">
+        <li><b>Six checks.</b> Focus, motion blur, exposure, closed eyes, awkward expressions and near-identical shots.</li>
+        <li><b>Three strictness levels.</b> Relaxed rejects only clear failures. Strict keeps fewer.</li>
+        <li><b>Best of a burst.</b> Among near-identical frames it can keep the sharpest one with eyes open.</li>
+        <li><b>Your word is final.</b> Press 3, 2 or 1 to rate a photo yourself. A new cull never changes your ratings, and nothing is ever deleted.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="sheet" id="sheet" role="img" aria-label="A contact sheet of twelve frames. Most are circled to keep, one has a question mark for maybe, two are crossed out as rejected."></div>
+      <div class="legend" aria-hidden="true">
+        <span><svg viewBox="0 0 26 20"><ellipse cx="13" cy="10" rx="11" ry="8" fill="none" stroke="#c5281c" stroke-width="2"/></svg>Keep</span>
+        <span><svg viewBox="0 0 26 20"><text x="8" y="17" font-size="20" fill="#c5281c" font-family="Georgia, serif" font-style="italic">?</text></svg>Maybe</span>
+        <span><svg viewBox="0 0 26 20"><path d="M4 3 22 17M22 3 4 17" stroke="#c5281c" stroke-width="2" fill="none"/></svg>Reject</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="edit">
+  <div class="split flip">
+    <div>
+      <h2>Your presets, with every frame corrected on its own</h2>
+      <p class="soft" style="margin-top:22px">A preset gives the look. The automatic corrections make each photo fit it, so a dark frame and a bright frame come out matching.</p>
+      <ul class="points">
+        <li><b>Bring your own presets.</b> Upload the .xmp files you exported from Lightroom. Masks saved inside a preset come with it.</li>
+        <li><b>Automatic, per photo.</b> Exposure, white balance, highlights, shadows, whites, blacks, noise, straightening and lens fix. Tick only the ones you want.</li>
+        <li><b>White balance that reads skin.</b> It uses neutral areas and faces together, so mixed wedding light does not turn people orange or green.</li>
+        <li><b>Whole folder or one photo.</b> Set an event once, then adjust any single frame without touching the rest.</li>
+      </ul>
+      <div class="masks" aria-label="Masks found automatically">
+        <span>Subject</span><span>Background</span><span>Sky</span><span>Face skin</span><span>Body skin</span><span>Hair</span><span>Clothes</span><span>Eyes</span><span>Iris</span><span>Teeth</span><span>Lips</span><span>Eyebrows</span>
+      </div>
+    </div>
+    <div class="panels" role="img" aria-label="The adjustment panels, in the same order as Lightroom">
+      <div><span>Basic</span><small class="on">Auto exposure, white balance</small></div>
+      <div><span>Tone Curve</span><small>4 sliders</small></div>
+      <div><span>Color Mixer</span><small>Hue, saturation, luminance</small></div>
+      <div><span>Color Grading</span><small>Shadows, midtones, highlights</small></div>
+      <div><span>Detail</span><small class="on">Auto noise reduction</small></div>
+      <div><span>Lens Corrections</span><small class="on">Auto lens fix</small></div>
+      <div><span>Transform</span><small>8 sliders</small></div>
+      <div><span>Effects</span><small>Vignette, grain</small></div>
+      <div><span>Calibration</span><small>7 sliders</small></div>
+    </div>
+  </div>
+</section>
+
+<section id="routes">
+  <div class="intro">
+    <h2>One app, two ways to finish</h2>
+    <p class="soft">Use it on its own for speed, or with Lightroom Classic when the final files must come from your catalogue.</p>
+  </div>
+  <div class="routes">
+    <article>
+      <h3>On its own</h3>
+      <p>For culling, proofs, social posts and quick delivery. No Lightroom needed.</p>
+      <ul>
+        <li>Add a folder straight from the browser</li>
+        <li>Cull, edit and export on the server</li>
+        <li>Download the finished JPEGs as one zip</li>
+      </ul>
+    </article>
+    <article>
+      <h3>With Lightroom Classic</h3>
+      <p>For finals that must match Lightroom exactly. A plug-in connects your catalogue to the app.</p>
+      <ul>
+        <li>Send selected photos from Lightroom in one step</li>
+        <li>Choose looks in the app, on Lightroom's own previews</li>
+        <li>Bring the edits back as normal develop settings, with a "Before Auto Edits" snapshot on every photo</li>
+      </ul>
+    </article>
+  </div>
+</section>
+
+<section id="export">
+  <div class="intro">
+    <h2>Exports that do not need you</h2>
+    <p class="soft">Start an export, close the browser, come back to a zip.</p>
+  </div>
+  <div class="facts">
+    <div><h3>Any size</h3><p>2560 px for proofs and social, 4000 px, or full size. JPEG quality 80, 90 or 95.</p></div>
+    <div><h3>Only the keepers</h3><p>Export every photo, Keep only, or Keep and Maybe. Whole wedding or one event folder.</p></div>
+    <div><h3>Watermark</h3><p>Add your studio name to proofs. Leave it empty for clean finals.</p></div>
+    <div><h3>Your raw files stay home</h3><p>Only previews are uploaded. The originals never leave your computer.</p></div>
+    <div><h3>Private by default</h3><p>Nothing is visible without logging in, and the connection is encrypted.</p></div>
+    <div><h3>Nothing is lost</h3><p>No photo is deleted by a cull or an edit. Every change can be undone.</p></div>
+  </div>
+</section>
+
+<section id="pricing">
+  <div class="price">
+    <div>
+      <h2>Pay for the photos you edit</h2>
+      <p class="soft" style="margin-top:22px">One photo edited is one credit. Buy credits and use them whenever a wedding comes in.</p>
+    </div>
+    <div class="tag-card">
+      <p class="per">per credit</p>
+      <p class="amount"><s aria-label="Usual price 3 rupees"><span class="rs">₹</span>3</s><strong><span class="rs">₹</span>1</strong></p>
+      <p class="until">Launch price until 31 December 2026</p>
+      <dl>
+        <div><dt>1,000 photos</dt><dd><s>₹3,000</s> ₹1,000</dd></div>
+        <div><dt>5,000 photos</dt><dd><s>₹15,000</s> ₹5,000</dd></div>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<section class="close">
+  <h2>Open your weddings</h2>
+  <button class="button" type="button" data-login>Log in</button>
+</section>
+</main>
+
+<footer><span>Auto Edits by Cele-Brat</span><span>Made for wedding photographers</span></footer>
+
+<dialog id="login">
+  <form id="login-form">
+    <h2>Log in</h2>
+    <p>Paste your access key. From Lightroom Classic you can skip this: choose Library, Plug-in Extras, "Auto Edits: open the app".</p>
+    <label for="key">Access key</label>
+    <input id="key" type="password" autocomplete="current-password" required>
+    <p id="login-error" role="alert"></p>
+    <div class="row">
+      <button class="button line" type="button" id="login-close">Close</button>
+      <button class="button" type="submit">Log in</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+// ---- the drawn scene: a mandap at night, strings of marigold and jasmine, fairy lights ----
+function rand(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+function scene() {
+  const r = rand(11);
+  let s = `<defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#062a31"/><stop offset=".62" stop-color="#0f4a50"/><stop offset="1" stop-color="#1b1a22"/></linearGradient>
+    <linearGradient id="drape" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f6efe2"/><stop offset=".5" stop-color="#fffaf0"/><stop offset="1" stop-color="#e4d9c6"/></linearGradient>
+    <radialGradient id="glow"><stop offset="0" stop-color="#fff2c9" stop-opacity=".95"/><stop offset=".35" stop-color="#ffd27a" stop-opacity=".5"/><stop offset="1" stop-color="#ffd27a" stop-opacity="0"/></radialGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="9"/></filter>
+    <filter id="blur2"><feGaussianBlur stdDeviation="3"/></filter>
+  </defs><rect width="2100" height="900" fill="url(#sky)"/>`;
+  for (let i = 0; i < 46; i++) {                                 // far lights, out of focus
+    const x = r() * 2100, y = r() * 520, rad = 14 + r() * 34;
+    s += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${rad.toFixed(0)}" fill="${r() > .3 ? '#ffd27a' : '#fff6dd'}" opacity="${(.10 + r() * .22).toFixed(2)}" filter="url(#blur)"/>`;
+  }
+  s += `<rect y="700" width="2100" height="200" fill="#151318"/><ellipse cx="1050" cy="712" rx="760" ry="46" fill="#e9c98a" opacity=".16" filter="url(#blur)"/>`;
+  const pillars = [520, 860, 1240, 1580];
+  s += `<path d="M470 150 H1630 V186 H470Z" fill="#f3ead8"/>`;       // canopy beam
+  for (const x of pillars) {                                         // pillars wrapped in cloth
+    s += `<rect x="${x - 22}" y="186" width="44" height="530" fill="url(#drape)"/>`;
+    s += `<path d="M${x - 22} 186 q22 60 44 0 v40 q-22 60 -44 0z" fill="#d9ccb4" opacity=".7"/>`;
+  }
+  for (let k = 0; k < 3; k++) {                                      // swags of cloth between pillars
+    const a = pillars[k], b = pillars[k + 1], m = (a + b) / 2;
+    s += `<path d="M${a} 186 Q${m} ${330 + (k % 2) * 30} ${b} 186 Q${m} ${270 + (k % 2) * 30} ${a} 186Z" fill="#fff8ea" opacity=".85"/>`;
+  }
+  const flower = (x, y, rad, c) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${rad.toFixed(1)}" fill="${c}"/>`;
+  const gold = ['#f2a900', '#ff8a1f', '#ffc12e', '#f7931a'];
+  for (let k = 0; k < 3; k++) {                                      // garlands in curves
+    const a = pillars[k], b = pillars[k + 1];
+    for (let row = 0; row < 2; row++) {
+      const sag = 150 + row * 110 + (k % 2) * 20;
+      for (let t = 0; t <= 1.0001; t += 1 / 34) {
+        const x = a + (b - a) * t, y = 190 + sag * 4 * t * (1 - t);
+        s += flower(x, y, 9 + r() * 4, row ? '#fffdf5' : gold[Math.floor(r() * 4)]);
+      }
+    }
+  }
+  for (const x of [600, 690, 780, 950, 1050, 1150, 1320, 1410, 1500]) { // hanging strings
+    const len = 230 + r() * 240;
+    for (let y = 196; y < 196 + len; y += 19) s += flower(x + Math.sin(y / 60) * 4, y, 8 + r() * 3, y % 3 ? gold[Math.floor(r() * 4)] : '#fffdf5');
+    s += `<circle cx="${x}" cy="${196 + len + 14}" r="34" fill="url(#glow)"/>`;
+  }
+  s += `<path d="M700 716 H1400 L1470 770 H630Z" fill="#7a1420"/><path d="M700 716 H1400 V728 H700Z" fill="#f2a900"/>`;  // the stage
+  s += `<g fill="#101015"><path d="M960 716 q-8 -120 20 -170 q-26 -20 -22 -52 a34 34 0 1 1 64 0 q4 32 -22 52 q30 50 22 170z"/><path d="M1068 716 q-34 -96 2 -168 q-22 -18 -18 -46 a30 30 0 1 1 58 0 q4 28 -18 46 q52 72 26 168z"/></g>`;
+  s += `<path d="M1052 500 a30 30 0 0 1 58 0 q10 60 40 110 l-60 -20z" fill="#b3202c" opacity=".9"/>`;   // her veil
+  for (let i = 0; i < 16; i++) {                                     // lamps along the stage
+    const x = 660 + i * 52;
+    s += `<circle cx="${x}" cy="762" r="26" fill="url(#glow)"/><circle cx="${x}" cy="764" r="4" fill="#fff6dd"/>`;
+  }
+  for (let i = 0; i < 14; i++) {                                     // near lights, soft
+    const x = r() * 2100, y = 560 + r() * 320, rad = 30 + r() * 60;
+    s += `<circle cx="${x.toFixed(0)}" cy="${y.toFixed(0)}" r="${rad.toFixed(0)}" fill="#ffcf70" opacity="${(.05 + r() * .09).toFixed(2)}" filter="url(#blur)"/>`;
+  }
+  return s;
+}
+const art = scene();
+for (const svg of document.querySelectorAll('.scene')) svg.innerHTML = art;
+
+// ---- the divider ----
+const compare = document.getElementById('compare');
+const knob = compare.querySelector('.knob');
+function setAt(pct) {
+  const v = Math.min(96, Math.max(4, pct));
+  compare.style.setProperty('--at', v + '%');
+  knob.setAttribute('aria-valuenow', Math.round(v));
+}
+function fromPointer(e) { const b = compare.getBoundingClientRect(); setAt(100 * (e.clientX - b.left) / b.width); }
+let dragging = false;
+compare.addEventListener('pointerdown', (e) => { dragging = true; compare.setPointerCapture(e.pointerId); fromPointer(e); });
+compare.addEventListener('pointermove', (e) => { if (dragging) fromPointer(e); });
+compare.addEventListener('pointerup', () => { dragging = false; });
+compare.addEventListener('pointercancel', () => { dragging = false; });
+knob.addEventListener('keydown', (e) => {
+  const now = Number(knob.getAttribute('aria-valuenow'));
+  if (e.key === 'ArrowLeft') { e.preventDefault(); setAt(now - 4); }
+  if (e.key === 'ArrowRight') { e.preventDefault(); setAt(now + 4); }
+});
+// one sweep when the page opens, so it is clear the line moves
+if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  const start = performance.now();
+  (function sweep(t) {
+    const p = Math.min(1, (t - start) / 1600);
+    if (!dragging) setAt(88 - 38 * (1 - Math.pow(1 - p, 3)));
+    if (p < 1 && !dragging) requestAnimationFrame(sweep);
+  })(start);
+} else setAt(50);
+
+// ---- the contact sheet ----
+const marks = ['k', 'k', 'x', 'k', 'm', 'k', 'k', 'k', 'k', 'x', 'k', 'k'];
+const tones = [['#0f4a50', '#f2a900'], ['#7a1420', '#ffc12e'], ['#3b2a22', '#e9c98a'], ['#083f44', '#fff8ea'], ['#b3202c', '#f7931a'], ['#2a2230', '#ffd27a'],
+               ['#0d5b61', '#fffdf5'], ['#5b1a26', '#f2a900'], ['#1b1a22', '#ff8a1f'], ['#22313a', '#e4d9c6'], ['#0f4a50', '#ffc12e'], ['#7a1420', '#fff2c9']];
+const pencil = {
+  k: '<ellipse cx="50" cy="33" rx="44" ry="27" fill="none" stroke="#e23a2c" stroke-width="2.2" transform="rotate(-4 50 33)" stroke-linecap="round" stroke-dasharray="230 20"/>',
+  m: '<text x="40" y="48" font-size="42" fill="#e23a2c" font-family="Georgia, serif" font-style="italic">?</text>',
+  x: '<path d="M14 8 86 58M88 9 12 57" stroke="#e23a2c" stroke-width="2.4" fill="none" stroke-linecap="round"/>',
+};
+const rr = rand(5);
+document.getElementById('sheet').innerHTML = marks.map((m, i) => {
+  const [bg, fg] = tones[i];
+  const x = 30 + rr() * 40, cls = i === 2 ? ' soft-focus' : i === 9 ? ' dark' : '';
+  return `<div class="frame${cls}"><div class="pic" style="background:radial-gradient(circle at ${x.toFixed(0)}% 42%, ${fg} 0 9%, transparent 10%), radial-gradient(ellipse at ${x.toFixed(0)}% 88%, ${fg}cc 0 22%, transparent 23%), linear-gradient(160deg, ${bg}, #101015)"></div>` +
+    `<svg viewBox="0 0 100 66" preserveAspectRatio="none">${pencil[m]}</svg><i>${String(i + 14).padStart(2, '0')}A</i></div>`;
+}).join('');
+
+// ---- log in ----
+const login = document.getElementById('login');
+for (const b of document.querySelectorAll('[data-login]')) b.onclick = () => { login.showModal(); document.getElementById('key').focus(); };
+document.getElementById('login-close').onclick = () => login.close();
+login.addEventListener('mousedown', (e) => { if (e.target === login) login.close(); });
+document.getElementById('login-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const err = document.getElementById('login-error');
+  err.textContent = '';
+  try {
+    const r = await fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: document.getElementById('key').value }) });
+    if (!r.ok) { err.textContent = 'That key is not right. Copy it again and paste it here.'; return; }
+    location.href = '/';
+  } catch (x) { err.textContent = 'The server could not be reached. Check your connection and try again.'; }
+};
+</script>
+</body>
+</html>

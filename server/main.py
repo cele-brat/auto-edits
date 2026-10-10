@@ -438,8 +438,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None) 
         return {"marked": store.mark_applied(wedding_id, stamps)}
 
     @app.get("/")
-    def home():
-        return FileResponse(STATIC / "index.html", headers={"Cache-Control": "no-cache"})
+    def home(autoedits: str = Cookie(default="")):
+        """The app for someone logged in, the public home page for everyone else."""
+        inside = hmac.compare_digest(autoedits.encode(), session.encode())
+        return FileResponse(STATIC / ("index.html" if inside else "home.html"), headers={"Cache-Control": "no-cache"})
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
