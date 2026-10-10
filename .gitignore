@@ -3,3 +3,4 @@ __pycache__/
 .pytest_cache/
 data/out/
 data/testsets/
+data/params_*.json

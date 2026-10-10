@@ -15,6 +15,9 @@ Order of operations:
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import cv2
 import numpy as np
 from scipy.interpolate import PchipInterpolator
@@ -38,8 +41,10 @@ DEFAULT_PARAMS = {
     "hsl_sat": 1.0,              # saturation gain at slider 100
     "hsl_lum": 0.25,             # luminance change at slider 100 (for a fully saturated colour)
     # global colour
-    "vibrance": 0.7,
-    "saturation": 1.0,
+    "vibrance_up": 0.30,
+    "vibrance_down": 1.00,
+    "saturation": 0.93,
+    "exposure_luma_mix": 0.0,    # 0 = exposure curve per channel, 1 = on brightness only
     # colour grading
     "grade_strength": 0.22,      # tint added at saturation 100
     "grade_lum": 0.20,           # luminance change at Lum 100
@@ -59,6 +64,30 @@ HSL_BANDS = (("Red", 0), ("Orange", 30), ("Yellow", 60), ("Green", 120),
              ("Aqua", 180), ("Blue", 240), ("Purple", 270), ("Magenta", 300))
 
 LUMA = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+# Lightroom response curves measured from calibration exports (tools/build_response.py).
+# When the file is present, exposure and the tone sliders follow Lightroom's own
+# measured behaviour; without it the engine falls back to its built-in formulas.
+RESPONSE_FILE = Path(__file__).resolve().parent.parent / "data" / "lr_response.json"
+
+
+def load_response(path=RESPONSE_FILE):
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+RESPONSE = load_response()
+
+# Constants tuned against Lightroom exports (tools/calibrate.py, tools/fit_params.py)
+# replace the built-in first guesses when data/params.json is present.
+PARAMS_FILE = RESPONSE_FILE.parent / "params.json"
+try:
+    DEFAULT_PARAMS.update({k: v for k, v in json.loads(PARAMS_FILE.read_text()).items() if k in DEFAULT_PARAMS})
+except (OSError, ValueError):
+    pass
 
 
 # --------------------------------------------------------------------------
@@ -150,15 +179,38 @@ def white_balance(img, temp, tint, P):
     return linear_to_srgb(np.minimum(lin * gains, 1.0))
 
 
-def exposure(img, ev, P):
-    if not ev:
-        return img
+def _exposure_formula(img, ev, P):
     lin = _DEC.astype(np.float64) * (2.0 ** ev)
     s = P["exposure_shoulder"]
     over = np.maximum(lin - s, 0)
     lin = np.where(lin > s, s + (1 - s) * (1 - np.exp(-over / (1 - s))), lin)   # soft roll-off, never clips hard
     table = np.interp(lin, _GRID, _ENC).astype(np.float32)                      # whole stage as one lookup
     return _lut(img, table)
+
+
+def _exposure_table(ev, R):
+    """Lookup table for an exposure change, along Lightroom's measured exposure axis."""
+    x = np.asarray(R["exposure"]["x"], np.float64)
+    u = np.asarray(R["exposure"]["u"], np.float64)
+    pos = PchipInterpolator(x, u)(_GRID)                        # where each level sits on the axis
+    moved = np.clip(pos + ev, u[0], u[-1])
+    return np.clip(PchipInterpolator(u, x)(moved), 0, 1).astype(np.float32)
+
+
+def exposure(img, ev, P, R=None):
+    if not ev:
+        return img
+    R = RESPONSE if R is None else R
+    if not R or "exposure" not in R:
+        return _exposure_formula(img, ev, P)
+    table = _exposure_table(ev, R)
+    per_channel = _lut(img, table)
+    mix = P["exposure_luma_mix"]
+    if mix <= 0:
+        return per_channel
+    y = _luma(img)
+    by_luma = _apply_luma(img, y, _lut(y, table))               # same curve on brightness only: keeps colour
+    return per_channel * (1 - mix) + by_luma * mix
 
 
 def calibration(img, settings, P):
@@ -177,7 +229,7 @@ def calibration(img, settings, P):
     return linear_to_srgb(cv2.transform(lin, M.astype(np.float32)))
 
 
-def tone(img, settings, P):
+def _tone_formula(img, settings, P):
     c = _g(settings, "Contrast2012") / 100.0
     hi = _g(settings, "Highlights2012") / 100.0
     sh = _g(settings, "Shadows2012") / 100.0
@@ -200,6 +252,44 @@ def tone(img, settings, P):
     if c:
         y2 = y2 + c * P["contrast"] * (y2 - 0.46) * 4 * np.clip(y2, 0, 1) * (1 - np.clip(y2, 0, 1))
     return _apply_luma(img, y, np.clip(y2, 0, None))
+
+
+def _delta_table(entry, value):
+    """Change curve for one slider value, scaled from the measured reference value."""
+    side = entry["pos"] if value > 0 else entry["neg"]
+    centres = (np.arange(len(side["delta"])) + 0.5) / len(side["delta"])
+    d = np.interp(_GRID, centres, side["delta"]) * (value / side["value"])
+    return d.astype(np.float32), side["mode"]
+
+
+def tone(img, settings, P, R=None):
+    """Contrast, highlights, shadows, whites, blacks."""
+    R = RESPONSE if R is None else R
+    if not R or "tone" not in R:
+        return _tone_formula(img, settings, P)
+    luma_delta = np.zeros(_N + 1, np.float32)
+    rgb_delta = np.zeros(_N + 1, np.float32)
+    used = False
+    for key, entry in R["tone"].items():
+        v = _g(settings, key)
+        if not v:
+            continue
+        d, mode = _delta_table(entry, v)
+        if mode == "luma":
+            luma_delta += d
+        else:
+            rgb_delta += d
+        used = True
+    if not used:
+        return img
+    out = img
+    if np.any(luma_delta):                          # brightness-only sliders keep colour
+        y = _luma(out)
+        out = _apply_luma(out, y, np.clip(y + luma_delta[(np.clip(y, 0, 1) * _N + 0.5).astype(np.uint16)], 0, None))
+    if np.any(rgb_delta):                           # contrast acts on each channel, as in Lightroom
+        c = np.clip(out, 0, 1)
+        out = c + rgb_delta[(c * _N + 0.5).astype(np.uint16)]
+    return np.clip(out, 0, None)
 
 
 def local_contrast(img, settings, P):
@@ -292,22 +382,24 @@ def colour_mixer(img, settings, P):
 
 
 def vibrance_saturation(img, settings, P):
+    """Saturation and vibrance as colour-strength gains in linear light.
+
+    Measured against Lightroom: saturation +40 is a gain of about 1.37 and -40
+    about 0.62; vibrance is much stronger downward (-50 about 0.5) than upward
+    (+50 about 1.15).
+    """
     vib = _g(settings, "Vibrance") / 100.0
     sat = _g(settings, "Saturation") / 100.0
     if not vib and not sat:
         return img
-    y = _luma(img)[..., None]
-    out = img
-    if vib:
-        r, g, b = out[..., 0], out[..., 1], out[..., 2]
-        mx = np.maximum(np.maximum(r, g), b)[..., None]
-        mn = np.minimum(np.minimum(r, g), b)[..., None]
-        s = (mx - mn) / np.maximum(mx, 1e-4)
-        out = y + (out - y) * (1 + vib * P["vibrance"] * (1 - s))   # weaker on already-saturated colours
+    gain = 1.0
     if sat:
-        y2 = _luma(out)[..., None]
-        out = y2 + (out - y2) * (1 + sat * P["saturation"])
-    return np.clip(out, 0, None)
+        gain *= max(0.0, 1 + sat * P["saturation"])
+    if vib:
+        gain *= max(0.0, 1 + vib * (P["vibrance_up"] if vib > 0 else P["vibrance_down"]))
+    lin = srgb_to_linear(img)
+    y = _luma(lin)[..., None]
+    return linear_to_srgb(np.clip(y + (lin - y) * gain, 0, 1))
 
 
 def colour_grading(img, settings, P):

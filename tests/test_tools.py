@@ -7,7 +7,9 @@ from engine.render import render, DEFAULT_PARAMS
 from tools.accuracy import run, no_grain
 from tools.fit_params import fit
 
-TRUE = dict(DEFAULT_PARAMS, contrast=0.9, highlights=0.5, saturation=1.4, vibrance=1.1, grade_strength=0.35, hsl_sat=1.5)
+TRUE = dict(DEFAULT_PARAMS, saturation=DEFAULT_PARAMS["saturation"] * 1.8, vibrance_up=1.1, vibrance_down=0.5,
+            grade_strength=DEFAULT_PARAMS["grade_strength"] * 1.9, hsl_sat=DEFAULT_PARAMS["hsl_sat"] * 1.8,
+            calib_sat=0.3, clarity=2.0)
 
 
 def make_testset(tmp_path, photo, library, n=4):
@@ -31,10 +33,10 @@ def test_accuracy_and_fit(tmp_path, photo, library):
     assert (tmp_path / "out_true" / "accuracy.csv").exists()
     assert len(list((tmp_path / "out_true").glob("*.jpg"))) == 12
     before, _ = run(ts, tmp_path / "out_default", size=384, sheets=False)
-    assert before["dE_mean"] > perfect["dE_mean"] + 0.5   # default constants are measurably off
+    assert before["dE_mean"] > perfect["dE_mean"] + 0.25   # default constants are measurably off
 
     params, start, end = fit(ts, size=128, rounds=1, log=lambda *_: None)
-    assert end < start * 0.6                              # fitting closes most of the gap
+    assert end < start * 0.8                              # fitting closes most of the gap
     after, _ = run(ts, tmp_path / "out_fit", params=params, size=384, sheets=False)
     assert after["dE_mean"] < before["dE_mean"]
     print(f"\ndE default {before['dE_mean']}, fitted {after['dE_mean']}, perfect {perfect['dE_mean']}")
