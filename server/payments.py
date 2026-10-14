@@ -160,9 +160,16 @@ class Razorpay:
         return hmac.compare_digest(good, signature)
 
 
+def _clean(value: str) -> str:
+    """Keys pasted into a terminal can pick up spaces, quotes or invisible paste markers (ESC[200~ … ESC[201~)."""
+    value = re.sub(r"\x1b\[20[01]~", "", value or "")
+    return re.sub(r"[\x00-\x20\x7f\"']", "", value)
+
+
 def from_environment() -> Razorpay:
     e = os.environ
-    return Razorpay(e.get("RAZORPAY_KEY_ID", ""), e.get("RAZORPAY_KEY_SECRET", ""), e.get("RAZORPAY_WEBHOOK_SECRET", ""))
+    return Razorpay(_clean(e.get("RAZORPAY_KEY_ID", "")), _clean(e.get("RAZORPAY_KEY_SECRET", "")),
+                    _clean(e.get("RAZORPAY_WEBHOOK_SECRET", "")))
 
 
 # ---- orders ---------------------------------------------------------------------------
@@ -359,7 +366,18 @@ def check() -> str:
     r = from_environment()
     if not r.on:
         return "payments: OFF (no Razorpay keys in deploy/.env)"
-    mode = "TEST" if r.test_mode else "LIVE" if r.key_id.startswith("rzp_live_") else "UNKNOWN key type"
+    raw = os.environ.get("RAZORPAY_KEY_ID", "")
+    if r.test_mode:
+        mode = "TEST"
+    elif r.key_id.startswith("rzp_live_"):
+        mode = "LIVE"
+    else:                                   # say what is wrong without showing the key
+        looks = ("starts rzp_ but not rzp_live_/rzp_test_" if r.key_id.startswith("rzp_")
+                 else "does NOT start with rzp_ (maybe the secret went in the Key id box)")
+        mode = (f"UNKNOWN key type (Key id {looks}, {len(r.key_id)} characters; "
+                f"a Key id starts rzp_live_ and is about 23 characters)")
+    if raw != r.key_id:
+        mode += " [stray characters were removed]"
     hook = "webhook secret set" if r.webhook_secret else "NO webhook secret"
     addr = "invoice address set" if os.environ.get("AUTOEDITS_INVOICE_ADDRESS", "Ajmer, Rajasthan") != "Ajmer, Rajasthan" else "invoice address NOT set"
     try:
