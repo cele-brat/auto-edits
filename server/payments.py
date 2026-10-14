@@ -344,3 +344,23 @@ tr.total td {{ font-weight: 700; border-top: 2px solid #17201f; }}
 </tbody></table>
 <p class="muted">{h.escape(words.capitalize())}. Paid online via Razorpay. Credits and storage are delivered instantly in the app; see the Refund policy at {h.escape(seller['site'])}/refunds.</p>
 </div></body></html>"""
+
+
+def check() -> str:
+    """One line for the server status report: never prints the keys themselves."""
+    r = from_environment()
+    if not r.on:
+        return "payments: OFF (no Razorpay keys in deploy/.env)"
+    mode = "TEST" if r.test_mode else "LIVE" if r.key_id.startswith("rzp_live_") else "UNKNOWN key type"
+    hook = "webhook secret set" if r.webhook_secret else "NO webhook secret"
+    addr = "invoice address set" if os.environ.get("AUTOEDITS_INVOICE_ADDRESS", "Ajmer, Rajasthan") != "Ajmer, Rajasthan" else "invoice address NOT set"
+    try:
+        r._call("GET", "/orders?count=1")
+        ok = "Razorpay accepted the keys"
+    except PaymentError as e:
+        ok = "Razorpay REJECTED the keys" if "uthentication" in str(e) or "401" in str(e) else f"problem: {e}"
+    return f"payments: ON, {mode} mode, {ok}; {hook}; {addr}"
+
+
+if __name__ == "__main__":
+    print(check())

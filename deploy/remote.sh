@@ -9,6 +9,7 @@ main() {
   status() {
     echo "== commit"; git -C /opt/auto-edits log -1 --oneline
     echo "== containers"; docker compose ps --format 'table {{.Service}}\t{{.Status}}'
+    echo "== payments"; docker compose exec -T server python -m server.payments 2>/dev/null | tail -1 || echo "(server not answering)"
   }
 
   case "${1:-}" in

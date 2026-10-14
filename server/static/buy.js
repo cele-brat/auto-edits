@@ -102,6 +102,8 @@ $('buy-form').onsubmit = async (e) => {
   e.preventDefault();
   $('buy-error').textContent = '';
   $('buy-go').disabled = true;
+  const label = $('buy-go').textContent;
+  $('buy-go').textContent = 'Opening payment…';
   try {
     try { localStorage.setItem('ae-state', $('buy-state').value); } catch (x) { /* no storage */ }
     const order = await api('/api/buy', { method: 'POST', body: buyBody() });
@@ -119,11 +121,12 @@ $('buy-form').onsubmit = async (e) => {
           await openAccount();
         } catch (err) { $('buy-error').textContent = err.message; }
       },
-      modal: { ondismiss: () => { $('buy-go').disabled = false; } },
+      modal: { ondismiss: () => { $('buy-go').disabled = false; $('buy-go').textContent = label; } },
     });
     rzp.on('payment.failed', (r) => { $('buy-error').textContent = (r.error && r.error.description) || 'The payment did not go through.'; $('buy-go').disabled = false; });
     rzp.open();
-  } catch (err) { $('buy-error').textContent = err.message; $('buy-go').disabled = false; }
+    $('buy-go').textContent = label;
+  } catch (err) { $('buy-error').textContent = err.message; $('buy-go').disabled = false; $('buy-go').textContent = label; }
 };
 
 for (const b of document.querySelectorAll('#buy-dialog [data-kind]')) b.onclick = () => buyTab(b.dataset.kind);
