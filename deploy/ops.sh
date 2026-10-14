@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Run a VPS job through GitHub Actions and wait for the result. For Claude's cloud
+# Request a VPS job and wait for the result. The VPS checks GitHub every minute (deploy/poll.sh).
+# For Claude's cloud
 # windows, which can push to GitHub but cannot SSH to the VPS.
 #   ./deploy/ops.sh deploy    # push main first! deploys whatever is on origin/main
 #   ./deploy/ops.sh status
@@ -15,7 +16,7 @@ if [ "$job" = deploy ] && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/m
   echo "Warning: local HEAD is not origin/main. The VPS deploys origin/main: $(git log -1 --oneline origin/main)"
 fi
 
-# A fresh marker commit on top of origin/main, pushed to ops/<job>, triggers the workflow.
+# A fresh marker commit on top of origin/main, pushed to ops/<job>, is picked up by the VPS within a minute.
 marker=$(git commit-tree "origin/main^{tree}" -p origin/main -m "ops: $job ($(date -u +%FT%TZ))")
 git push -q -f origin "$marker:refs/heads/ops/$job"
 echo "Triggered ops/$job at ${marker:0:7}; waiting for the result (up to 15 min)..."
