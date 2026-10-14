@@ -44,14 +44,14 @@ def _refund(db, export_id: str, photos: int, why: str) -> None:
     """Give back the credits of photos an export did not make (failed, stopped or removed)."""
     if photos <= 0:
         return
-    r = db.execute("SELECT w.owner, w.name FROM exports e JOIN weddings w ON w.id=e.wedding_id WHERE e.id=?",
+    r = db.execute("SELECT w.owner, w.name, w.id FROM exports e JOIN weddings w ON w.id=e.wedding_id WHERE e.id=?",
                    (export_id,)).fetchone()
     if r is None or not r["owner"]:
         return
     if db.execute("SELECT 1 FROM ledger WHERE ref=? AND kind='export' LIMIT 1", (export_id,)).fetchone() is None:
         return                                             # made before credits existed: nothing was taken
-    db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created) VALUES (?,?,?,?,?,?,?)",
-               (r["owner"], photos, "refund", f"{why}: {r['name']}"[:200], export_id, photos, time.time()))
+    db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
+               (r["owner"], photos, "refund", f"{why}: {r['name']}"[:200], export_id, photos, time.time(), r["id"]))
 
 
 def _safe(name: str) -> str:

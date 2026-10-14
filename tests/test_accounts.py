@@ -377,3 +377,29 @@ def test_photographers_can_download_their_own_uploads(app, box):
     assert sorted(names) == ["Haldi/IMG_0.jpg", "Haldi/IMG_1.jpg", "Haldi/IMG_2.jpg"]
     b = sign_up(app, box, "b@example.com")
     assert b.get(f"/api/weddings/{w['id']}/originals.zip").status_code == 404
+
+
+def test_credit_ledger_is_a_record_with_weddings_balances_and_a_statement(app, box, tmp_path):
+    import csv
+    c = sign_up(app, box, "ledger@example.com")
+    w = wedding_with(c, 4, name="Meera & Kabir")
+    assert c.post(f"/api/weddings/{w['id']}/cull", json={"strictness": "normal"}).status_code == 200
+    e = c.post(f"/api/weddings/{w['id']}/exports", json={"size": 2560}).json()
+    c.delete(f"/api/exports/{e['id']}")                       # removed before it finished: credits given back
+    h = c.get("/api/credits").json()["history"]
+    kinds = [x["kind"] for x in h]
+    assert kinds[-1] == "welcome" and "cull" in kinds and "export" in kinds and "refund" in kinds
+    assert all(x["wedding_name"] == "Meera & Kabir" for x in h if x["kind"] != "welcome")
+    assert h[0]["balance"] == c.get("/api/credits").json()["balance"]          # running balance, newest first
+    assert [x["balance"] for x in reversed(h)] == list(__import__("itertools").accumulate(x["delta"] for x in reversed(h)))
+
+    r = c.get("/api/credits/statement.csv")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    rows = list(csv.reader(r.text.splitlines()))
+    assert rows[0][0].startswith("Date") and rows[1][1] == "Free credits" and len(rows) == len(h) + 1
+    assert rows[-1][6] == str(h[0]["balance"])
+
+    db = sqlite3.connect(tmp_path / "autoedits.db")              # rows can only be added
+    for sql in ("UPDATE ledger SET delta=1000", "DELETE FROM ledger"):
+        with pytest.raises(sqlite3.DatabaseError, match="cannot be changed"):
+            db.execute(sql)

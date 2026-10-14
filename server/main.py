@@ -377,6 +377,26 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return {"balance": accounts.balance(user["id"]), "unlimited": bool(user["admin"]),
                 "history": accounts.history(user["id"])}
 
+    @app.get("/api/credits/statement.csv")
+    def credit_statement(user: dict = Depends(signed_in)):
+        """Every credit added or spent since the account was made, with the balance after each (oldest first)."""
+        import csv
+        import datetime as dt
+        import io
+        ist = dt.timezone(dt.timedelta(hours=5, minutes=30))
+        names = {"welcome": "Free credits", "cull": "Culling", "export": "Export", "refund": "Given back",
+                 "lightroom": "Sent to Lightroom", "purchase": "Bought", "admin": "Added or taken back by Cele-Brat"}
+        buf = io.StringIO()
+        out = csv.writer(buf)
+        out.writerow(["Date (India time)", "Type", "Details", "Wedding", "Photos", "Credits", "Balance after", "Reference"])
+        for h in reversed(accounts.history(user["id"], None)):
+            out.writerow([dt.datetime.fromtimestamp(h["created"], ist).strftime("%Y-%m-%d %H:%M"), names.get(h["kind"], h["kind"]),
+                          h["note"], h["wedding_name"], h["photos"] or "", h["delta"], h["balance"], h["ref"]])
+        day = dt.datetime.now(ist).strftime("%Y-%m-%d")
+        return Response(buf.getvalue(), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="auto-edits-credits-{day}.csv"',
+                                 "Cache-Control": "no-store"})
+
     @app.post("/api/plugin-key")
     def plugin_key(request: Request, user: dict = Depends(signed_in), autoedits: str = Cookie(default="")):
         """A new key for the Lightroom plug-in, shown once. The old one stops working."""
@@ -823,7 +843,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         photos = sum(f["photos"] for f in chosen)
         where = w["name"] if body.folder is None else f"{w['name']} / {chosen[0]['name'] if chosen else ''}"
         try:
-            accounts.charge(user, cull_cost(photos), "cull", f"Culling {photos} photos: {where}", wedding_id, photos)
+            accounts.charge(user, cull_cost(photos), "cull", f"Culling {photos} photos: {where}", wedding_id, photos,
+                           wedding=wedding_id)
         except NotEnoughCredits as e:
             raise no_credits(e)
         return {"culls": culls.start(wedding_id, [f["id"] for f in chosen], body.strictness, body.best_only),
@@ -852,7 +873,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(422, f"size must be one of {EXPORT_SIZES}")
 
         def pay(export_id: str, photos: int):
-            accounts.charge(user, photos, "export", f"Export of {photos} photos: {w['name']}", export_id, photos)
+            accounts.charge(user, photos, "export", f"Export of {photos} photos: {w['name']}", export_id, photos,
+                           wedding=wedding_id)
         try:
             return exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder,
                                   tuple(r for r in RATINGS if r in body.ratings), pay=pay)
@@ -932,7 +954,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         marked = store.mark_applied(wedding_id, stamps)
         if marked:
             accounts.add(user["id"], -marked, "lightroom", f"Edits applied in Lightroom to {marked} photos: {w['name']}",
-                         wedding_id, marked)
+                         wedding_id, marked, wedding=wedding_id)
         return {"marked": marked}
 
     # ---- for search engines and AI assistants ------------------------------------

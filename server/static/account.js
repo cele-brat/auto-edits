@@ -1,7 +1,7 @@
 // The account: credits in the top bar, the "Your account" window, and messages about the email address.
 const Acc = { user: null, credits: 0, unlimited: false };
 
-const KINDS = { welcome: 'Free credits', cull: 'Culling', export: 'Export', refund: 'Given back', lightroom: 'Sent to Lightroom', purchase: 'Bought' };
+const KINDS = { welcome: 'Free credits', cull: 'Culling', export: 'Export', refund: 'Given back', lightroom: 'Sent to Lightroom', purchase: 'Bought', admin: 'From Cele-Brat' };
 
 function creditLabel() {
   return Acc.unlimited ? 'Studio · unlimited' : `${Acc.credits.toLocaleString('en-IN')} credit${Acc.credits === 1 ? '' : 's'}`;
@@ -87,10 +87,11 @@ async function openAccount() {
       n.textContent = (h.delta > 0 ? '+' : '') + h.delta;
       const what = document.createElement('td'); what.textContent = h.note || KINDS[h.kind] || h.kind;
       const d = document.createElement('td'); d.textContent = when(h.created);
-      tr.append(d, what, n);
+      const b = document.createElement('td'); b.className = 'n dim'; b.textContent = Acc.unlimited ? '' : h.balance.toLocaleString('en-IN');
+      tr.append(d, what, n, b);
       return tr;
     });
-    if (!rows.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 3; td.textContent = 'Nothing yet.'; tr.append(td); rows.push(tr); }
+    if (!rows.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = 'Nothing yet.'; tr.append(td); rows.push(tr); }
     $('history').tBodies[0].replaceChildren(...rows);
   } catch (err) { $('account-error').textContent = err.message; }
 }

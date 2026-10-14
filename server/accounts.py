@@ -115,6 +115,21 @@ class Accounts:
             if "checked" not in {r["name"] for r in db.execute("PRAGMA table_info(sessions)")}:
                 db.execute("ALTER TABLE sessions ADD COLUMN checked REAL NOT NULL DEFAULT 0")   # when a 2-step code was last given
             db.executescript(security.SCHEMA)
+            if "wedding" not in {r["name"] for r in db.execute("PRAGMA table_info(ledger)")}:
+                db.execute("ALTER TABLE ledger ADD COLUMN wedding TEXT NOT NULL DEFAULT ''")   # which wedding a charge was for
+                db.execute("UPDATE ledger SET wedding=ref WHERE kind IN ('cull','lightroom')")
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name='exports'").fetchone():
+                    db.execute("UPDATE ledger SET wedding=COALESCE((SELECT e.wedding_id FROM exports e WHERE e.id=ledger.ref), '') "
+                               "WHERE kind IN ('export','refund')")
+                # exports removed since: the note ends with ": <wedding name>", unique for each photographer
+                db.execute("UPDATE ledger SET wedding=COALESCE((SELECT w.id FROM weddings w WHERE w.owner=ledger.user_id "
+                           "AND substr(ledger.note, -length(w.name) - 2) = ': ' || w.name LIMIT 1), '') "
+                           "WHERE wedding='' AND kind IN ('export','refund','cull','lightroom')")
+            # the ledger is a record: rows are only ever added, never changed or removed
+            db.execute("CREATE TRIGGER IF NOT EXISTS ledger_no_update BEFORE UPDATE ON ledger "
+                       "BEGIN SELECT RAISE(ABORT, 'the credit ledger cannot be changed'); END")
+            db.execute("CREATE TRIGGER IF NOT EXISTS ledger_no_delete BEFORE DELETE ON ledger "
+                       "BEGIN SELECT RAISE(ABORT, 'the credit ledger cannot be changed'); END")
         self.admin_email = admin_email.strip().lower()
         self.admin_id = self._ensure_admin() if self.admin_email else ""
 
@@ -373,12 +388,14 @@ class Accounts:
         with self._db() as db:
             return int(db.execute("SELECT COALESCE(SUM(delta),0) FROM ledger WHERE user_id=?", (user_id,)).fetchone()[0])
 
-    def add(self, user_id: str, credits: int, kind: str, note: str = "", ref: str = "", photos: int = 0) -> None:
+    def add(self, user_id: str, credits: int, kind: str, note: str = "", ref: str = "", photos: int = 0,
+            wedding: str = "") -> None:
         with self._db() as db:
-            db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created) VALUES (?,?,?,?,?,?,?)",
-                       (user_id, int(credits), kind, note[:200], ref, photos, time.time()))
+            db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
+                       (user_id, int(credits), kind, note[:200], ref, photos, time.time(), wedding))
 
-    def charge(self, user: dict, credits: int, kind: str, note: str, ref: str = "", photos: int = 0) -> None:
+    def charge(self, user: dict, credits: int, kind: str, note: str, ref: str = "", photos: int = 0,
+               wedding: str = "") -> None:
         """Take credits, or raise NotEnoughCredits and take nothing. The studio account is never stopped."""
         if credits <= 0:
             return
@@ -387,8 +404,8 @@ class Accounts:
             have = int(db.execute("SELECT COALESCE(SUM(delta),0) FROM ledger WHERE user_id=?", (user["id"],)).fetchone()[0])
             if have < credits and not user["admin"]:
                 raise NotEnoughCredits(credits, have)
-            db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created) VALUES (?,?,?,?,?,?,?)",
-                       (user["id"], -int(credits), kind, note[:200], ref, photos, time.time()))
+            db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
+                       (user["id"], -int(credits), kind, note[:200], ref, photos, time.time(), wedding))
 
     def must_have(self, user: dict, credits: int) -> None:
         if user["admin"] or credits <= 0:
@@ -397,11 +414,14 @@ class Accounts:
         if have < credits:
             raise NotEnoughCredits(credits, have)
 
-    def history(self, user_id: str, limit: int = 100) -> list[dict]:
+    def history(self, user_id: str, limit: int | None = 100) -> list[dict]:
+        """Newest first, each with the balance straight after it and the wedding it was for."""
         with self._db() as db:
             return [dict(r) for r in db.execute(
-                "SELECT delta, kind, note, photos, created FROM ledger WHERE user_id=? ORDER BY id DESC LIMIT ?",
-                (user_id, limit))]
+                "SELECT * FROM (SELECT l.id, l.delta, l.kind, l.note, l.photos, l.created, l.ref, l.wedding, "
+                "COALESCE(w.name, '') AS wedding_name, SUM(l.delta) OVER (ORDER BY l.id) AS balance "
+                "FROM ledger l LEFT JOIN weddings w ON w.id=l.wedding WHERE l.user_id=?) ORDER BY id DESC LIMIT ?",
+                (user_id, -1 if limit is None else limit))]
 
     # ---- for the admin dashboard ---------------------------------------------
     def overview(self) -> list[dict]:
