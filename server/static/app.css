@@ -333,9 +333,9 @@ dialog .title { font: 600 19px/1.3 var(--sans) !important; color: var(--text); m
 #buy-dialog a { color: var(--marigold); }
 #account .policies a { color: var(--dim); }
 #account .statement { float: right; font-weight: 400; font-size: 13px; color: var(--marigold); }
-#account .qr { width: 190px; margin: 8px 0; background: #fff; border-radius: 6px; padding: 4px; }
+#account .qr { width: 220px; margin: 8px 0; background: #fff; border-radius: 6px; padding: 4px; }
 #account .qr svg { display: block; width: 100%; height: auto; }
-#account code { font: 13px ui-monospace, monospace; color: var(--text); word-break: break-all; user-select: all; }
+#account code { font: 600 16px/1.6 ui-monospace, monospace; letter-spacing: 1px; color: var(--text); word-break: break-all; user-select: all; }
 #account pre { font: 15px/1.7 ui-monospace, monospace; color: var(--text); background: var(--rail); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; columns: 2; margin: 6px 0; }
 #account input[type=text], #account input[type=password], #account input:not([type]) { flex: 1 1 180px; padding: 7px 8px; background: var(--rail); border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
 #key-value { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }

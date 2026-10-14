@@ -81,8 +81,15 @@ def qr_svg(text: str) -> str:
     import segno
     import io
     buf = io.BytesIO()
-    segno.make(text, error="m").save(buf, kind="svg", scale=5, border=2, dark="#111", light="#fff", xmldecl=False)
-    return buf.getvalue().decode()
+    segno.make(text, error="m").save(buf, kind="svg", scale=5, border=4, dark="#111", light="#fff", xmldecl=False)
+    svg = buf.getvalue().decode()
+    # segno writes a fixed width/height and no viewBox: scaled down by the page, the code was cut off at the edges.
+    import re
+    m = re.search(r'width="(\d+)" height="(\d+)"', svg)
+    if m:
+        w, h = m.groups()
+        svg = svg.replace(m.group(0), f'width="{w}" height="{h}" viewBox="0 0 {w} {h}"', 1)
+    return svg
 
 
 # ---- backup codes -------------------------------------------------------------------
