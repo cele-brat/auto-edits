@@ -21,6 +21,7 @@ async function drawPurchases() {
   try {
     const { purchases } = await api('/api/purchases');
     $('purchases-box').hidden = !purchases.length;
+    $('purchases-none').hidden = !!purchases.length;
     $('purchases').tBodies[0].replaceChildren(...purchases.map((o) => {
       const tr = document.createElement('tr');
       tr.className = 'go'; tr.title = 'Open the invoice';
@@ -153,9 +154,9 @@ for (const id of ['buy-credits', 'buy-blocks', 'buy-months', 'buy-state', 'buy-g
 $('buy').onclick = () => openBuy('credits');
 $('buy-storage').onclick = () => openBuy('storage');
 // the credits box and the storage line open the matching purchase
-document.querySelector('#account .box').addEventListener('click', (e) => {
+for (const card of document.querySelectorAll('#account .acc-card')) card.addEventListener('click', (e) => {
   if (e.target.closest('button, a')) return;
-  if (e.target.closest('#account-storage')) { if (!$('buy-storage').disabled) openBuy('storage'); }
+  if (card.contains($('account-storage'))) { if (!$('buy-storage').disabled) openBuy('storage'); }
   else if (!$('buy').disabled) openBuy('credits');
 });
 $('buy-close').onclick = () => $('buy-dialog').close();

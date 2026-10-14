@@ -390,7 +390,51 @@ body.viewing #app { padding-bottom: 56px; }
 #crop-panel .tools { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* everything that looks like a card can be clicked */
-#account .box { cursor: pointer; transition: border-color .12s; } #account .box:hover { border-color: var(--marigold); }
-#account .box #account-storage:hover { color: var(--text); text-decoration: underline; }
+#account .acc-card { cursor: pointer; transition: border-color .12s; } #account .acc-card:hover { border-color: var(--marigold); }
 tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .05); }
 #account .free-note { margin: 0; padding: 7px 10px; border-radius: 6px; background: var(--marigold-wash); color: var(--marigold); font-size: 13px; }
+
+/* account window: summary on top, one section at a time below */
+#account { width: min(760px, 95vw); max-width: none; padding: 28px 30px 22px; }
+#account .acc-form:has(#password-current[hidden]) { grid-template-columns: 1fr auto; }
+#account .acc-tabs button[aria-selected=true] { background: none; }
+#account .acc-head { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; padding-right: 36px; }
+#account .acc-avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: var(--marigold); color: #1a1406; font: 700 19px var(--sans); text-transform: uppercase; flex: none; }
+#account .acc-head .title { margin: 0; }
+#account-who { margin: 2px 0 0; font-size: 13.5px; }
+#account .acc-summary { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+#account .acc-card { margin: 0; padding: 18px 18px 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--rail); display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+#account .acc-card .label { font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
+#account .acc-card .balance { font: 600 34px/1 var(--sans); }
+#account .acc-card button { margin-top: auto; }
+#account .acc-storage { margin: 0; color: var(--text); font-size: 14px; line-height: 1.5; }
+#account .acc-prices { margin: 12px 2px 0; color: var(--dim); font-size: 13px; }
+#account .acc-prices b { color: var(--text); font-weight: 600; }
+#account .acc-tabs { display: flex; gap: 4px; margin: 22px 0 0; border-bottom: 1px solid var(--line); }
+#account .acc-tabs button { background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; color: var(--dim); font-weight: 600; margin-bottom: -1px; }
+#account .acc-tabs button:hover { color: var(--text); }
+#account .acc-tabs button[aria-selected=true] { color: var(--text); border-bottom-color: var(--marigold); }
+#account .acc-pane { padding: 18px 2px 4px; min-height: 180px; }
+#account .acc-pane-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+#account .acc-pane h3, #account .acc-block h3 { margin: 0 0 8px; font-size: 15px; font-weight: 600; color: var(--text); }
+#account .acc-pane-head h3 { margin: 0; }
+#account .statement { float: none; }
+#account table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+#account th { text-align: left; color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+#account td { padding: 11px 10px; border-bottom: 1px solid var(--line); vertical-align: top; line-height: 1.45; }
+#account td:first-child { white-space: nowrap; color: var(--dim); }
+#account th.n, #account td.n { text-align: right; white-space: nowrap; }
+#account .acc-steps { margin: 0 0 14px; padding-left: 20px; color: var(--text); font-size: 14px; line-height: 1.8; }
+#account .acc-block { padding: 4px 0 20px; }
+#account .acc-block + .acc-block { border-top: 1px solid var(--line); padding-top: 20px; }
+#account .acc-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; }
+#account .acc-form input { padding: 10px 12px; }
+#account .policies { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media (max-width: 640px) {
+  #account { padding: 22px 16px; }
+  #account .acc-summary { grid-template-columns: 1fr; }
+  #account .acc-form { grid-template-columns: 1fr; }
+  #account .acc-tabs { overflow-x: auto; }
+  #account .acc-tabs button { padding: 10px 10px; white-space: nowrap; }
+  #account td:first-child { white-space: normal; }
+}

@@ -68,8 +68,10 @@ function when(t) {
   return new Date(t * 1000).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-async function openAccount() {
+async function openAccount(tab) {
   $('more').open = false;
+  accountTab(typeof tab === 'string' ? tab : 'credits');
+  if (Acc.user) $('account-initial').textContent = ((Acc.user.name || Acc.user.email || '?').trim()[0] || '?');
   $('account-error').textContent = '';
   $('key-shown').hidden = true;
   $('account').showModal();
@@ -81,8 +83,8 @@ async function openAccount() {
     new Date(Acc.free.ends * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) + '. Bought credits never end.';
   const st = Acc.storage;
   $('account-storage').textContent = !st ? '' : st.storage_gb
-    ? `Storage: ${(st.used_bytes / 1073741824).toFixed(1)} of ${st.storage_gb} GB used (uploads and exports). Up to ${st.photos_per_wedding.toLocaleString('en-IN')} photos in one wedding.`
-    : `Storage: ${(st.used_bytes / 1073741824).toFixed(1)} GB used (studio account, no limit).`;
+    ? `${(st.used_bytes / 1073741824).toFixed(1)} of ${st.storage_gb} GB used (uploads and exports). Up to ${st.photos_per_wedding.toLocaleString('en-IN')} photos in one wedding.`
+    : `${(st.used_bytes / 1073741824).toFixed(1)} GB used. Studio account: no limit.`;
   $('password-title').textContent = Acc.user.has_password ? 'Change password' : 'Set a password';
   $('password-current').hidden = !Acc.user.has_password;
   $('password-new').placeholder = Acc.user.admin ? 'New password (12 or more characters)' : 'New password (8 or more characters)';
@@ -120,11 +122,13 @@ function drawMe(user) {
   $('me-name').textContent = user.name || user.email.split('@')[0];
   $('me-email').textContent = user.email + (user.admin ? ' · studio' : '');
 }
-$('plugin-open').onclick = async () => {
-  await openAccount();
-  const h = [...document.querySelectorAll('#account h3')].find((x) => x.textContent.includes('Lightroom'));
-  if (h) h.scrollIntoView({ block: 'start' });
-};
+$('plugin-open').onclick = () => openAccount('lightroom');
+// one section of the account window at a time
+function accountTab(name) {
+  for (const b of document.querySelectorAll('#account [data-acc]')) b.setAttribute('aria-selected', String(b.dataset.acc === name));
+  for (const p of document.querySelectorAll('#account .acc-pane')) p.hidden = p.dataset.pane !== name;
+}
+for (const b of document.querySelectorAll('#account [data-acc]')) b.onclick = () => accountTab(b.dataset.acc);
 // the menu closes on a click outside it or on Esc
 document.addEventListener('click', (e) => { if ($('more').open && !e.target.closest('#more')) $('more').open = false; });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('more').open) { $('more').open = false; $('more').querySelector('summary').focus(); } });
