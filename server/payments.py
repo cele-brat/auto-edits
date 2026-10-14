@@ -172,6 +172,13 @@ class Payments:
         self.rzp = razorpay or from_environment()
         with store._db() as db:
             db.executescript(SCHEMA)
+            if "test" not in {r["name"] for r in db.execute("PRAGMA table_info(orders)")}:
+                # Test payments are kept apart so real tax invoices are numbered without gaps (GST).
+                # Before this column existed only test keys had ever been used (14 Oct 2026), so every
+                # earlier order is a test one: it moves to the TEST/ series.
+                db.execute("ALTER TABLE orders ADD COLUMN test INTEGER NOT NULL DEFAULT 0")
+                db.execute("UPDATE orders SET test=1, invoice_no=CASE WHEN invoice_no='' THEN '' "
+                           "ELSE 'TEST/' || substr(invoice_no, 4) END")
 
     def _db(self):
         return self.store._db()
@@ -186,10 +193,10 @@ class Payments:
         rz = self.rzp.create_order(q["total"], oid, {"account": user["email"], "what": what})
         with self._db() as db:
             db.execute("INSERT INTO orders (id, user_id, kind, credits, blocks, months, taxable, cgst, sgst, igst, total, state, "
-                       "buyer_name, buyer_gstin, buyer_email, rzp_order, created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                       "buyer_name, buyer_gstin, buyer_email, rzp_order, created, test) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                        (oid, user["id"], q["kind"], q["credits"], q["blocks"], q["months"], q["taxable"], q["cgst"], q["sgst"],
                         q["igst"], q["total"], q["state"], (buyer_name.strip() or user.get("name") or "")[:120], q["gstin"],
-                        user["email"], rz["id"], time.time()))
+                        user["email"], rz["id"], time.time(), int(not self.rzp.key_id.startswith("rzp_live_"))))
         return {"order": oid, "key": self.rzp.key_id, "rzp_order": rz["id"], "amount": q["total"], "what": what,
                 "email": user["email"], "name": user.get("name") or ""}
 
@@ -215,7 +222,7 @@ class Payments:
             db.execute("BEGIN IMMEDIATE")
             if db.execute("SELECT status FROM orders WHERE id=?", (o["id"],)).fetchone()["status"] == "paid":
                 return self.get(o["id"])
-            invoice = self._next_invoice(db, now)
+            invoice = self._next_invoice(db, now, bool(o["test"]))
             db.execute("UPDATE orders SET status='paid', paid=?, rzp_payment=?, invoice_no=? WHERE id=?",
                        (now, rzp_payment, invoice, o["id"]))
             if o["kind"] == "credits":
@@ -230,10 +237,11 @@ class Payments:
         return self.get(o["id"])
 
     @staticmethod
-    def _next_invoice(db, now: float) -> str:
+    def _next_invoice(db, now: float, test: bool = False) -> str:
+        """Real invoices: AE/2026-27/00001, 00002… per financial year. Test payments: TEST/2026-27/…"""
         d = dt.datetime.fromtimestamp(now, IST)
         fy = d.year if d.month >= 4 else d.year - 1
-        prefix = f"{INVOICE_PREFIX}/{fy}-{str(fy + 1)[2:]}/"
+        prefix = f"{'TEST' if test else INVOICE_PREFIX}/{fy}-{str(fy + 1)[2:]}/"
         last = db.execute("SELECT invoice_no FROM orders WHERE invoice_no LIKE ? ORDER BY invoice_no DESC LIMIT 1",
                           (prefix + "%",)).fetchone()
         n = int(last["invoice_no"].rsplit("/", 1)[1]) + 1 if last else 1
@@ -328,7 +336,7 @@ tr.total td {{ font-weight: 700; border-top: 2px solid #17201f; }}
 </style></head><body>
 <div class="print"><button onclick="print()">Print or save as PDF</button></div>
 <div class="page">
-<h1>Tax invoice</h1>
+<h1>{'TEST payment — not a tax invoice' if o.get('test') else 'Tax invoice'}</h1>
 <div class="muted">Invoice {h.escape(o['invoice_no'])} · {paid.strftime('%d %b %Y')} · Payment {h.escape(o['rzp_payment'])}</div>
 <div class="grid">
 <div><b>From</b><br>{h.escape(seller['name'])}<br>{h.escape(seller['address']).replace(chr(10), '<br>')}<br>GSTIN {h.escape(seller['gstin'])}<br>{h.escape(seller['email'])}</div>

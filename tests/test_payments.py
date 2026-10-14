@@ -74,7 +74,7 @@ def test_buy_credits_through_checkout(app, box, rzp):
     assert c.get("/api/me").json()["credits"] == 50
     good = {**bad, "razorpay_signature": rzp.sign(o["rzp_order"], "pay_1")}
     done = c.post("/api/buy/verify", json=good).json()
-    assert done["credits"] == 750 and done["invoice"].startswith("AE/20") and done["invoice"].endswith("/00001")
+    assert done["credits"] == 750 and done["invoice"].startswith("TEST/20") and done["invoice"].endswith("/00001")
     assert c.post("/api/buy/verify", json=good).json()["credits"] == 750           # only once
     h = c.get("/api/credits").json()["history"][0]
     assert h["kind"] == "purchase" and h["delta"] == 700
@@ -137,3 +137,24 @@ def test_unconfirmed_and_view_as_cannot_buy(app, box):
     c = TestClient(app)
     c.post("/api/signup", json={"email": "n@example.com", "password": "a good password", "agree": True})
     assert c.post("/api/buy", json={"kind": "credits", "credits": 500, "state": "08"}).status_code == 403
+
+
+def test_test_payments_never_take_real_invoice_numbers(tmp_path, box):
+    test_rzp, live_rzp = FakeRazorpay(), FakeRazorpay()
+    live_rzp.key_id = "rzp_live_abc"
+    live_rzp.orders = [None] * 100                                    # real Razorpay ids never repeat
+    app = create_app(str(tmp_path), KEY, admin_email=ADMIN, mailer=box, razorpay=test_rzp)
+    c = sign_up(app, box, "a@example.com")
+    o = c.post("/api/buy", json={"kind": "credits", "credits": 500, "state": "08"}).json()
+    t = c.post("/api/buy/verify", json={"razorpay_order_id": o["rzp_order"], "razorpay_payment_id": "pay_t",
+                                        "razorpay_signature": test_rzp.sign(o["rzp_order"], "pay_t")}).json()
+    assert t["invoice"].startswith("TEST/") and t["invoice"].endswith("/00001")
+    assert "not a tax invoice" in c.get(f"/invoice/{o['order']}").text
+    app.state.payments = None
+    live = create_app(str(tmp_path), KEY, admin_email=ADMIN, mailer=box, razorpay=live_rzp)    # keys switched to live
+    c2 = TestClient(live); c2.cookies = c.cookies
+    o2 = c2.post("/api/buy", json={"kind": "credits", "credits": 500, "state": "08"}).json()
+    r = c2.post("/api/buy/verify", json={"razorpay_order_id": o2["rzp_order"], "razorpay_payment_id": "pay_l",
+                                         "razorpay_signature": live_rzp.sign(o2["rzp_order"], "pay_l")}).json()
+    assert r["invoice"].startswith("AE/") and r["invoice"].endswith("/00001")                 # first real invoice is 00001
+    assert "Tax invoice" in c2.get(f"/invoice/{o2['order']}").text

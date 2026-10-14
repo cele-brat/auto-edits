@@ -228,11 +228,12 @@ const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN', { minimumFractionDi
 async function loadPurchases() {
   try {
     const { purchases, test } = await api('/api/admin/purchases');
-    const sum = purchases.reduce((n, o) => n + o.taxable, 0);
-    $('buy-mode').textContent = `· ${purchases.length} paid · ${inr(sum)} before GST` + (test ? ' · TEST MODE' : '');
+    const real = purchases.filter((o) => !o.test);
+    const sum = real.reduce((n, o) => n + o.taxable, 0);
+    $('buy-mode').textContent = `· ${real.length} paid · ${inr(sum)} before GST` + (purchases.length > real.length ? ` · ${purchases.length - real.length} test` : '') + (test ? ' · server on TEST keys' : '');
     $('purchases').replaceChildren(...(purchases.length ? purchases.map((o) => el('tr', {},
       el('td', { textContent: when(o.paid) }), el('td', { textContent: o.email || '' }),
-      el('td', { textContent: o.kind === 'credits' ? `${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo` }),
+      el('td', { textContent: (o.test ? 'TEST · ' : '') + (o.kind === 'credits' ? `${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo`) }),
       el('td', { className: 'n', textContent: inr(o.taxable) }), el('td', { className: 'n', textContent: inr(o.cgst + o.sgst + o.igst) }),
       el('td', { className: 'n', textContent: inr(o.total) }),
       el('td', {}, el('a', { className: 'dl', href: `/invoice/${o.id}`, target: '_blank', textContent: o.invoice_no }))))

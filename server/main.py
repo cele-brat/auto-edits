@@ -529,7 +529,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def admin_purchases(admin: dict = Depends(the_admin)):
         rows = payments.recent(300)
         return {"purchases": [{k: o[k] for k in ("id", "email", "kind", "credits", "blocks", "months", "taxable", "cgst", "sgst",
-                                                 "igst", "total", "invoice_no", "paid", "rzp_payment", "buyer_gstin", "state")}
+                                                 "igst", "total", "invoice_no", "paid", "rzp_payment", "buyer_gstin", "state", "test")}
                               for o in rows], "test": payments.rzp.test_mode}
 
     # ---- two-step login (offered to the studio account) ----------------------------------
