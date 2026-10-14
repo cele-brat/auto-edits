@@ -55,8 +55,13 @@ class Culls:
         now = time.time()
         with self.store._db() as db:
             db.execute("BEGIN IMMEDIATE")
-            r = db.execute("SELECT * FROM cull_jobs WHERE state='waiting' OR (state='working' AND claimed<?) ORDER BY id LIMIT 1",
-                           (now - STALE_SECONDS,)).fetchone()
+            # Take turns: the photographer with the fewest culls running goes first, then the oldest job.
+            r = db.execute(
+                "SELECT j.* FROM cull_jobs j JOIN weddings w ON w.id=j.wedding_id "
+                "WHERE j.state='waiting' OR (j.state='working' AND j.claimed<?) "
+                "ORDER BY (SELECT COUNT(*) FROM cull_jobs k JOIN weddings v ON v.id=k.wedding_id "
+                "          WHERE v.owner=w.owner AND k.state='working' AND k.claimed>=?), j.id LIMIT 1",
+                (now - STALE_SECONDS, now - STALE_SECONDS)).fetchone()
             if r is None:
                 return None
             db.execute("UPDATE cull_jobs SET state='working', claimed=?, done=0 WHERE id=?", (now, r["id"]))

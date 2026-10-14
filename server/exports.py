@@ -138,9 +138,14 @@ class Exports:
         now = time.time()
         with self.store._db() as db:
             db.execute("BEGIN IMMEDIATE")                         # one worker at a time may choose
+            # Take turns (Bharat, Oct 2026): the first waiting photo of every photographer, then the second of
+            # every photographer, and so on, so one big export never holds up someone else's small one.
             rows = db.execute(
-                "SELECT i.export_id, i.photo_id FROM export_items i JOIN exports e ON e.id=i.export_id "
-                "WHERE e.stopped=0 AND (i.status=? OR (i.status=? AND i.claimed<?)) ORDER BY e.created, i.rowid LIMIT ?",
+                "SELECT export_id, photo_id FROM (SELECT i.export_id, i.photo_id, e.created, i.rowid AS rid, "
+                "ROW_NUMBER() OVER (PARTITION BY w.owner ORDER BY e.created, i.rowid) AS turn "
+                "FROM export_items i JOIN exports e ON e.id=i.export_id JOIN weddings w ON w.id=e.wedding_id "
+                "WHERE e.stopped=0 AND (i.status=? OR (i.status=? AND i.claimed<?))) "
+                "ORDER BY turn, created, rid LIMIT ?",
                 (WAITING, WORKING, now - STALE_SECONDS, n)).fetchall()
             for r in rows:
                 db.execute("UPDATE export_items SET status=?, claimed=? WHERE export_id=? AND photo_id=?",

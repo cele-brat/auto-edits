@@ -66,10 +66,12 @@ local function chooseWedding(context, weddings)
     return nil
 end
 
-local function fetchEdits(weddingId, progress)
+local function fetchEdits(weddingId, again, progress)
     local all, offset, total = {}, 0, nil
     repeat
-        local ok, page = Server.get(string.format('/api/weddings/%s/apply?offset=%d&limit=200', weddingId, offset))
+        -- The server only gives edits the credit balance covers; the rest come back marked no_credits.
+        local ok, page = Server.get(string.format('/api/weddings/%s/apply?offset=%d&limit=200&again=%d',
+            weddingId, offset, again and 1 or 0))
         if not ok then return nil, page end
         total = page.total or 0
         for _, item in ipairs(page.photos or {}) do all[#all + 1] = item end
@@ -148,7 +150,7 @@ local function run(context)
 
     local progress = LrProgressScope { title = 'Auto Edits: applying edits', functionContext = context }
     progress:setCancelable(true)
-    local items, why = fetchEdits(wedding.id, progress)
+    local items, why = fetchEdits(wedding.id, again, progress)
     if not items then
         progress:done()
         LrDialogs.message('Auto Edits', tostring(why), 'warning')
@@ -156,9 +158,11 @@ local function run(context)
     end
 
     local catalog = LrApplication.activeCatalog()
-    local todo, noEdit, done, notHere, notYet = {}, 0, 0, 0, {}
+    local todo, noEdit, done, notHere, notYet, noCredits = {}, 0, 0, 0, {}, 0
     for _, item in ipairs(items) do
-        if type(item.edit) ~= 'table' then
+        if item.no_credits then
+            noCredits = noCredits + 1
+        elseif type(item.edit) ~= 'table' then
             noEdit = noEdit + 1
         elseif item.done and not again then
             done = done + 1
@@ -173,9 +177,12 @@ local function run(context)
         end
     end
 
+    local outOfCredits = string.format('Out of credits: %d photos were left out. Buy credits in the app ' ..
+        '(Account window), then run this again: photos already done are skipped.', noCredits)
     if #todo == 0 then
         progress:done()
         local lines = { string.format('Nothing to apply for "%s".', wedding.name) }
+        if noCredits > 0 then lines[#lines + 1] = outOfCredits end
         if done > 0 then lines[#lines + 1] = string.format('%d photos already have their edit.', done) end
         if noEdit > 0 then lines[#lines + 1] = string.format('%d photos have no preset or setting chosen in the app.', noEdit) end
         if notHere > 0 then lines[#lines + 1] = string.format('%d photos are not in this catalogue.', notHere) end
@@ -186,6 +193,8 @@ local function run(context)
     local question = string.format('%d photos of "%s" will be edited.', #todo, wedding.name)
     if done > 0 then question = question .. string.format('\n%d are already done and will be skipped.', done) end
     if noEdit > 0 then question = question .. string.format('\n%d have nothing chosen in the app and stay as they are.', noEdit) end
+    if noCredits > 0 then question = question .. string.format('\n%d more need credits you do not have yet and are left out.', noCredits) end
+    question = question .. string.format('\n\nThis uses %d credits.', #todo)
     if LrDialogs.confirm('Auto Edits: apply edits', question, 'Apply', 'Cancel') ~= 'ok' then
         progress:done()
         return
@@ -233,6 +242,7 @@ local function run(context)
     local lines = { string.format('Wedding: %s', wedding.name), string.format('Edited now: %d of %d', applied, #todo) }
     if done > 0 then lines[#lines + 1] = string.format('Already done, skipped: %d', done) end
     if notHere > 0 then lines[#lines + 1] = string.format('Not in this catalogue: %d', notHere) end
+    if noCredits > 0 then lines[#lines + 1] = '\n' .. outOfCredits end
     local missing = {}
     for name in pairs(counts.presetMissing) do missing[#missing + 1] = name end
     if #missing > 0 then

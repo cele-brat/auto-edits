@@ -1,5 +1,5 @@
 --[[ Auto Edits: Lightroom Classic plug-in.
-     Version 0.6: brings the edits back and applies them; opens the app; sends photos to the Auto Edits server; reference and calibration exports for tuning. ]]
+     Version 0.7: never spends below 0 credits when applying; brings the edits back and applies them; opens the app; sends photos to the Auto Edits server; reference and calibration exports for tuning. ]]
 return {
     LrSdkVersion = 10.0,
     LrSdkMinimumVersion = 6.0,
@@ -22,5 +22,5 @@ return {
         { title = 'Make reference exports (selected photos)', file = 'ReferenceExports.lua' },
     },
 
-    VERSION = { major = 0, minor = 6, revision = 0 },
+    VERSION = { major = 0, minor = 7, revision = 0 },
 }

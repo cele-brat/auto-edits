@@ -149,6 +149,26 @@ class Store:
                 ids = [r["id"] for r in db.execute("SELECT id FROM weddings WHERE owner=? ORDER BY created DESC", (owner,))]
         return [self.wedding(i) for i in ids]
 
+    # ---- how much a photographer holds (limits.py) -----------------------------------
+    def photo_count(self, wedding_id: str) -> int:
+        with self._db() as db:
+            return db.execute("SELECT COUNT(*) FROM photos WHERE wedding_id=?", (wedding_id,)).fetchone()[0]
+
+    def has_photo(self, wedding_id: str, lr_uuid: str) -> bool:
+        with self._db() as db:
+            return db.execute("SELECT 1 FROM photos WHERE wedding_id=? AND lr_uuid=?", (wedding_id, lr_uuid)).fetchone() is not None
+
+    def used_bytes(self, owner: str) -> int:
+        """Uploaded previews plus finished export pictures, across all of one photographer's weddings."""
+        with self._db() as db:
+            up = db.execute("SELECT COALESCE(SUM(p.bytes),0) FROM photos p JOIN weddings w ON w.id=p.wedding_id WHERE w.owner=?",
+                            (owner,)).fetchone()[0]
+            made = 0
+            if db.execute("SELECT 1 FROM sqlite_master WHERE name='export_items'").fetchone():
+                made = db.execute("SELECT COALESCE(SUM(i.bytes),0) FROM export_items i JOIN exports e ON e.id=i.export_id "
+                                  "JOIN weddings w ON w.id=e.wedding_id WHERE w.owner=?", (owner,)).fetchone()[0]
+        return int(up) + int(made)
+
     def owner_of(self, wedding_id: str) -> str | None:
         with self._db() as db:
             r = db.execute("SELECT owner FROM weddings WHERE id=?", (wedding_id,)).fetchone()

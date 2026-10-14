@@ -110,7 +110,8 @@ class Accounts:
             for col, kind in (("totp_secret", "TEXT NOT NULL DEFAULT ''"), ("totp_pending", "TEXT NOT NULL DEFAULT ''"),
                               ("totp_on", "INTEGER NOT NULL DEFAULT 0"), ("totp_last", "INTEGER NOT NULL DEFAULT 0"),
                               ("backup_codes", "TEXT NOT NULL DEFAULT ''"),
-                              ("agreed", "REAL NOT NULL DEFAULT 0"), ("terms_version", "TEXT NOT NULL DEFAULT ''")):
+                              ("agreed", "REAL NOT NULL DEFAULT 0"), ("terms_version", "TEXT NOT NULL DEFAULT ''"),
+                              ("limit_photos", "INTEGER NOT NULL DEFAULT 0"), ("limit_gb", "INTEGER NOT NULL DEFAULT 0")):
                 if col not in cols:              # two-step login (see security.py)
                     db.execute(f"ALTER TABLE users ADD COLUMN {col} {kind}")
             if "checked" not in {r["name"] for r in db.execute("PRAGMA table_info(sessions)")}:
@@ -331,6 +332,11 @@ class Accounts:
             db.execute("INSERT OR REPLACE INTO settings (k, v) VALUES ('studio_key_retired', ?)", (str(time.time()),))
         self.log(self.admin_id, "old studio key retired", detail="password, two-step and own Lightroom key are set", ip=ip)
         return True
+
+    def set_limits(self, user_id: str, photos: int, gb: int) -> None:
+        """0 means the default (limits.py)."""
+        with self._db() as db:
+            db.execute("UPDATE users SET limit_photos=?, limit_gb=? WHERE id=?", (max(0, int(photos)), max(0, int(gb)), user_id))
 
     # ---- admin activity log ------------------------------------------------------
     def log(self, admin_id: str, action: str, target: str = "", detail: str = "", ip: str = "") -> None:

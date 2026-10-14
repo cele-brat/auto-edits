@@ -107,6 +107,13 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
     <button type="submit">Add credits</button>
   </form>
   <p id="detail-error" role="alert"></p>
+  <h3>Limits: <span id="detail-storage"></span></h3>
+  <form class="row" id="limits">
+    <label>Photos per wedding <input id="lim-photos" type="number" min="0" step="500" style="width:110px"></label>
+    <label>Storage GB <input id="lim-gb" type="number" min="0" step="10" style="width:90px"></label>
+    <button type="submit">Save limits</button>
+    <span class="sub">0 = default</span>
+  </form>
   <h3>Credit history</h3>
   <table><thead><tr><th>Date</th><th>What</th><th class="n">Credits</th></tr></thead><tbody id="detail-history"></tbody></table>
 </dialog>
@@ -231,6 +238,12 @@ async function openDetail(id) {
   $('detail-view').hidden = d.user.admin;
   $('detail-view').onclick = () => viewAs(id);
   $('detail-credits').textContent = d.user.admin ? 'unlimited (studio)' : fmt(d.credits);
+  const gbUsed = (d.storage.used_bytes / 1073741824).toFixed(1);
+  $('detail-storage').textContent = d.user.admin ? `none (studio) · ${gbUsed} GB stored`
+    : `${gbUsed} of ${d.storage.storage_gb} GB used · up to ${fmt(d.storage.photos_per_wedding)} photos a wedding`;
+  $('limits').hidden = d.user.admin;
+  $('lim-photos').value = d.limits.photos; $('lim-photos').placeholder = d.limits.default_photos;
+  $('lim-gb').value = d.limits.gb; $('lim-gb').placeholder = d.limits.default_gb;
   const size = (x) => (x === 0 ? 'full size' : `${x} px`);
   $('detail-weddings').replaceChildren(...(d.weddings.length ? d.weddings.flatMap((w) => [el('tr', {},
     el('td', { textContent: `${w.name} · ${day(w.created)}` }), el('td', { className: 'n', textContent: fmt(w.photos) }),
@@ -257,6 +270,15 @@ $('give').onsubmit = async (e) => {
     $('give-n').value = ''; $('give-note').value = '';
     await openDetail(A.open);
     load();
+  } catch (err) { $('detail-error').textContent = err.message; }
+};
+$('limits').onsubmit = async (e) => {
+  e.preventDefault();
+  $('detail-error').textContent = '';
+  try {
+    await api(`/api/admin/users/${A.open}/limits`, { method: 'POST', body: { photos: parseInt($('lim-photos').value || '0', 10), gb: parseInt($('lim-gb').value || '0', 10) } });
+    await openDetail(A.open);
+    loadActivity();
   } catch (err) { $('detail-error').textContent = err.message; }
 };
 $('detail-close').onclick = () => $('detail').close();

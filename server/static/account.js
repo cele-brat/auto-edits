@@ -57,7 +57,7 @@ async function sendAgain() {
 async function refreshCredits() {
   try {
     const me = await api('/api/me');
-    Acc.user = me.user; Acc.credits = me.credits; Acc.unlimited = me.user.admin;
+    Acc.user = me.user; Acc.credits = me.credits; Acc.storage = me.storage; Acc.unlimited = me.user.admin;
     $('credits').textContent = creditLabel();
   } catch (err) { /* the next action will say what is wrong */ }
 }
@@ -74,6 +74,10 @@ async function openAccount() {
   await refreshCredits();
   $('account-who').textContent = `${Acc.user.name ? Acc.user.name + ' · ' : ''}${Acc.user.email}` + (Acc.user.verified ? '' : ' · email not confirmed yet');
   $('account-balance').textContent = Acc.unlimited ? 'Unlimited' : Acc.credits.toLocaleString('en-IN');
+  const st = Acc.storage;
+  $('account-storage').textContent = !st ? '' : st.storage_gb
+    ? `Storage: ${(st.used_bytes / 1073741824).toFixed(1)} of ${st.storage_gb} GB used (uploads and exports). Up to ${st.photos_per_wedding.toLocaleString('en-IN')} photos in one wedding.`
+    : `Storage: ${(st.used_bytes / 1073741824).toFixed(1)} GB used (studio account, no limit).`;
   $('password-title').textContent = Acc.user.has_password ? 'Change password' : 'Set a password';
   $('password-current').hidden = !Acc.user.has_password;
   $('password-new').placeholder = Acc.user.admin ? 'New password (12 or more characters)' : 'New password (8 or more characters)';

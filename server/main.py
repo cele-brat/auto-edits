@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import legal, security
+from . import legal, limits, security
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
@@ -157,6 +157,14 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             tries.clear()
         return len(recent) >= limit
 
+    def failed_logins(email: str, add: bool) -> int:
+        """Wrong passwords for one email address in the last hour, from anywhere."""
+        who = f"login-email|{email.strip().lower()}"
+        now = time.time()
+        recent = [t for t in tries.get(who, []) if t > now - 3600] + ([now] if add else [])
+        tries[who] = recent
+        return len(recent)
+
     def key_ok(value: str) -> bool:
         """The old shared studio key. Stops working for good once the studio account is set up (security.py)."""
         return bool(value) and hmac.compare_digest(value.encode(), key.encode()) and not accounts.studio_key_retired()
@@ -254,7 +262,11 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             if user and user["totp_on"]:     # the key cannot skip the code: use email, password and code
                 user = None
         elif body.email and body.password:
+            if failed_logins(body.email, False) >= 20:          # one address tried from many places
+                raise HTTPException(429, "Too many tries for this account. Please wait an hour, or use \"Forgot password\".")
             user = accounts.log_in(body.email, body.password)
+            if user is None:
+                failed_logins(body.email, True)
         if user is None:
             time.sleep(1)                    # slows down guessing
             if body.email and (u := accounts.by_email(body.email)) and u["admin"]:
@@ -373,6 +385,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.get("/api/me")
     def me(user: dict = Depends(signed_in)):
         return {"user": public(user), "credits": accounts.balance(user["id"]), "free_given": accounts.got_free(user["id"]),
+                "storage": limits.usage(store, user),
                 "prices": {"export": 1, "cull_photos_per_credit": 10}}
 
     @app.get("/api/credits")
@@ -559,6 +572,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if store.free_space() < MIN_FREE_BYTES:
             raise HTTPException(507, "the server disk is nearly full")
         try:
+            limits.check_upload(store, user, wedding_id, str(info.get("uuid") or ""), len(data))
+        except limits.LimitReached as e:
+            raise HTTPException(403, str(e))
+        try:
             return store.add_photo(wedding_id, info, data)
         except ValueError as e:
             raise HTTPException(422, str(e))
@@ -646,10 +663,29 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(404, "no such account")
         return {"user": {**public(u), "created": u["created"], "last_seen": u["last_seen"], "signup_ip": u["signup_ip"]},
                 "credits": accounts.balance(user_id), "history": accounts.history(user_id, 300),
+                "storage": limits.usage(store, u), "limits": {"photos": u["limit_photos"], "gb": u["limit_gb"],
+                                                               "default_photos": limits.PHOTOS_PER_WEDDING,
+                                                               "default_gb": limits.STORAGE_GB},
                 "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes")} |
                              {"exports": [{k: e[k] for k in ("id", "size", "done", "total", "state", "created", "scope")}
                                           for e in exports.for_wedding(w["id"])]}
                              for w in store.weddings(user_id)]}
+
+    @app.post("/api/admin/users/{user_id}/limits")
+    def admin_limits(user_id: str, body: dict = Body(...), admin: dict = Depends(the_admin)):
+        """Raise (or reset with 0) one photographer's photos-per-wedding and storage limits."""
+        if accounts.user(user_id) is None:
+            raise HTTPException(404, "no such account")
+        try:
+            photos, gb = int(body.get("photos") or 0), int(body.get("gb") or 0)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "limits must be whole numbers")
+        if photos < 0 or gb < 0 or photos > 1_000_000 or gb > 10_000:
+            raise HTTPException(422, "limits are out of range")
+        accounts.set_limits(user_id, photos, gb)
+        accounts.log(admin["id"], "limits changed", target=user_id,
+                     detail=f"photos per wedding {photos or 'default'} · storage {f'{gb} GB' if gb else 'default'}", ip=admin["ip"])
+        return {"ok": True}
 
     @app.post("/api/admin/users/{user_id}/credits")
     def admin_credits(user_id: str, body: dict = Body(...), admin: dict = Depends(the_admin)):
@@ -733,7 +769,12 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         """Presets exported from Lightroom (.xmp), masks included. The original file is
         kept, so the very same preset can be applied when the edits go back to Lightroom."""
         results = []
+        mine = sum(1 for p in store.uploaded_presets() if p.get("owner") == user["id"])
         for f in files[:200]:
+            if not user["admin"] and mine >= limits.PRESETS_PER_ACCOUNT:
+                results.append({"file": f.filename or "preset.xmp", "ok": False,
+                                "why": f"You have {limits.PRESETS_PER_ACCOUNT:,} presets, the most one account can keep."})
+                continue
             name = f.filename or "preset.xmp"
             raw = await f.read(MAX_PRESET_BYTES + 1)
             if len(raw) > MAX_PRESET_BYTES:
@@ -758,6 +799,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                 results.append({"file": name, "ok": False, "why": "This preset could not be added."})
                 continue
             replaced = store.save_preset(d, text, user["id"])
+            mine += 0 if replaced else 1
             renderer.add_uploaded(d)
             results.append({"file": name, "ok": True, "id": d["id"], "name": p.name, "replaced": replaced,
                             "masks": len(p.masks)})
@@ -925,15 +967,26 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                                  headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
 
     # ---- back to Lightroom: 1 credit per photo applied ------------------------------
+    listing: dict[tuple, int] = {}                 # (photographer, wedding) -> credits promised so far in this listing
+
     @app.get("/api/weddings/{wedding_id}/apply")
-    def apply_list(wedding_id: str, offset: int = 0, limit: int = 200, user: dict = Depends(confirmed)):
+    def apply_list(wedding_id: str, offset: int = 0, limit: int = 200, again: int = 0, user: dict = Depends(confirmed)):
         """For the plug-in: what Lightroom should do to each photo, a page at a time.
-        "done" is true when Lightroom has already applied exactly this edit."""
+        "done" is true when Lightroom has already applied exactly this edit.
+        Never below 0 credits (Bharat, Oct 2026): only as many photos as the balance covers get their edit;
+        the rest come back with "no_credits" and no edit. again=1: done photos will be applied (and paid) again."""
         wedding_or_404(wedding_id, user)
         rows = store.photos(wedding_id)
         page = rows[max(0, offset):max(0, offset) + max(1, min(500, limit))]
         folders = {f["id"]: f["settings"] for f in store.wedding(wedding_id)["folders"]}
-        out = []
+        key = (user["id"], wedding_id)
+        if offset <= 0:
+            listing.pop(key, None)
+            if len(listing) > 2000:
+                listing.clear()
+        promised = listing.get(key, 0)
+        left = None if user["admin"] else accounts.balance(user["id"]) - promised
+        out, short = [], 0
         for r in page:
             look = effective_look(r["settings"], folders.get(r["folder_id"]))
             iso = r["meta"].get("iso") if isinstance(r["meta"].get("iso"), (int, float)) else None
@@ -942,22 +995,33 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             if edit:
                 item["stamp"] = hashlib.sha1(json.dumps(edit, sort_keys=True).encode()).hexdigest()[:16]
                 item["done"] = r["applied"] == item["stamp"]
+                if left is not None and (again or not item["done"]):
+                    if left <= 0:
+                        item.update(edit=None, no_credits=True)
+                        item.pop("stamp")
+                        short += 1
+                    else:
+                        left -= 1
+                        promised += 1
             out.append(item)
-        try:
-            accounts.must_have(user, sum(1 for i in out if i["edit"] and not i["done"]))
-        except NotEnoughCredits as e:
-            raise no_credits(e)
-        return {"total": len(rows), "offset": offset, "photos": out}
+        listing[key] = promised
+        if offset <= 0 and short and promised == 0:        # nothing at all can be paid for (older plug-ins show this)
+            raise no_credits(NotEnoughCredits(short, accounts.balance(user["id"])))
+        return {"total": len(rows), "offset": offset, "photos": out, "no_credits": short}
 
     @app.post("/api/weddings/{wedding_id}/applied")
     def applied(wedding_id: str, stamps: dict = Body(...), user: dict = Depends(confirmed)):
-        """Lightroom has applied these edits: each photo costs 1 credit (it is already done,
-        so this is written down even when the balance runs short)."""
+        """Lightroom has applied these edits: each photo costs 1 credit. The list above only offers what the
+        balance covers; if the balance was spent elsewhere meanwhile, the charge stops at 0 rather than going below."""
         w = wedding_or_404(wedding_id, user)
         marked = store.mark_applied(wedding_id, stamps)
         if marked:
-            accounts.add(user["id"], -marked, "lightroom", f"Edits applied in Lightroom to {marked} photos: {w['name']}",
-                         wedding_id, marked, wedding=wedding_id)
+            charge = marked if user["admin"] else max(0, min(marked, accounts.balance(user["id"])))
+            note = f"Edits applied in Lightroom to {marked} photos: {w['name']}"
+            if charge < marked:
+                note += f" ({marked - charge} not charged: the balance ran out)"
+            if charge:
+                accounts.add(user["id"], -charge, "lightroom", note, wedding_id, marked, wedding=wedding_id)
         return {"marked": marked}
 
     # ---- for search engines and AI assistants ------------------------------------

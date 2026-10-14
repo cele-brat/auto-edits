@@ -79,8 +79,8 @@ class Rig:
     def messages(self):
         return [(m.title, m.text) for m in self.mock.messages.values()]
 
-    def weddings(self):
-        return self.client.get("/api/weddings", headers={"X-Auto-Edits-Key": KEY}).json()["weddings"]
+    def weddings(self, headers=None):
+        return self.client.get("/api/weddings", headers=headers or {"X-Auto-Edits-Key": KEY}).json()["weddings"]
 
     def photos(self, wid):
         return self.client.get(f"/api/weddings/{wid}/photos", headers={"X-Auto-Edits-Key": KEY}).json()["photos"]
@@ -278,3 +278,32 @@ def test_bring_back_reports_what_it_could_not_do(rig):
     rig.run("ApplyEdits.lua")
     assert len(list(a.steps.values())) + len(list(b.steps.values())) == steps    # said Cancel: nothing touched
     rig.client.delete(f"/api/presets/{pid}", headers=H)
+
+
+def test_apply_never_spends_below_zero_credits(rig):
+    """A photographer with 2 credits and 3 photos to do: 2 are applied, 1 is left out with a clear message."""
+    acc = rig.client.app.state.accounts
+    u = acc.sign_up("ravi@example.com", "a good password", "Ravi", "", "test")
+    acc.verify(u["id"])                                               # 50 free credits
+    key = acc.new_plugin_key(u["id"])
+    rig.mock.prefs.serverKey = key
+    for i in range(3):
+        rig.add_photo(f"p{i}", f"IMG_{i}.NEF", "Haldi")
+    rig.mock.dialogEdits.wedding = "Meera & Kabir"
+    rig.run()
+    (w,) = rig.weddings(headers={"X-Auto-Edits-Key": key})
+    H = {"X-Auto-Edits-Key": key}
+    presets = rig.client.get("/api/presets", headers=H).json()["presets"]
+    rig.client.put(f"/api/weddings/{w['id']}/folders/{w['folders'][0]['id']}/look", headers=H,
+                   json={"mode": "preset_auto", "preset": presets[0]["id"], "toggles": ["exposure"]})
+    acc.add(u["id"], -(acc.balance(u["id"]) - 2), "admin", "test: leave 2")
+    rig.mock.dialogEdits.wedding = w["id"]
+    rig.run("ApplyEdits.lua")
+    assert "2 photos" in rig.mock.confirms[len(rig.mock.confirms)] and "This uses 2 credits" in rig.mock.confirms[len(rig.mock.confirms)]
+    text = rig.messages()[-1][1]
+    assert "Edited now: 2 of 2" in text and "Out of credits: 1 photos were left out" in text
+    assert acc.balance(u["id"]) == 0
+
+    rig.run("ApplyEdits.lua")                                          # nothing left to pay with
+    text = rig.messages()[-1][1]
+    assert "needs 1 credits" in text and acc.balance(u["id"]) == 0
