@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=15">
+<link rel="stylesheet" href="/static/app.css?v=16">
 </head>
 <body>
 <div id="app" hidden>
@@ -231,6 +231,24 @@
     <input id="password-new" type="password" autocomplete="new-password" placeholder="New password (8 or more characters)" aria-label="New password" minlength="8">
     <button type="submit">Save</button>
   </form>
+  <section id="twostep" hidden>
+    <h3 class="sub">Two-step login</h3>
+    <p class="dim" id="twostep-state"></p>
+    <div class="row" id="twostep-actions"><button type="button" id="twostep-start" class="primary">Turn on two-step login</button></div>
+    <div id="twostep-setup" hidden>
+      <p class="dim">1. Install Google Authenticator or Microsoft Authenticator on your phone.<br>2. In the app tap “+”, then scan this code.<br>3. Type the 6-digit code it shows, and confirm.</p>
+      <div class="qr" id="twostep-qr"></div>
+      <p class="dim">Can't scan? Choose “Enter a setup key” and type: <code id="twostep-secret"></code></p>
+      <form id="twostep-form" class="row"><input id="twostep-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="6-digit code" aria-label="Code from the app"><button type="submit" class="primary">Confirm</button></form>
+    </div>
+    <div id="twostep-codes" hidden>
+      <p class="dim"><b>Your backup codes.</b> Each works once if you lose your phone. Save them now somewhere safe (not on the phone): they are shown only this once.</p>
+      <pre id="twostep-list"></pre>
+      <div class="row"><button type="button" id="twostep-copy">Copy</button><button type="button" id="twostep-save">Download as a file</button></div>
+    </div>
+    <form id="twostep-renew" class="row" hidden><input id="twostep-renew-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Current 6-digit code" aria-label="Current code"><button type="submit">Make new backup codes</button></form>
+  </section>
+  <form id="code-needed" class="row" hidden><input id="code-needed-input" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="6-digit code from your app" aria-label="Code from your authenticator app"><button type="submit" class="primary">Continue</button></form>
   <p id="account-error" role="alert"></p>
   <h3 class="sub">Credit history</h3>
   <table id="history"><thead><tr><th>Date</th><th>What</th><th class="n">Credits</th></tr></thead><tbody></tbody></table>
@@ -243,10 +261,10 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=15"></script>
+<script src="/static/app.js?v=16"></script>
 <script src="/static/addfolder.js?v=15"></script>
 <script src="/static/cull.js?v=15"></script>
 <script src="/static/export.js?v=15"></script>
-<script src="/static/account.js?v=15"></script>
+<script src="/static/account.js?v=16"></script>
 </body>
 </html>

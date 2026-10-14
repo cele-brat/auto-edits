@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <title>Admin · Auto Edits</title>
-<link rel="stylesheet" href="/static/app.css?v=13">
+<link rel="stylesheet" href="/static/app.css?v=16">
 <style>
 body { overflow-y: auto; }
 .admin { max-width: 1240px; margin: 0 auto; padding: 0 16px 60px; }
@@ -44,6 +44,14 @@ a.dl { color: var(--marigold); white-space: nowrap; }
 .backup b { color: var(--text); font-weight: 600; }
 .backup .sub { color: var(--dim); font-size: 13px; }
 .backup button { margin-left: auto; padding: 5px 10px; font-size: 13px; }
+.setup { border: 1px solid #f0c05a; border-radius: 6px; padding: 10px 14px; margin: 14px 0 0; font-size: 14px; color: var(--text); }
+.setup .sub { color: var(--dim); font-size: 13px; }
+.gate { max-width: 380px; margin: 60px auto; text-align: center; }
+.gate h2 { font: 400 24px var(--serif); color: var(--text); }
+.gate p { color: var(--dim); }
+.gate form { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
+.gate input { width: 160px; padding: 9px 10px; font-size: 18px; letter-spacing: 3px; text-align: center; background: var(--rail); border: 1px solid var(--line); border-radius: 4px; color: var(--text); }
+h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 0 8px; }
 </style>
 </head>
 <body>
@@ -52,6 +60,14 @@ a.dl { color: var(--marigold); white-space: nowrap; }
     <h1>Auto Edits · Admin</h1>
     <a href="/">Back to the app</a>
   </header>
+  <section class="gate" id="gate" hidden>
+    <h2>Enter your code</h2>
+    <p>Open your authenticator app and type the 6-digit code for Auto Edits. Admin work asks again after 12 hours.</p>
+    <form id="gate-form"><input id="gate-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" aria-label="Code"><button type="submit" class="primary">Continue</button></form>
+    <p id="gate-error" role="alert" style="color:var(--danger)"></p>
+  </section>
+  <div id="main">
+  <div class="setup" id="setup" hidden></div>
   <div class="tiles" id="tiles"></div>
   <div class="backup" id="backup"><b>Database backups</b><span class="sub">Loading…</span></div>
   <div class="tools">
@@ -65,6 +81,14 @@ a.dl { color: var(--marigold); white-space: nowrap; }
     </table>
   </div>
   <p id="error" role="alert" style="color:var(--danger)"></p>
+  <h2 class="section">Admin activity <span class="sub" style="font-weight:400">· every View as, download, credit change and sign-in of the studio account</span></h2>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>When</th><th>What</th><th>Photographer</th><th>Details</th><th>Address</th></tr></thead>
+      <tbody id="activity"><tr><td colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+  </div>
 </div>
 
 <dialog id="detail" aria-labelledby="detail-title">
@@ -101,6 +125,7 @@ async function api(path, options = {}) {
   if ('body' in options) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(options.body); }
   const r = await fetch(path, init);
   if (r.status === 401 || r.status === 404 && path === '/api/admin/users') { location.href = '/?login=1'; throw new Error('signed out'); }
+  if (r.status === 428) { showGate(); throw new Error('Enter your code first.'); }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
   return data;
@@ -151,7 +176,42 @@ function drawBackup(b) {
     el('span', { className: 'sub', textContent: parts.join(' · ') }), btn);
 }
 
+function showGate() {
+  $('main').hidden = true; $('gate').hidden = false; $('gate-code').value = ''; $('gate-code').focus();
+}
+$('gate-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('gate-error').textContent = '';
+  try {
+    await api('/api/admin/confirm', { method: 'POST', body: { code: $('gate-code').value.trim() } });
+    $('gate').hidden = true; $('main').hidden = false; start();
+  } catch (err) { $('gate-error').textContent = err.message; $('gate-code').select(); }
+};
+
+function drawSetup(st) {
+  if (st.studio_key_retired && st.backup_codes_left > 2) { $('setup').hidden = true; return; }
+  const items = [['password', 'Strong password (12+ characters)'], ['two_step', 'Two-step login with an authenticator app'], ['lightroom_key', 'Own Lightroom key pasted into the plug-in']];
+  const parts = st.studio_key_retired
+    ? [el('b', { textContent: `Only ${st.backup_codes_left} backup codes left. ` }), el('span', { className: 'sub', textContent: 'Make new ones in the app: Account window → Two-step login.' })]
+    : [el('b', { textContent: 'Finish securing the studio account. ' }),
+       el('span', { className: 'sub', textContent: 'The old shared studio key stops working once all three are done (in the app: More → Account): ' }),
+       ...items.map(([k, label]) => el('span', { className: 'pill ' + (st[k] ? 'ok' : 'warn'), textContent: (st[k] ? '✓ ' : '✗ ') + label }))];
+  $('setup').replaceChildren(...parts);
+  $('setup').hidden = false;
+}
+
+async function loadActivity() {
+  try {
+    const { activity } = await api('/api/admin/activity');
+    $('activity').replaceChildren(...(activity.length ? activity.map((a) => el('tr', {},
+      el('td', { textContent: when(a.at) }), el('td', { textContent: a.action }), el('td', { textContent: a.target || '' }),
+      el('td', { className: 'sub', textContent: a.detail || '' }), el('td', { className: 'sub', textContent: a.ip || '' })))
+      : [el('tr', {}, el('td', { colSpan: 5, textContent: 'Nothing yet.' }))]));
+  } catch (err) { /* shown by the gate or the error line */ }
+}
+
 async function load() {
+  loadActivity();
   api('/api/admin/backups').then(drawBackup).catch(() => {});
   try { A.users = (await api('/api/admin/users')).users; tiles(); draw(); } catch (err) { $('error').textContent = err.message; }
 }
@@ -202,7 +262,14 @@ $('give').onsubmit = async (e) => {
 $('detail-close').onclick = () => $('detail').close();
 $('q').oninput = draw;
 $('only-unconfirmed').onchange = draw;
-api('/api/admin/view-as-stop', { method: 'POST' }).catch(() => {}).then(load);
+async function start() {
+  let st;
+  try { st = await api('/api/admin/setup'); } catch (err) { return; }
+  if (st.needs_code) { showGate(); return; }
+  drawSetup(st);
+  load();
+}
+api('/api/admin/view-as-stop', { method: 'POST' }).catch(() => {}).then(start);
 </script>
 </body>
 </html>

@@ -31,7 +31,7 @@ first guesses until `tools/fit_params.py` has been run on real Lightroom exports
 | `server/mail.py` | Account emails through Google Workspace SMTP (`SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`); printed to the log when not set |
 | Separation | Every wedding, photo, export, cull and uploaded preset belongs to one account; others get 404 |
 | Credits | 50 free on confirming the email; export or apply in Lightroom 1 per photo every time; culling 1 per 10 photos every run; failed, stopped or removed exports give their credits back |
-| Studio account | `AUTOEDITS_ADMIN_EMAIL`; owns everything from before accounts; `AUTOEDITS_KEY` signs in as it; never stopped for credits, previews unmarked |
+| Studio account | `AUTOEDITS_ADMIN_EMAIL`; owns everything from before accounts; never stopped for credits, previews unmarked. Password of 12+ characters, two-step login (authenticator app + 10 backup codes), `/admin` asks for a code every 12 hours. `AUTOEDITS_KEY` (old shared key) retires for good once password, two-step and its own Lightroom key are set. Admin activity log on `/admin`. Lost phone: `python -m server.security --reset-two-step` |
 | Admin dashboard | `/admin`: every photographer with credits and usage, add or take back credits, "View as" (read-only), download their uploads and exports |
 
 ## Commands

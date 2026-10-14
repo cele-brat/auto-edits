@@ -31,7 +31,11 @@ async function api(path, options = {}) {
   const r = await fetch(path, init);
   if (r.status === 401) { showSignIn(); throw new Error('signed out'); }
   const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
+  if (!r.ok) {
+    const e = new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
+    e.status = r.status;
+    throw e;
+  }
   return data;
 }
 

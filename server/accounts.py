@@ -23,6 +23,8 @@ import secrets
 import time
 import uuid
 
+from . import security
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '',
@@ -92,7 +94,8 @@ def public(user: dict | None) -> dict | None:
     if user is None:
         return None
     return {"id": user["id"], "email": user["email"], "name": user["name"], "verified": bool(user["verified"]),
-            "admin": bool(user["admin"]), "has_password": bool(user["password"]), "has_plugin_key": bool(user["plugin_key"])}
+            "admin": bool(user["admin"]), "has_password": bool(user["password"]), "has_plugin_key": bool(user["plugin_key"]),
+            "two_step": bool(user.get("totp_on"))}
 
 
 class Accounts:
@@ -103,6 +106,15 @@ class Accounts:
             if "signup_ip" not in {r["name"] for r in db.execute("PRAGMA table_info(users)")}:
                 db.execute("ALTER TABLE users ADD COLUMN signup_ip TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS users_by_ip ON users (signup_ip)")
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(users)")}
+            for col, kind in (("totp_secret", "TEXT NOT NULL DEFAULT ''"), ("totp_pending", "TEXT NOT NULL DEFAULT ''"),
+                              ("totp_on", "INTEGER NOT NULL DEFAULT 0"), ("totp_last", "INTEGER NOT NULL DEFAULT 0"),
+                              ("backup_codes", "TEXT NOT NULL DEFAULT ''")):
+                if col not in cols:              # two-step login (see security.py)
+                    db.execute(f"ALTER TABLE users ADD COLUMN {col} {kind}")
+            if "checked" not in {r["name"] for r in db.execute("PRAGMA table_info(sessions)")}:
+                db.execute("ALTER TABLE sessions ADD COLUMN checked REAL NOT NULL DEFAULT 0")   # when a 2-step code was last given
+            db.executescript(security.SCHEMA)
         self.admin_email = admin_email.strip().lower()
         self.admin_id = self._ensure_admin() if self.admin_email else ""
 
@@ -158,6 +170,11 @@ class Accounts:
         return u
 
     def set_password(self, user_id: str, password: str) -> None:
+        u = self.user(user_id)
+        if u and u["admin"]:
+            problem = security.admin_password_problem(password, u["email"])
+            if problem:
+                raise ValueError(problem)
         if len(password) < MIN_PASSWORD:
             raise ValueError(f"The password needs at least {MIN_PASSWORD} characters.")
         if len(password) > 200:
@@ -192,20 +209,26 @@ class Accounts:
             return db.execute("SELECT 1 FROM ledger WHERE user_id=? AND kind='welcome' LIMIT 1", (user_id,)).fetchone() is not None
 
     # ---- sessions ------------------------------------------------------------
-    def new_session(self, user_id: str) -> str:
+    def new_session(self, user_id: str, checked: bool = False) -> str:
+        """checked: a two-step code was given for this sign-in just now."""
         token = secrets.token_urlsafe(32)
         now = time.time()
         with self._db() as db:
             db.execute("DELETE FROM sessions WHERE expires<?", (now,))
-            db.execute("INSERT INTO sessions (token, user_id, created, expires) VALUES (?,?,?,?)",
-                       (_hash_token(token), user_id, now, now + SESSION_DAYS * 86400))
+            db.execute("INSERT INTO sessions (token, user_id, created, expires, checked) VALUES (?,?,?,?,?)",
+                       (_hash_token(token), user_id, now, now + SESSION_DAYS * 86400, now if checked else 0))
         return token
+
+    def mark_checked(self, token: str) -> None:
+        with self._db() as db:
+            db.execute("UPDATE sessions SET checked=? WHERE token=?", (time.time(), _hash_token(token)))
 
     def session_user(self, token: str) -> dict | None:
         if not token:
             return None
         with self._db() as db:
-            r = db.execute("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?",
+            r = db.execute("SELECT u.*, s.checked AS session_checked FROM sessions s JOIN users u ON u.id=s.user_id "
+                           "WHERE s.token=? AND s.expires>?",
                            (_hash_token(token), time.time())).fetchone()
             if r and time.time() - r["last_seen"] > 300:
                 db.execute("UPDATE users SET last_seen=? WHERE id=?", (time.time(), r["id"]))
@@ -214,6 +237,94 @@ class Accounts:
     def end_session(self, token: str) -> None:
         with self._db() as db:
             db.execute("DELETE FROM sessions WHERE token=?", (_hash_token(token),))
+
+    # ---- two-step login ---------------------------------------------------------
+    def two_step_start(self, user_id: str) -> str:
+        """A new secret for the authenticator app. Not in use until a code from it is confirmed."""
+        secret = security.new_secret()
+        with self._db() as db:
+            db.execute("UPDATE users SET totp_pending=? WHERE id=?", (secret, user_id))
+        return secret
+
+    def two_step_confirm(self, user_id: str, code: str) -> list[str] | None:
+        """Turn two-step login on once the app shows the right code. Returns the backup codes (shown once)."""
+        u = self.user(user_id)
+        step = security.check_code(u["totp_pending"], code) if u and u["totp_pending"] else 0
+        if not step:
+            return None
+        codes, stored = security.new_backup_codes()
+        with self._db() as db:
+            db.execute("UPDATE users SET totp_secret=totp_pending, totp_pending='', totp_on=1, totp_last=?, backup_codes=? "
+                       "WHERE id=?", (step, stored, user_id))
+        return codes
+
+    def two_step_off(self, user_id: str) -> None:
+        with self._db() as db:
+            db.execute("UPDATE users SET totp_secret='', totp_pending='', totp_on=0, totp_last=0, backup_codes='' WHERE id=?",
+                       (user_id,))
+
+    def check_second_step(self, user_id: str, code: str) -> str | None:
+        """'app' or 'backup' when the code is right (each works once), else None."""
+        u = self.user(user_id)
+        if not u or not u["totp_on"]:
+            return None
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            r = db.execute("SELECT totp_secret, totp_last, backup_codes FROM users WHERE id=?", (user_id,)).fetchone()
+            step = security.check_code(r["totp_secret"], code, r["totp_last"])
+            if step:
+                db.execute("UPDATE users SET totp_last=? WHERE id=?", (step, user_id))
+                return "app"
+            left = security.use_backup_code(r["backup_codes"], code)
+            if left is not None:
+                db.execute("UPDATE users SET backup_codes=? WHERE id=?", (left, user_id))
+                return "backup"
+        return None
+
+    def new_backup_codes(self, user_id: str) -> list[str]:
+        codes, stored = security.new_backup_codes()
+        with self._db() as db:
+            db.execute("UPDATE users SET backup_codes=? WHERE id=?", (stored, user_id))
+        return codes
+
+    # ---- the old shared studio key ------------------------------------------------
+    def setting(self, k: str) -> str:
+        with self._db() as db:
+            r = db.execute("SELECT v FROM settings WHERE k=?", (k,)).fetchone()
+        return r["v"] if r else ""
+
+    def studio_key_retired(self) -> bool:
+        return bool(self.setting("studio_key_retired"))
+
+    def studio_setup(self) -> dict:
+        """What the studio account still needs before the old shared key retires."""
+        u = self.user(self.admin_id) if self.admin_id else None
+        return {"password": bool(u and u["password"]), "two_step": bool(u and u["totp_on"]),
+                "lightroom_key": bool(u and u["plugin_key"]), "studio_key_retired": self.studio_key_retired()}
+
+    def retire_studio_key_if_ready(self, ip: str = "") -> bool:
+        """For good, once the studio account has a password, two-step login and its own Lightroom key."""
+        if self.studio_key_retired():
+            return True
+        s = self.studio_setup()
+        if not (s["password"] and s["two_step"] and s["lightroom_key"]):
+            return False
+        with self._db() as db:
+            db.execute("INSERT OR REPLACE INTO settings (k, v) VALUES ('studio_key_retired', ?)", (str(time.time()),))
+        self.log(self.admin_id, "old studio key retired", detail="password, two-step and own Lightroom key are set", ip=ip)
+        return True
+
+    # ---- admin activity log ------------------------------------------------------
+    def log(self, admin_id: str, action: str, target: str = "", detail: str = "", ip: str = "") -> None:
+        with self._db() as db:
+            db.execute("INSERT INTO admin_log (at, admin_id, action, target, detail, ip) VALUES (?,?,?,?,?,?)",
+                       (time.time(), admin_id, action, target, detail[:300], ip[:64]))
+
+    def activity(self, limit: int = 200) -> list[dict]:
+        with self._db() as db:
+            return [dict(r) for r in db.execute(
+                "SELECT l.at, l.action, l.detail, l.ip, COALESCE(u.email, l.target) AS target FROM admin_log l "
+                "LEFT JOIN users u ON u.id=l.target ORDER BY l.id DESC LIMIT ?", (limit,))]
 
     # ---- the plug-in's key ---------------------------------------------------
     def new_plugin_key(self, user_id: str) -> str:
@@ -250,10 +361,12 @@ class Accounts:
                 db.execute("DELETE FROM email_tokens WHERE token=?", (_hash_token(token),))
         return r["user_id"] if r else None
 
-    def peek_email_token(self, token: str, kind: str) -> bool:
+    def peek_email_token(self, token: str, kind: str) -> str | None:
+        """The user the link belongs to, without using it up; None if it is wrong or too old."""
         with self._db() as db:
-            return db.execute("SELECT 1 FROM email_tokens WHERE token=? AND kind=? AND expires>?",
-                              (_hash_token(token), kind, time.time())).fetchone() is not None
+            r = db.execute("SELECT user_id FROM email_tokens WHERE token=? AND kind=? AND expires>?",
+                           (_hash_token(token), kind, time.time())).fetchone()
+        return r["user_id"] if r else None
 
     # ---- credits -------------------------------------------------------------
     def balance(self, user_id: str) -> int:

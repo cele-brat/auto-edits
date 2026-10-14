@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
+from . import security
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
@@ -66,6 +67,11 @@ class Forgot(BaseModel):
 class Reset(BaseModel):
     token: str
     password: str
+
+
+class Code(BaseModel):
+    code: str
+    ticket: str = ""                           # from the password step of a two-step login
 
 
 class NewPassword(BaseModel):
@@ -132,6 +138,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         import threading
         threading.Thread(target=renderer.warm_up, daemon=True).start()
     links: dict[str, tuple[float, str]] = {}   # one-time sign-in links -> (when they stop working, user)
+    tickets: dict[str, list] = {}              # password given, code still to come -> [until, user, tries]
     tries: dict[str, list[float]] = {}         # recent attempts per address, to slow down guessing
 
     def client_ip(request: Request) -> str:
@@ -150,7 +157,14 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return len(recent) >= limit
 
     def key_ok(value: str) -> bool:
-        return bool(value) and hmac.compare_digest(value.encode(), key.encode())
+        """The old shared studio key. Stops working for good once the studio account is set up (security.py)."""
+        return bool(value) and hmac.compare_digest(value.encode(), key.encode()) and not accounts.studio_key_retired()
+
+    def fresh(user: dict) -> bool:
+        """This sign-in gave a two-step code recently enough for admin work (always true before two-step is on)."""
+        if not user.get("totp_on"):
+            return True
+        return time.time() - (user.get("session_checked") or 0) < security.ADMIN_FRESH_HOURS * 3600
 
     def signed_in(request: Request, x_auto_edits_key: str = Header(default=""), autoedits: str = Cookie(default=""),
                   autoedits_as: str = Cookie(default="")) -> dict:
@@ -161,7 +175,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             user = accounts.user(accounts.admin_id) if key_ok(x_auto_edits_key) else accounts.plugin_user(x_auto_edits_key)
         if user is None and autoedits:
             user = accounts.session_user(autoedits)
-            if user and user["admin"] and autoedits_as and autoedits_as != user["id"]:
+            if user and user["admin"] and autoedits_as and autoedits_as != user["id"] and fresh(user):
                 target = accounts.user(autoedits_as)
                 if target:
                     if request.method not in ("GET", "HEAD"):
@@ -171,12 +185,25 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(401, "Please log in again.")
         return user
 
-    def the_admin(autoedits: str = Cookie(default="")) -> dict:
-        """The admin's own session, never a "View as" one."""
+    def admin_session(request: Request, autoedits: str = Cookie(default="")) -> dict:
+        """The admin's own browser session, never a "View as" one or the plug-in's key."""
         user = accounts.session_user(autoedits)
         if user is None or not user["admin"]:
             raise HTTPException(404, "Not found")
-        return user
+        return {**user, "ip": client_ip(request), "token": autoedits}
+
+    def the_admin(admin: dict = Depends(admin_session)) -> dict:
+        """Admin work: with two-step login on, a code given on this sign-in in the last 12 hours."""
+        if not fresh(admin):
+            raise HTTPException(428, "Enter the 6-digit code from your authenticator app.")
+        return admin
+
+    def own_session(request: Request, autoedits: str = Cookie(default="")) -> dict:
+        """Security settings: only from the person's own browser sign-in, not the plug-in's key."""
+        user = accounts.session_user(autoedits)
+        if user is None:
+            raise HTTPException(401, "Please log in again.")
+        return {**user, "ip": client_ip(request), "token": autoedits}
 
     def confirmed(user: dict = Depends(signed_in)) -> dict:
         """Culling and exporting spend credits: they need a confirmed email address."""
@@ -184,8 +211,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(403, "Confirm your email address first: open the link we sent you.")
         return user
 
-    def give_cookie(response: Response, request: Request, user_id: str):
-        response.set_cookie(COOKIE, accounts.new_session(user_id), max_age=30 * 24 * 3600, httponly=True, samesite="lax",
+    def give_cookie(response: Response, request: Request, user_id: str, checked: bool = False):
+        response.set_cookie(COOKIE, accounts.new_session(user_id, checked), max_age=30 * 24 * 3600, httponly=True, samesite="lax",
                             secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
 
     def link_base(request: Request) -> str:
@@ -221,13 +248,54 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         user = None
         if body.key.strip():
             user = accounts.user(accounts.admin_id) if key_ok(body.key.strip()) else None
+            if user and user["totp_on"]:     # the key cannot skip the code: use email, password and code
+                user = None
         elif body.email and body.password:
             user = accounts.log_in(body.email, body.password)
         if user is None:
             time.sleep(1)                    # slows down guessing
+            if body.email and (u := accounts.by_email(body.email)) and u["admin"]:
+                accounts.log(u["id"], "admin login failed", detail="wrong password", ip=client_ip(request))
             raise HTTPException(401, "That email and password do not match.")
         tries.pop(f"login|{client_ip(request)}", None)
+        if user["totp_on"]:                  # second step: the code from the authenticator app
+            now = time.time()
+            for t in [t for t, v in tickets.items() if v[0] < now]:
+                del tickets[t]
+            ticket = secrets.token_urlsafe(24)
+            tickets[ticket] = [now + 300, user["id"], 0]
+            return {"need_code": True, "ticket": ticket}
+        if user["admin"]:
+            accounts.log(user["id"], "admin login", detail="studio key" if body.key.strip() else "password (no two-step yet)",
+                         ip=client_ip(request))
         give_cookie(response, request, user["id"])
+        return {"user": public(user)}
+
+    @app.post("/api/login/code")
+    def login_code(body: Code, request: Request, response: Response):
+        if too_many("code", request, 8, 900):
+            raise HTTPException(429, "Too many tries. Please wait 15 minutes.")
+        t = tickets.get(body.ticket)
+        if not t or t[0] < time.time():
+            tickets.pop(body.ticket, None)
+            raise HTTPException(410, "That took too long. Please log in again.")
+        how = accounts.check_second_step(t[1], body.code)
+        if not how:
+            t[2] += 1
+            if t[2] >= 5:
+                tickets.pop(body.ticket, None)
+            time.sleep(1)
+            u = accounts.user(t[1])
+            if u and u["admin"]:
+                accounts.log(u["id"], "admin login failed", detail="wrong code", ip=client_ip(request))
+            raise HTTPException(422, "That code is not right. Codes change every 30 seconds.")
+        tickets.pop(body.ticket, None)
+        tries.pop(f"code|{client_ip(request)}", None)
+        user = accounts.user(t[1])
+        if user["admin"]:
+            accounts.log(user["id"], "admin login", detail="password + backup code" if how == "backup" else "password + code",
+                         ip=client_ip(request))
+        give_cookie(response, request, user["id"], checked=True)
         return {"user": public(user)}
 
     @app.post("/api/logout")
@@ -251,17 +319,30 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     @app.post("/api/reset")
     def reset(body: Reset, request: Request, response: Response):
-        if not accounts.peek_email_token(body.token, "reset"):
+        owner = accounts.peek_email_token(body.token, "reset")
+        if not owner:
             raise HTTPException(410, "This link has expired or was already used. Ask for a new one.")
         if not 8 <= len(body.password) <= 200:
             raise HTTPException(422, "The password needs at least 8 characters.")
+        u = accounts.user(owner)
+        if u and u["admin"] and (problem := security.admin_password_problem(body.password, u["email"])):
+            raise HTTPException(422, problem)          # checked before the link is used up
         user_id = accounts.use_email_token(body.token, "reset")
         if not user_id:
             raise HTTPException(410, "This link has expired or was already used. Ask for a new one.")
-        accounts.set_password(user_id, body.password)
+        try:
+            accounts.set_password(user_id, body.password)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
         accounts.verify(user_id)                   # the link came by email, so the address is theirs
+        u = accounts.user(user_id)
+        if u["admin"]:
+            accounts.log(user_id, "password reset by email link", ip=client_ip(request))
+            accounts.retire_studio_key_if_ready(client_ip(request))
+        if u["totp_on"]:                           # an email link alone never skips the code: log in normally
+            return {"user": None, "log_in": True}
         give_cookie(response, request, user_id)
-        return {"user": public(accounts.user(user_id))}
+        return {"user": public(u)}
 
     @app.get("/verify/{token}")
     def verify(token: str, request: Request):
@@ -297,12 +378,68 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                 "history": accounts.history(user["id"])}
 
     @app.post("/api/plugin-key")
-    def plugin_key(user: dict = Depends(signed_in)):
+    def plugin_key(request: Request, user: dict = Depends(signed_in), autoedits: str = Cookie(default="")):
         """A new key for the Lightroom plug-in, shown once. The old one stops working."""
-        return {"key": accounts.new_plugin_key(user["id"])}
+        if user["admin"]:
+            me = accounts.session_user(autoedits)        # the studio's key: only from its own, recently checked sign-in
+            if me is None or me["id"] != user["id"]:
+                raise HTTPException(403, "Make the studio's Lightroom key from the app in your browser.")
+            if not fresh(me):
+                raise HTTPException(428, "Enter the 6-digit code from your authenticator app.")
+        new = accounts.new_plugin_key(user["id"])
+        if user["admin"]:
+            accounts.log(user["id"], "studio Lightroom key made", detail="the previous one stopped working", ip=client_ip(request))
+            accounts.retire_studio_key_if_ready(client_ip(request))
+        return {"key": new}
+
+    # ---- two-step login (offered to the studio account) ----------------------------------
+    @app.get("/api/two-step")
+    def two_step_state(user: dict = Depends(own_session)):
+        return {"on": bool(user["totp_on"]), "backup_codes_left": security.backup_codes_left(user["backup_codes"]),
+                "checked": fresh(user) and bool(user["totp_on"]),
+                "studio": accounts.studio_setup() if user["admin"] else None}
+
+    @app.post("/api/two-step/start")
+    def two_step_start(user: dict = Depends(own_session)):
+        """A new secret for the authenticator app, as a QR code. Nothing changes until a code is confirmed."""
+        if not user["admin"]:
+            raise HTTPException(404, "Not found")
+        if user["totp_on"]:
+            raise HTTPException(409, "Two-step login is already on.")
+        if not user["password"]:
+            raise HTTPException(409, "Set a password first, then turn on two-step login.")
+        secret = accounts.two_step_start(user["id"])
+        link = security.setup_link(secret, user["email"])
+        return {"secret": secret, "qr": security.qr_svg(link)}
+
+    @app.post("/api/two-step/confirm")
+    def two_step_confirm(body: Code, request: Request, user: dict = Depends(own_session)):
+        if too_many("code", request, 8, 900):
+            raise HTTPException(429, "Too many tries. Please wait 15 minutes.")
+        codes = accounts.two_step_confirm(user["id"], body.code)
+        if codes is None:
+            time.sleep(1)
+            raise HTTPException(422, "That code is not right. Check the phone's clock is set automatically, and try the newest code.")
+        accounts.mark_checked(user["token"])
+        accounts.log(user["id"], "two-step login turned on", ip=user["ip"])
+        accounts.retire_studio_key_if_ready(user["ip"])
+        return {"on": True, "backup_codes": codes}
+
+    @app.post("/api/two-step/backup-codes")
+    def two_step_new_codes(body: Code, request: Request, user: dict = Depends(own_session)):
+        if too_many("code", request, 8, 900):
+            raise HTTPException(429, "Too many tries. Please wait 15 minutes.")
+        """Ten fresh backup codes (the old ones stop working). Needs a current code."""
+        if not user["totp_on"]:
+            raise HTTPException(409, "Two-step login is not on.")
+        if not accounts.check_second_step(user["id"], body.code):
+            time.sleep(1)
+            raise HTTPException(422, "That code is not right.")
+        accounts.log(user["id"], "new backup codes made", ip=user["ip"])
+        return {"backup_codes": accounts.new_backup_codes(user["id"])}
 
     @app.post("/api/password")
-    def change_password(body: NewPassword, user: dict = Depends(signed_in)):
+    def change_password(body: NewPassword, request: Request, user: dict = Depends(signed_in)):
         if user["password"] and not accounts.log_in(user["email"], body.current):
             time.sleep(1)
             raise HTTPException(403, "The current password is not right.")
@@ -310,6 +447,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             accounts.set_password(user["id"], body.password)
         except ValueError as e:
             raise HTTPException(422, str(e))
+        if user["admin"]:
+            accounts.log(user["id"], "password set" if not user["password"] else "password changed", ip=client_ip(request))
+            accounts.retire_studio_key_if_ready(client_ip(request))
         return {"ok": True, "signed_out": True}
 
     @app.post("/api/login-link")
@@ -432,8 +572,32 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     # ---- the admin dashboard -------------------------------------------------------
     @app.get("/admin")
-    def admin_page(admin: dict = Depends(the_admin)):
+    def admin_page(admin: dict = Depends(admin_session)):
         return FileResponse(STATIC / "admin.html", headers={"Cache-Control": "no-cache"})
+
+    @app.post("/api/admin/confirm")
+    def admin_confirm(body: Code, request: Request, admin: dict = Depends(admin_session)):
+        """The 6-digit code again, for admin work on a sign-in that has not given one in the last 12 hours."""
+        if too_many("code", request, 8, 900):
+            raise HTTPException(429, "Too many tries. Please wait 15 minutes.")
+        how = accounts.check_second_step(admin["id"], body.code)
+        if not how:
+            time.sleep(1)
+            accounts.log(admin["id"], "admin code failed", ip=admin["ip"])
+            raise HTTPException(422, "That code is not right. Codes change every 30 seconds.")
+        accounts.mark_checked(admin["token"])
+        accounts.log(admin["id"], "admin code given", detail="backup code" if how == "backup" else "", ip=admin["ip"])
+        return {"ok": True}
+
+    @app.get("/api/admin/setup")
+    def admin_setup(admin: dict = Depends(admin_session)):
+        """What the studio account still needs before the old shared key retires (shown on /admin)."""
+        return {**accounts.studio_setup(), "backup_codes_left": security.backup_codes_left(admin["backup_codes"]),
+                "needs_code": not fresh(admin)}
+
+    @app.get("/api/admin/activity")
+    def admin_activity(admin: dict = Depends(the_admin)):
+        return {"activity": accounts.activity(200)}
 
     @app.get("/api/admin/backups")
     def admin_backups(admin: dict = Depends(the_admin)):
@@ -441,6 +605,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     @app.post("/api/admin/backups/run")
     def admin_backup_now(admin: dict = Depends(the_admin)):
+        accounts.log(admin["id"], "backup run by hand", ip=admin["ip"])
         try:
             backups.run()
         except Exception as e:
@@ -476,18 +641,25 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(422, "credits must be a whole number, not 0")
         note = str(body.get("note") or "").strip()[:150] or ("Added by Cele-Brat" if n > 0 else "Taken back by Cele-Brat")
         accounts.add(user_id, n, "admin", note)
+        accounts.log(admin["id"], "credits added" if n > 0 else "credits taken back", target=user_id,
+                     detail=f"{n:+d} · {note}", ip=admin["ip"])
         return {"credits": accounts.balance(user_id)}
 
     @app.post("/api/admin/view-as/{user_id}")
     def view_as(user_id: str, request: Request, response: Response, admin: dict = Depends(the_admin)):
         if accounts.user(user_id) is None:
             raise HTTPException(404, "no such account")
+        accounts.log(admin["id"], "view as started", target=user_id, detail="read-only, up to 4 hours", ip=admin["ip"])
         response.set_cookie(VIEW_AS, user_id, max_age=4 * 3600, httponly=True, samesite="lax",
                             secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https")
         return {"ok": True}
 
     @app.post("/api/admin/view-as-stop")
-    def view_as_stop(response: Response):
+    def view_as_stop(request: Request, response: Response, autoedits: str = Cookie(default=""),
+                     autoedits_as: str = Cookie(default="")):
+        me = accounts.session_user(autoedits)
+        if autoedits_as and me and me["admin"]:
+            accounts.log(me["id"], "view as ended", target=autoedits_as, ip=client_ip(request))
         response.delete_cookie(VIEW_AS)
         return {"ok": True}
 
@@ -496,6 +668,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         owner = store.owner_of(wedding_id)
         if owner is None:
             raise HTTPException(404, "no such wedding")
+        w = store.wedding(wedding_id)
+        accounts.log(admin["id"], "downloaded uploaded photos", target=owner,
+                     detail=f"wedding: {w['name'] if w else wedding_id}", ip=admin["ip"])
         return originals_zip(wedding_id, None, accounts.user(owner))
 
     @app.get("/api/admin/exports/{export_id}/zip")
@@ -503,7 +678,11 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         e = exports.get(export_id)
         if e is None:
             raise HTTPException(404, "no such export")
-        return export_zip(export_id, accounts.user(store.owner_of(e["wedding_id"])))
+        owner = store.owner_of(e["wedding_id"])
+        w = store.wedding(e["wedding_id"])
+        accounts.log(admin["id"], "downloaded edited photos", target=owner or "",
+                     detail=f"wedding: {w['name'] if w else e['wedding_id']} · export {export_id}", ip=admin["ip"])
+        return export_zip(export_id, accounts.user(owner))
 
     @app.get("/api/weddings/{wedding_id}/originals.zip")
     def originals_zip(wedding_id: str, folder: int | None = None, user: dict = Depends(signed_in)):
@@ -512,6 +691,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         rows = store.photos(wedding_id, folder)
         if not rows:
             raise HTTPException(404, "no photos")
+        if user.get("viewing_as") and (a := accounts.by_email(user["viewing_as"])):
+            accounts.log(a["id"], "downloaded uploaded photos", target=user["id"], detail=f"wedding: {w['name']} (in View as)")
         name = "".join(c if c.isalnum() or c in " -_" else "_" for c in w["name"]).strip() or "photos"
         return StreamingResponse(store.zip_previews(wedding_id, rows), media_type="application/zip",
                                  headers={"Content-Disposition": f'attachment; filename="{name} - uploaded photos.zip"'})
@@ -712,6 +893,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         e = export_or_404(export_id, user)
         if not e["done"]:
             raise HTTPException(409, "no pictures are finished yet")
+        if user.get("viewing_as") and (a := accounts.by_email(user["viewing_as"])):
+            accounts.log(a["id"], "downloaded edited photos", target=user["id"], detail=f"export {export_id} (in View as)")
         name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_or_404(e["wedding_id"], user)["name"]).strip() or "export"
         return StreamingResponse(exports.zip_stream(export_id), media_type="application/zip",
                                  headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})

@@ -12,3 +12,4 @@ python-multipart
 httpx
 lupa
 boto3
+segno

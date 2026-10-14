@@ -197,7 +197,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 #auth-error { color: var(--pencil); min-height: 1.5em; margin-top: 10px; font-size: 16px; }
 #auth-note { color: var(--peacock); min-height: 0; margin-top: 10px; font-size: 16px; }
 #auth [data-mode] { display: none; }
-#auth.login [data-mode~="login"], #auth.signup [data-mode~="signup"], #auth.forgot [data-mode~="forgot"], #auth.key [data-mode~="key"] { display: block; }
+#auth.login [data-mode~="login"], #auth.signup [data-mode~="signup"], #auth.forgot [data-mode~="forgot"], #auth.key [data-mode~="key"], #auth.code [data-mode~="code"] { display: block; }
 #auth .switch { margin-top: 18px; font-size: 16px; color: var(--soft); }
 #auth .switch button { font: inherit; color: var(--peacock); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 #auth .hint { font-size: 14px; margin-top: 6px; }
@@ -458,6 +458,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     <p data-mode="signup">Make your account. Confirm your email and 50 free credits are added.</p>
     <p data-mode="forgot">Enter your email and we will send a link to set a new password.</p>
     <p data-mode="key">For the studio account only.</p>
+    <p data-mode="code">Open your authenticator app and type the 6-digit code for Auto Edits. Lost the phone? Use one of your backup codes.</p>
     <div data-mode="signup">
       <label for="auth-name">Your name or studio</label>
       <input id="auth-name" autocomplete="organization" maxlength="80">
@@ -471,6 +472,10 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
       <input id="auth-password" type="password" autocomplete="current-password" maxlength="200">
       <p class="hint soft" data-mode="signup">At least 8 characters.</p>
     </div>
+    <div data-mode="code">
+      <label for="auth-code">Code</label>
+      <input id="auth-code" inputmode="numeric" autocomplete="one-time-code" maxlength="12" spellcheck="false">
+    </div>
     <div data-mode="key">
       <label for="auth-key">Studio key</label>
       <input id="auth-key" type="password" autocomplete="off">
@@ -483,7 +488,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
     </div>
     <p class="switch" data-mode="login"><button type="button" data-to="forgot">Forgot password?</button> · New here? <button type="button" data-to="signup">Sign up</button></p>
     <p class="switch" data-mode="signup">Already have an account? <button type="button" data-to="login">Log in</button></p>
-    <p class="switch" data-mode="forgot key"><button type="button" data-to="login">Back to log in</button></p>
+    <p class="switch" data-mode="forgot key code"><button type="button" data-to="login">Back to log in</button></p>
   </form>
 </dialog>
 
@@ -587,7 +592,7 @@ if (!calm && 'IntersectionObserver' in window) {
 // ---- log in, sign up, forgot password ----
 const auth = document.getElementById('auth');
 const $a = (id) => document.getElementById(id);
-const TITLES = { login: ['Log in', 'Log in'], signup: ['Sign up', 'Make my account'], forgot: ['Forgot password', 'Send the link'], key: ['Studio key', 'Log in'] };
+const TITLES = { login: ['Log in', 'Log in'], signup: ['Sign up', 'Make my account'], forgot: ['Forgot password', 'Send the link'], key: ['Studio key', 'Log in'], code: ['Two-step code', 'Log in'] };
 function mode(m) {
   auth.className = m;
   $a('auth-title').textContent = TITLES[m][0];
@@ -596,7 +601,7 @@ function mode(m) {
   $a('auth-error').textContent = '';
   $a('auth-note').textContent = '';
   $a('auth-password').autocomplete = m === 'signup' ? 'new-password' : 'current-password';
-  const first = m === 'signup' ? 'auth-name' : m === 'key' ? 'auth-key' : 'auth-email';
+  const first = m === 'signup' ? 'auth-name' : m === 'key' ? 'auth-key' : m === 'code' ? 'auth-code' : 'auth-email';
   setTimeout(() => $a(first).focus(), 0);
 }
 function openAuth(m) { mode(m); if (!auth.open) auth.showModal(); }
@@ -611,7 +616,7 @@ async function post(path, body) {
   const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   let data = {};
   try { data = await r.json(); } catch (x) { /* no body */ }
-  return { ok: r.ok, status: r.status, detail: typeof data.detail === 'string' ? data.detail : '' };
+  return { ok: r.ok, status: r.status, detail: typeof data.detail === 'string' ? data.detail : '', data };
 }
 
 $a('auth-form').onsubmit = async (e) => {
@@ -619,6 +624,20 @@ $a('auth-form').onsubmit = async (e) => {
   const m = auth.className, err = $a('auth-error');
   err.textContent = ''; $a('auth-note').textContent = '';
   const email = $a('auth-email').value.trim(), password = $a('auth-password').value;
+  if (m === 'code') {
+    const code = $a('auth-code').value.trim();
+    if (!code) { err.textContent = 'Please type the code.'; $a('auth-code').focus(); return; }
+    $a('auth-go').disabled = true;
+    try {
+      const r = await post('/api/login/code', { ticket: auth.dataset.ticket || '', code });
+      if (r.ok) { location.href = '/'; return; }
+      if (r.status === 410) { mode('login'); $a('auth-error').textContent = r.detail; return; }
+      err.textContent = r.detail || 'That code is not right.';
+      $a('auth-code').select();
+    } catch (x) { err.textContent = 'The server could not be reached. Check your connection and try again.'; }
+    finally { $a('auth-go').disabled = false; }
+    return;
+  }
   if (m !== 'key' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Please enter your email address.'; $a('auth-email').focus(); return; }
   if ((m === 'login' || m === 'signup') && !password) { err.textContent = 'Please enter your password.'; $a('auth-password').focus(); return; }
   if (m === 'signup' && password.length < 8) { err.textContent = 'The password needs at least 8 characters.'; $a('auth-password').focus(); return; }
@@ -630,6 +649,7 @@ $a('auth-form').onsubmit = async (e) => {
     else if (m === 'signup') r = await post('/api/signup', { email, password, name: $a('auth-name').value.trim() });
     else r = await post('/api/forgot', { email });
     if (r.ok && m === 'forgot') { $a('auth-note').textContent = 'If there is an account with this email, the link is on its way. Check your inbox and spam folder.'; return; }
+    if (r.ok && r.data.need_code) { auth.dataset.ticket = r.data.ticket; $a('auth-code').value = ''; mode('code'); return; }
     if (r.ok) { location.href = m === 'signup' ? '/?welcome=1' : '/'; return; }
     err.textContent = r.detail || (r.status === 401 ? 'That email and password do not match.' : 'Something went wrong. Please try again.');
   } catch (x) {

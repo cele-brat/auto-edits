@@ -76,6 +76,9 @@ async function openAccount() {
   $('account-balance').textContent = Acc.unlimited ? 'Unlimited' : Acc.credits.toLocaleString('en-IN');
   $('password-title').textContent = Acc.user.has_password ? 'Change password' : 'Set a password';
   $('password-current').hidden = !Acc.user.has_password;
+  $('password-new').placeholder = Acc.user.admin ? 'New password (12 or more characters)' : 'New password (8 or more characters)';
+  $('code-needed').hidden = true;
+  drawTwoStep();
   try {
     const { history } = await api('/api/credits');
     const rows = history.map((h) => {
@@ -95,12 +98,104 @@ async function openAccount() {
 $('credits').onclick = openAccount;
 $('account-open').onclick = openAccount;
 $('account-close').onclick = () => $('account').close();
-$('key-new').onclick = async () => {
+$('account').addEventListener('close', () => {      // backup codes and the setup QR never stay on screen
+  $('twostep-codes').hidden = true; $('twostep-list').textContent = '';
+  $('twostep-setup').hidden = true; $('twostep-qr').innerHTML = '';
+});
+// The studio account: some steps need the 6-digit code once per 12 hours on this sign-in.
+function askCode(then) {
+  $('account-error').textContent = 'Enter the 6-digit code from your authenticator app to carry on.';
+  $('code-needed').hidden = false;
+  $('code-needed-input').value = '';
+  $('code-needed-input').focus();
+  $('code-needed').onsubmit = async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/admin/confirm', { method: 'POST', body: { code: $('code-needed-input').value.trim() } });
+      $('code-needed').hidden = true;
+      $('account-error').textContent = '';
+      then();
+    } catch (err) { $('account-error').textContent = err.message; $('code-needed-input').select(); }
+  };
+}
+
+async function makeKey() {
+  $('account-error').textContent = '';
   try {
     const { key } = await api('/api/plugin-key', { method: 'POST' });
     $('key-value').value = key;
     $('key-shown').hidden = false;
     $('key-value').select();
+    drawTwoStep();
+  } catch (err) {
+    if (err.status === 428) askCode(makeKey);
+    else $('account-error').textContent = err.message;
+  }
+}
+$('key-new').onclick = makeKey;
+
+// ---- two-step login (studio account) ----
+async function drawTwoStep() {
+  $('twostep').hidden = !(Acc.user && Acc.user.admin);
+  if ($('twostep').hidden) return;
+  let t;
+  try { t = await api('/api/two-step'); } catch (err) { return; }
+  const st = t.studio || {};
+  const left = st.studio_key_retired ? 'The old shared studio key is retired.'
+    : 'The old shared studio key stops working once all three are done: '
+      + [['password', 'a password'], ['two_step', 'two-step login'], ['lightroom_key', 'your own Lightroom key']]
+        .map(([k, label]) => (st[k] ? '✓ ' : '✗ ') + label).join(' · ') + '.';
+  $('twostep-state').textContent = (t.on ? `On. Backup codes left: ${t.backup_codes_left}. ` : 'Off. With it on, logging in needs your password and a code from your phone. ') + left;
+  $('twostep-actions').hidden = t.on;
+  $('twostep-renew').hidden = !t.on;
+}
+
+$('twostep-start').onclick = async () => {
+  $('account-error').textContent = '';
+  try {
+    const r = await api('/api/two-step/start', { method: 'POST' });
+    $('twostep-qr').innerHTML = r.qr;                 // SVG made by our own server
+    $('twostep-secret').textContent = r.secret.replace(/(.{4})/g, '$1 ').trim();
+    $('twostep-setup').hidden = false;
+    $('twostep-actions').hidden = true;
+    $('twostep-code').focus();
+  } catch (err) { $('account-error').textContent = err.message; }
+};
+
+function showBackupCodes(codes) {
+  $('twostep-list').textContent = codes.join('\n');
+  $('twostep-codes').hidden = false;
+  $('twostep-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText(codes.join('\n')); $('twostep-copy').textContent = 'Copied'; } catch (x) { /* select by hand */ }
+  };
+  $('twostep-save').onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([`Auto Edits backup codes for ${Acc.user.email}\nEach code works once.\n\n${codes.join('\n')}\n`], { type: 'text/plain' }));
+    a.download = 'auto-edits-backup-codes.txt';
+    a.click();
+  };
+}
+
+$('twostep-form').onsubmit = async (e) => {
+  e.preventDefault();
+  $('account-error').textContent = '';
+  try {
+    const r = await api('/api/two-step/confirm', { method: 'POST', body: { code: $('twostep-code').value.trim() } });
+    $('twostep-setup').hidden = true;
+    $('twostep-qr').innerHTML = '';
+    showBackupCodes(r.backup_codes);
+    drawTwoStep();
+  } catch (err) { $('account-error').textContent = err.message; $('twostep-code').select(); }
+};
+
+$('twostep-renew').onsubmit = async (e) => {
+  e.preventDefault();
+  $('account-error').textContent = '';
+  try {
+    const r = await api('/api/two-step/backup-codes', { method: 'POST', body: { code: $('twostep-renew-code').value.trim() } });
+    $('twostep-renew-code').value = '';
+    showBackupCodes(r.backup_codes);
+    drawTwoStep();
   } catch (err) { $('account-error').textContent = err.message; }
 };
 $('key-copy').onclick = async () => {
@@ -112,7 +207,8 @@ $('password-form').onsubmit = async (e) => {
   e.preventDefault();
   $('account-error').textContent = '';
   const password = $('password-new').value;
-  if (password.length < 8) { $('account-error').textContent = 'The new password needs at least 8 characters.'; return; }
+  const min = Acc.user && Acc.user.admin ? 12 : 8;
+  if (password.length < min) { $('account-error').textContent = `The new password needs at least ${min} characters.`; return; }
   try {
     await api('/api/password', { method: 'POST', body: { current: $('password-current').value, password } });
     location.href = '/?login=1';                  // a new password signs every browser out, this one too
