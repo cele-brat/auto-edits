@@ -56,6 +56,7 @@ pictures. Automatic ratings and corrections are suggestions: always check your w
 <li>You must be at least 18 and give a real email address that you can confirm.</li>
 <li>Keep your password and your Lightroom key private. You are responsible for what is done with your account.</li>
 <li>One free trial per person. We may refuse free credits to accounts that look like repeat sign-ups.</li>
+<li>Free trial credits can be used for 15 days from when they are added; whatever is left after that ends. Credits you buy do not expire.</li>
 </ol>
 
 <h2>3. Credits and prices</h2>

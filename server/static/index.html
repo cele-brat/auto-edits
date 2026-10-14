@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=21">
+<link rel="stylesheet" href="/static/app.css?v=22">
 </head>
 <body>
 <div id="app" hidden>
@@ -34,13 +34,23 @@
     <button id="split" type="button" aria-pressed="true" title="Drag the line on the photo. Hold \ to see the whole photo before.">Before and after</button>
     <button id="credits" type="button" title="Your account and credits">Credits</button>
     <details id="more">
-      <summary>More</summary>
-      <div class="menu">
-        <button id="account-open" type="button">Account, credits and Lightroom key…</button>
-        <button id="originals" type="button">Download this wedding's uploaded photos (zip)</button>
-        <a id="admin-link" href="/admin" hidden>Admin dashboard</a>
-        <button id="delete-wedding" type="button">Delete this wedding from the server…</button>
-        <button id="signout" type="button">Log out</button>
+      <summary title="Your account, this wedding, help"><span class="avatar" id="me-initial">·</span><span class="me-label">Account</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary>
+      <div class="menu" role="menu">
+        <div class="me">
+          <span class="avatar big" id="me-initial-big">·</span>
+          <div><b id="me-name"></b><small id="me-email"></small></div>
+        </div>
+        <p class="group">Your account</p>
+        <button id="account-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg><span><b>Account and credits</b><small>Balance, buy credits, invoices, password</small></span></button>
+        <button id="plugin-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18H6.5v2.5H4V18l6.03-6.03A4 4 0 0 0 14 10Zm1-2h.01"/></svg><span><b>Lightroom plug-in</b><small>Get the key that connects Lightroom</small></span></button>
+        <a id="admin-link" href="/admin" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/></svg><span><b>Admin dashboard</b><small>Photographers, purchases, backups</small></span></a>
+        <p class="group" id="menu-wedding-title">This wedding</p>
+        <button id="originals" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span><b>Download original photos</b><small>The photos you uploaded, as one zip</small></span></button>
+        <button id="delete-wedding" type="button" role="menuitem" class="danger"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13"/></svg><span><b>Delete this wedding</b><small>Removes it from Auto Edits only, not from your computer</small></span></button>
+        <p class="group">Help</p>
+        <a href="/contact" target="_blank" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2.5-11.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.7M12 17h.01"/></svg><span><b>Help and support</b><small>Email, phone and WhatsApp</small></span></a>
+        <a href="/terms" target="_blank" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7V3Zm7 0v4h4M10 12h5M10 16h5"/></svg><span><b>Terms and privacy</b><small>How credits, refunds and your photos are handled</small></span></a>
+        <button id="signout" type="button" role="menuitem" class="out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span><b>Log out</b></span></button>
       </div>
     </details>
   </header>
@@ -237,6 +247,7 @@
   <p id="account-who"></p>
   <section class="box" title="Buy credits">
     <div class="balance"><span id="account-balance">–</span> <small>credits</small></div>
+    <p class="free-note" id="account-free" hidden></p>
     <p class="dim" id="account-storage"></p>
     <p class="dim">Export or send to Lightroom: 1 credit a photo, every time. Culling: 1 credit for every 10 photos, every time it runs.</p>
     <div class="row"><button type="button" id="buy" class="primary" disabled title="Payments are being added">Buy credits (coming soon)</button>
@@ -326,11 +337,11 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=19"></script>
+<script src="/static/app.js?v=20"></script>
 <script src="/static/addfolder.js?v=15"></script>
 <script src="/static/cull.js?v=15"></script>
 <script src="/static/export.js?v=15"></script>
-<script src="/static/account.js?v=19"></script>
+<script src="/static/account.js?v=20"></script>
 <script src="/static/buy.js?v=4"></script>
 <script src="/static/crop.js?v=1"></script>
 </body>

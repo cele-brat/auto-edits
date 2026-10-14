@@ -439,7 +439,7 @@ class Accounts:
             rows = db.execute("""
                 SELECT u.id, u.email, u.name, u.verified, u.admin, u.created, u.last_seen, u.signup_ip,
                   COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id), 0) AS balance,
-                  COALESCE((SELECT -SUM(delta) FROM ledger l WHERE l.user_id=u.id AND delta<0), 0)
+                  COALESCE((SELECT -SUM(delta) FROM ledger l WHERE l.user_id=u.id AND delta<0 AND kind<>'expired'), 0)
                     - COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id AND kind='refund'), 0) AS used,
                   COALESCE((SELECT SUM(delta) FROM ledger l WHERE l.user_id=u.id AND kind='purchase'), 0) AS bought,
                   (SELECT COUNT(*) FROM weddings w WHERE w.owner=u.id) AS weddings,

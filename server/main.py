@@ -401,14 +401,17 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     @app.get("/api/me")
     def me(user: dict = Depends(signed_in)):
+        from .nudges import free_status
         return {"user": public(user), "credits": accounts.balance(user["id"]), "free_given": accounts.got_free(user["id"]),
+                "free": free_status(accounts, user["id"]),
                 "storage": limits.usage(store, user), "payments_on": payments.rzp.on,
                 "prices": {"export": 1, "cull_photos_per_credit": 10}}
 
     @app.get("/api/credits")
     def credits(user: dict = Depends(signed_in)):
+        from .nudges import free_status
         return {"balance": accounts.balance(user["id"]), "unlimited": bool(user["admin"]),
-                "history": accounts.history(user["id"])}
+                "free": free_status(accounts, user["id"]), "history": accounts.history(user["id"])}
 
     @app.get("/api/credits/statement.csv")
     def credit_statement(user: dict = Depends(signed_in)):
@@ -712,8 +715,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     # ---- the app: presets, looks, rendered previews ------------------------
     @app.get("/api/session")
     def session_info(user: dict = Depends(signed_in)):
+        from .nudges import free_status
         return {"ok": True, "version": VERSION, "user": public(user), "credits": accounts.balance(user["id"]),
-                "viewing_as": user.get("viewing_as")}
+                "free": free_status(accounts, user["id"]), "viewing_as": user.get("viewing_as")}
 
     # ---- the admin dashboard -------------------------------------------------------
     @app.get("/admin")

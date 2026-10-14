@@ -695,6 +695,8 @@ async function openWedding(id) {
   S.photos = (await api(`/api/weddings/${id}/photos?compact=1`)).photos;
   $('wedding').value = id;
   $('count').textContent = `${S.wedding.photos} photo${S.wedding.photos === 1 ? '' : 's'}`;
+  $('menu-wedding-title').textContent = `This wedding · ${S.wedding.name}`;
+  for (const id of ['menu-wedding-title', 'originals', 'delete-wedding']) $(id).hidden = false;
   S.view = 'grid';
   drawFolders();
   openFolder((S.wedding.folders[0] || {}).id || null);
@@ -720,6 +722,7 @@ async function start() {
   S.weddings = weddings.weddings;
   $('wedding').replaceChildren(...S.weddings.map((w) => el('option', { value: w.id, textContent: w.name })));
   if (!S.weddings.length) {
+    for (const id of ['menu-wedding-title', 'originals', 'delete-wedding']) $(id).hidden = true;
     S.wedding = null;
     $('folders').replaceChildren();
     $('count').textContent = '';

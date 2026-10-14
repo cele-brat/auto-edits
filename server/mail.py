@@ -82,3 +82,22 @@ def reset_password(base: str, token: str) -> tuple[str, str, str]:
                        "Set a new password", f"{base}/reset/{token}",
                        "The link works for 2 hours. If this was not you, ignore this email; your password stays as it is.")
     return "Set a new Auto Edits password", text, html
+
+
+def confirm_reminder(base: str, token: str, last: bool) -> tuple[str, str, str]:
+    """Every 3 days while the email is not confirmed (server/nudges.py)."""
+    line = ("Your Auto Edits account is waiting. Confirm your email and 50 free credits are added straight away: "
+            "enough to export 50 edited photos or cull 500. Free credits can be used for 15 days.")
+    after = ("This is the last reminder we will send. " if last else "") + \
+        "The link works for 48 hours. If you did not sign up, ignore this email."
+    text, html = _page("Confirm your email to start", line, "Confirm email", f"{base}/verify/{token}", after)
+    return ("Last reminder: confirm your Auto Edits email" if last else "Confirm your email to get 50 free credits"), text, html
+
+
+def use_reminder(base: str, left: int, ends: str, last: bool) -> tuple[str, str, str]:
+    """Every 3 days while free credits are unused (server/nudges.py)."""
+    line = (f"You have {left} free credits in Auto Edits. They end on {ends}. "
+            "Add one wedding folder, pick a preset and export: each edited photo uses 1 credit, culling uses 1 for every 10 photos.")
+    after = ("Your free credits end tomorrow. " if last else "") + "Questions? Reply to this email or write to support@cele-brat.com."
+    text, html = _page("Your free credits are waiting", line, "Open Auto Edits", f"{base}/", after)
+    return (f"Your {left} free credits end tomorrow" if last else f"Your {left} free Auto Edits credits end on {ends}"), text, html

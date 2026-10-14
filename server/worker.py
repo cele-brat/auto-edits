@@ -65,10 +65,17 @@ def main():
     procs = [mp.Process(target=work, daemon=True) for _ in range(n)]
     for p in procs:
         p.start()
-    backups = Backups(Store(os.environ.get("AUTOEDITS_DATA", "data/server"), blob_store.from_environment()))
+    store = Store(os.environ.get("AUTOEDITS_DATA", "data/server"), blob_store.from_environment())
+    backups = Backups(store)
+    from .accounts import Accounts
+    from .mail import Mailer
+    from .nudges import Nudges
+    nudges = Nudges(Accounts(store, os.environ.get("AUTOEDITS_ADMIN_EMAIL", "")), Mailer(),
+                    os.environ.get("AUTOEDITS_BASE_URL", "https://edits.cele-brat.solutions"))
     while True:                                                  # restart any worker that dies
         time.sleep(5)
         backups.run_if_due()                                     # the daily database copy (see server/backups.py)
+        nudges.run_if_due()                                      # reminders and the end of free credits (server/nudges.py)
         for i, p in enumerate(procs):
             if not p.is_alive():
                 procs[i] = mp.Process(target=work, daemon=True)

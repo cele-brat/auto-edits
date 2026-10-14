@@ -1,7 +1,7 @@
 // The account: credits in the top bar, the "Your account" window, and messages about the email address.
 const Acc = { user: null, credits: 0, unlimited: false };
 
-const KINDS = { welcome: 'Free credits', cull: 'Culling', export: 'Export', refund: 'Given back', lightroom: 'Sent to Lightroom', purchase: 'Bought', admin: 'From Cele-Brat' };
+const KINDS = { welcome: 'Free credits', cull: 'Culling', export: 'Export', refund: 'Given back', lightroom: 'Sent to Lightroom', purchase: 'Bought', admin: 'From Cele-Brat', expired: 'Free credits ended' };
 
 function creditLabel() {
   return Acc.unlimited ? 'Studio · unlimited' : `${Acc.credits.toLocaleString('en-IN')} credit${Acc.credits === 1 ? '' : 's'}`;
@@ -29,8 +29,10 @@ function showAccount(session) {
     document.body.classList.add('viewing');
   }
   $('admin-link').hidden = !(session.user && session.user.admin) || !!session.viewing_as;
+  drawMe(session.user);
   Acc.user = session.user;
   Acc.credits = session.credits;
+  Acc.free = session.free;
   Acc.unlimited = !!(session.user && session.user.admin);
   $('credits').textContent = creditLabel();
   const asked = new URLSearchParams(location.search);
@@ -57,7 +59,7 @@ async function sendAgain() {
 async function refreshCredits() {
   try {
     const me = await api('/api/me');
-    Acc.user = me.user; Acc.credits = me.credits; Acc.storage = me.storage; Acc.unlimited = me.user.admin;
+    Acc.user = me.user; Acc.credits = me.credits; Acc.storage = me.storage; Acc.unlimited = me.user.admin; Acc.free = me.free;
     $('credits').textContent = creditLabel();
   } catch (err) { /* the next action will say what is wrong */ }
 }
@@ -74,6 +76,9 @@ async function openAccount() {
   await refreshCredits();
   $('account-who').textContent = `${Acc.user.name ? Acc.user.name + ' · ' : ''}${Acc.user.email}` + (Acc.user.verified ? '' : ' · email not confirmed yet');
   $('account-balance').textContent = Acc.unlimited ? 'Unlimited' : Acc.credits.toLocaleString('en-IN');
+  $('account-free').hidden = !Acc.free;
+  if (Acc.free) $('account-free').textContent = `${Acc.free.left} of these are free trial credits. They end on ` +
+    new Date(Acc.free.ends * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) + '. Bought credits never end.';
   const st = Acc.storage;
   $('account-storage').textContent = !st ? '' : st.storage_gb
     ? `Storage: ${(st.used_bytes / 1073741824).toFixed(1)} of ${st.storage_gb} GB used (uploads and exports). Up to ${st.photos_per_wedding.toLocaleString('en-IN')} photos in one wedding.`
@@ -107,6 +112,22 @@ async function openAccount() {
 
 $('credits').onclick = openAccount;
 $('account-open').onclick = openAccount;
+// the account menu: who is signed in, and the plug-in key straight from it
+function drawMe(user) {
+  if (!user) return;
+  const initial = (user.name || user.email || '?').trim()[0] || '?';
+  $('me-initial').textContent = $('me-initial-big').textContent = initial;
+  $('me-name').textContent = user.name || user.email.split('@')[0];
+  $('me-email').textContent = user.email + (user.admin ? ' · studio' : '');
+}
+$('plugin-open').onclick = async () => {
+  await openAccount();
+  const h = [...document.querySelectorAll('#account h3')].find((x) => x.textContent.includes('Lightroom'));
+  if (h) h.scrollIntoView({ block: 'start' });
+};
+// the menu closes on a click outside it or on Esc
+document.addEventListener('click', (e) => { if ($('more').open && !e.target.closest('#more')) $('more').open = false; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && $('more').open) { $('more').open = false; $('more').querySelector('summary').focus(); } });
 $('account-close').onclick = () => $('account').close();
 $('account').addEventListener('close', () => {      // backup codes and the setup QR never stay on screen
   $('twostep-codes').hidden = true; $('twostep-list').textContent = '';
