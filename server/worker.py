@@ -12,6 +12,7 @@ import time
 import traceback
 
 from . import blobs as blob_store
+from .backups import Backups
 from .exports import Exports
 from .culling import Culls
 from .looks import Renderer
@@ -64,8 +65,10 @@ def main():
     procs = [mp.Process(target=work, daemon=True) for _ in range(n)]
     for p in procs:
         p.start()
+    backups = Backups(Store(os.environ.get("AUTOEDITS_DATA", "data/server"), blob_store.from_environment()))
     while True:                                                  # restart any worker that dies
         time.sleep(5)
+        backups.run_if_due()                                     # the daily database copy (see server/backups.py)
         for i, p in enumerate(procs):
             if not p.is_alive():
                 procs[i] = mp.Process(target=work, daemon=True)

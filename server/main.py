@@ -23,6 +23,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import VERSION, adjustments, blobs as blob_store, mail
+from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
 from engine.presets import parse_xmp
 
@@ -99,6 +100,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                   blobs if blobs is not None else blob_store.from_environment())
     admin_email = admin_email if admin_email is not None else os.environ.get("AUTOEDITS_ADMIN_EMAIL", "")
     accounts = Accounts(store, admin_email or "studio@auto-edits.local")
+    backups = Backups(store)
     mailer = mailer or mail.Mailer()
     base_url = os.environ.get("AUTOEDITS_BASE_URL", "").rstrip("/")
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
@@ -432,6 +434,18 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.get("/admin")
     def admin_page(admin: dict = Depends(the_admin)):
         return FileResponse(STATIC / "admin.html", headers={"Cache-Control": "no-cache"})
+
+    @app.get("/api/admin/backups")
+    def admin_backups(admin: dict = Depends(the_admin)):
+        return {"status": backups.status(), "copies": [{k: c[k] for k in ("day", "where")} for c in backups.list()]}
+
+    @app.post("/api/admin/backups/run")
+    def admin_backup_now(admin: dict = Depends(the_admin)):
+        try:
+            backups.run()
+        except Exception as e:
+            raise HTTPException(500, f"The backup did not finish: {e}")
+        return admin_backups(admin)
 
     @app.get("/api/admin/users")
     def admin_users(admin: dict = Depends(the_admin)):

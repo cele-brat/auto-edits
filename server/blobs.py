@@ -16,7 +16,9 @@ class NoBlobs:
     """Storage switched off: everything stays on the server's disk."""
     on = False
 
-    def put(self, key: str, path: Path) -> None: ...
+    def put(self, key: str, path: Path, content_type: str = "image/jpeg") -> None: ...
+    def keys(self, prefix: str) -> list[str]: return []
+    def delete(self, key: str) -> None: ...
     def fetch(self, key: str, path: Path) -> bool: return False
     def delete_prefix(self, prefix: str) -> int: return 0
     def stream(self, key: str): return iter(())
@@ -32,8 +34,17 @@ class R2Blobs:
         self.s3 = boto3.client("s3", endpoint_url=endpoint, aws_access_key_id=key_id, aws_secret_access_key=secret,
                                region_name="auto", config=Config(signature_version="s3v4", retries={"max_attempts": 4}))
 
-    def put(self, key: str, path: Path) -> None:
-        self.s3.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": "image/jpeg"})
+    def put(self, key: str, path: Path, content_type: str = "image/jpeg") -> None:
+        self.s3.upload_file(str(path), self.bucket, key, ExtraArgs={"ContentType": content_type})
+
+    def keys(self, prefix: str) -> list[str]:
+        out = []
+        for page in self.s3.get_paginator("list_objects_v2").paginate(Bucket=self.bucket, Prefix=prefix):
+            out += [o["Key"] for o in page.get("Contents", [])]
+        return out
+
+    def delete(self, key: str) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
 
     def stream(self, key: str):
         """The object's bytes, a megabyte at a time."""

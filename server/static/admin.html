@@ -40,6 +40,10 @@ td .sub { color: var(--dim); font-size: 12px; }
 #detail-error { color: var(--danger) !important; min-height: 1.2em; }
 a.dl { color: var(--marigold); white-space: nowrap; }
 .in { color: #7fd69a; }
+.backup { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; margin: 0 0 14px; font-size: 14px; }
+.backup b { color: var(--text); font-weight: 600; }
+.backup .sub { color: var(--dim); font-size: 13px; }
+.backup button { margin-left: auto; padding: 5px 10px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -49,6 +53,7 @@ a.dl { color: var(--marigold); white-space: nowrap; }
     <a href="/">Back to the app</a>
   </header>
   <div class="tiles" id="tiles"></div>
+  <div class="backup" id="backup"><b>Database backups</b><span class="sub">Loading…</span></div>
   <div class="tools">
     <input type="search" id="q" placeholder="Search by email, name or address" aria-label="Search photographers">
     <label class="check"><input type="checkbox" id="only-unconfirmed"> Only unconfirmed</label>
@@ -130,7 +135,24 @@ function draw() {
   }));
 }
 
+function drawBackup(b) {
+  const s = b.status, n = b.copies.length;
+  const age = s.last_ok ? (Date.now() - Date.parse(s.last_ok)) / 3600000 : Infinity;
+  const pill = !s.off_server ? ['warn', 'only on this server'] : age > 30 ? ['warn', 'late'] : ['ok', 'working'];
+  const parts = [s.last_ok ? `Last copy ${when(Date.parse(s.last_ok) / 1000)} · ${(s.size / 1048576).toFixed(1)} MB · ${s.where}` : 'No copy yet',
+    `${n} ${n === 1 ? 'copy' : 'copies'} kept (${s.keep_days} days)`];
+  if (s.last_error && (!s.last_ok || s.last_error_at > s.last_ok)) parts.push(`Last try failed: ${s.last_error}`);
+  const btn = el('button', { type: 'button', textContent: 'Back up now' });
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Backing up…';
+    try { drawBackup(await api('/api/admin/backups/run', { method: 'POST' })); } catch (err) { $('error').textContent = err.message; btn.disabled = false; btn.textContent = 'Back up now'; }
+  };
+  $('backup').replaceChildren(el('b', { textContent: 'Database backups' }), el('span', { className: 'pill ' + pill[0], textContent: pill[1] }),
+    el('span', { className: 'sub', textContent: parts.join(' · ') }), btn);
+}
+
 async function load() {
+  api('/api/admin/backups').then(drawBackup).catch(() => {});
   try { A.users = (await api('/api/admin/users')).users; tiles(); draw(); } catch (err) { $('error').textContent = err.message; }
 }
 
