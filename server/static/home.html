@@ -177,6 +177,12 @@ section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
 
 .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(28px, 4vw, 64px); margin-top: clamp(36px, 5vw, 64px); }
 .facts h3 { margin-bottom: 10px; }
+/* every card can be clicked: a section to read more, or the free sign-up */
+[data-go] { cursor: pointer; transition: transform .15s, box-shadow .15s, background .15s; border-radius: 6px; }
+[data-go]:hover, [data-go]:focus-visible { transform: translateY(-2px); }
+.steps li[data-go]:hover h3, .facts [data-go]:hover h3 { color: var(--peacock); text-decoration: underline; text-underline-offset: 4px; }
+.routes article[data-go]:hover { filter: brightness(1.08); transform: none; }
+.tag-card[data-go]:hover { box-shadow: 0 18px 40px rgba(0, 0, 0, .12); }
 .facts p { color: var(--soft); font-size: 17.5px; }
 
 .close { text-align: left; padding-bottom: clamp(72px, 10vw, 140px); }
@@ -276,7 +282,7 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
   </div>
   <p class="trial"><span><b>Free trial: 50 credits</b> when you sign up. No card needed.</span></p>
   </div>
-  <div class="clock" role="img" aria-label="15 minutes for 500 photos: uploaded, edited with your preset and exported">
+  <div class="clock" data-go="#how" role="img" aria-label="15 minutes for 500 photos: uploaded, edited with your preset and exported">
     <div class="big">15</div>
     <div class="unit">minutes</div>
     <div class="what"><b>500 photos</b> uploaded, edited with your preset and exported</div>
@@ -298,10 +304,10 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
     <p class="soft">Each step runs on the server. Your computer only shows you the result.</p>
   </div>
   <ol class="steps">
-    <li><h3>Add photos</h3><p>Pick the wedding's folder. Raw files stay on your computer: only the preview inside each one is uploaded. Sub-folders such as Haldi or Sangeet become event folders.</p></li>
-    <li><h3>Cull</h3><p>Every photo is rated Keep, Maybe or Reject, with the reason shown. Change any rating with one key.</p></li>
-    <li><h3>Edit</h3><p>Choose one of 500 built-in presets, or your own, for each event folder, tick what should be worked out per photo, and fine-tune any single frame.</p></li>
-    <li><h3>Export</h3><p>Pick the size, quality and watermark. The server makes the JPEGs and hands you one zip.</p></li>
+    <li data-go="#routes"><h3>Add photos</h3><p>Pick the wedding's folder. Raw files stay on your computer: only the preview inside each one is uploaded. Sub-folders such as Haldi or Sangeet become event folders.</p></li>
+    <li data-go="#cull"><h3>Cull</h3><p>Every photo is rated Keep, Maybe or Reject, with the reason shown. Change any rating with one key.</p></li>
+    <li data-go="#edit"><h3>Edit</h3><p>Choose one of 500 built-in presets, or your own, for each event folder, tick what should be worked out per photo, and fine-tune any single frame.</p></li>
+    <li data-go="#export"><h3>Export</h3><p>Pick the size, quality and watermark. The server makes the JPEGs and hands you one zip.</p></li>
   </ol>
   <div class="speed">
     <b>15 min</b>
@@ -370,7 +376,7 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
     <p class="soft">Use it on its own for speed, or with Lightroom Classic when the final files must come from your catalogue.</p>
   </div>
   <div class="routes">
-    <article>
+    <article data-go="signup">
       <h3>On its own</h3>
       <p>For culling, proofs, social posts and quick delivery. No Lightroom needed.</p>
       <ul>
@@ -379,7 +385,7 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
         <li>Download the finished JPEGs as one zip</li>
       </ul>
     </article>
-    <article>
+    <article data-go="signup">
       <h3>With Lightroom Classic</h3>
       <p>For finals that must match Lightroom exactly. A plug-in connects your catalogue to the app.</p>
       <ul>
@@ -397,12 +403,12 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
     <p class="soft">Start an export, close the browser, come back to a zip.</p>
   </div>
   <div class="facts">
-    <div><h3>Any size</h3><p>2560 px for proofs and social, 4000 px, or full size. JPEG quality 80, 90 or 95.</p></div>
-    <div><h3>Only the keepers</h3><p>Export every photo, Keep only, or Keep and Maybe. Whole wedding or one event folder.</p></div>
-    <div><h3>Watermark</h3><p>Add your studio name to proofs. Leave it empty for clean finals.</p></div>
-    <div><h3>Your raw files stay home</h3><p>Only previews are uploaded. The originals never leave your computer.</p></div>
-    <div><h3>Private by default</h3><p>Nothing is visible without logging in, and the connection is encrypted.</p></div>
-    <div><h3>Nothing is lost</h3><p>No photo is deleted by a cull or an edit. Every change can be undone.</p></div>
+    <div data-go="signup"><h3>Any size</h3><p>2560 px for proofs and social, 4000 px, or full size. JPEG quality 80, 90 or 95.</p></div>
+    <div data-go="signup"><h3>Only the keepers</h3><p>Export every photo, Keep only, or Keep and Maybe. Whole wedding or one event folder.</p></div>
+    <div data-go="signup"><h3>Watermark</h3><p>Add your studio name to proofs. Leave it empty for clean finals.</p></div>
+    <div data-go="signup"><h3>Your raw files stay home</h3><p>Only previews are uploaded. The originals never leave your computer.</p></div>
+    <div data-go="signup"><h3>Private by default</h3><p>Nothing is visible without logging in, and the connection is encrypted.</p></div>
+    <div data-go="signup"><h3>Nothing is lost</h3><p>No photo is deleted by a cull or an edit. Every change can be undone.</p></div>
   </div>
 </section>
 
@@ -413,7 +419,7 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
       <p class="soft" style="margin-top:22px">Each photo you export, or send back to Lightroom with its edit, is one credit. Culling is one credit for every 10 photos. Try presets and edits as much as you like before that; previews carry a light mark until you export.</p>
       <p class="soft" style="margin-top:14px">Try it free: new accounts get 50 credits once the email is confirmed (one free trial per internet connection).</p>
     </div>
-    <div class="tag-card">
+    <div class="tag-card" data-go="signup">
       <p class="per">per credit</p>
       <p class="amount"><s aria-label="Usual price 3 rupees"><span class="rs">₹</span>3</s><strong><span class="rs">₹</span>1</strong></p>
       <p class="until">Launch price until 31 December 2026</p>
@@ -613,6 +619,20 @@ function mode(m) {
 function openAuth(m) { mode(m); if (!auth.open) auth.showModal(); }
 for (const b of document.querySelectorAll('[data-login]')) b.onclick = () => openAuth('login');
 for (const b of document.querySelectorAll('[data-signup]')) b.onclick = () => openAuth('signup');
+// cards: a click (or Enter) goes to the section named, or opens the free sign-up
+for (const c of document.querySelectorAll('[data-go]')) {
+  const go = c.dataset.go;
+  c.tabIndex = 0;
+  c.setAttribute('role', 'link');
+  c.title = go === 'signup' ? 'Start with 50 free credits' : 'Read more';
+  const open = (e) => {
+    if (e.target.closest('a, button, input')) return;
+    if (go === 'signup') openAuth('signup');
+    else document.querySelector(go).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  c.addEventListener('click', open);
+  c.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(e); });
+}
 for (const b of auth.querySelectorAll('[data-to]')) b.onclick = () => mode(b.dataset.to);
 $a('auth-close').onclick = () => auth.close();
 auth.addEventListener('mousedown', (e) => { if (e.target === auth) auth.close(); });

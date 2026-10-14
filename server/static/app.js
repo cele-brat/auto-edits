@@ -731,7 +731,12 @@ async function start() {
     return;
   }
   $('empty').replaceChildren(el('strong', { textContent: 'This folder is empty' }), 'Add photos to it with “Add photos” at the top, or send them from Lightroom.');
-  await openWedding(S.weddings[0].id);
+  // /?wedding=<id> opens that wedding (from the admin page); /?account=1 opens the account window
+  const asked = new URLSearchParams(location.search);
+  const want = asked.get('wedding');
+  await openWedding(S.weddings.some((w) => w.id === want) ? want : S.weddings[0].id);
+  if (asked.has('account') && typeof openAccount === 'function') openAccount();
+  if (want || asked.has('account')) history.replaceState(null, '', '/');
 }
 
 // ---- wiring ---------------------------------------------------------------------

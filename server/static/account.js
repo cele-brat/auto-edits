@@ -94,6 +94,10 @@ async function openAccount() {
       const d = document.createElement('td'); d.textContent = when(h.created);
       const b = document.createElement('td'); b.className = 'n dim'; b.textContent = Acc.unlimited ? '' : h.balance.toLocaleString('en-IN');
       tr.append(d, what, n, b);
+      if (h.wedding && S.weddings.some((w) => w.id === h.wedding)) {          // open the wedding the credits were for
+        tr.className = 'go'; tr.title = 'Open this wedding';
+        tr.onclick = () => { $('account').close(); openWedding(h.wedding); };
+      }
       return tr;
     });
     if (!rows.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.textContent = 'Nothing yet.'; tr.append(td); rows.push(tr); }

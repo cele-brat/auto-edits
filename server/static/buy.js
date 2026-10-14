@@ -23,6 +23,8 @@ async function drawPurchases() {
     $('purchases-box').hidden = !purchases.length;
     $('purchases').tBodies[0].replaceChildren(...purchases.map((o) => {
       const tr = document.createElement('tr');
+      tr.className = 'go'; tr.title = 'Open the invoice';
+      tr.onclick = (e) => { if (!e.target.closest('a')) window.open(`/invoice/${o.id}`, '_blank'); };
       const what = o.kind === 'credits' ? `${o.credits.toLocaleString('en-IN')} credits` : `${o.blocks * 50} GB for ${o.months} month${o.months > 1 ? 's' : ''}`;
       const a = document.createElement('a'); a.href = `/invoice/${o.id}`; a.target = '_blank'; a.textContent = o.invoice_no;
       const cells = [when(o.paid), what, inr(o.total)].map((t, i) => { const td = document.createElement('td'); td.textContent = t; if (i === 2) td.className = 'n'; return td; });
@@ -150,4 +152,10 @@ for (const b of document.querySelectorAll('#buy-dialog .step')) b.onclick = () =
 for (const id of ['buy-credits', 'buy-blocks', 'buy-months', 'buy-state', 'buy-gstin']) $(id).addEventListener('input', quoteBuy);
 $('buy').onclick = () => openBuy('credits');
 $('buy-storage').onclick = () => openBuy('storage');
+// the credits box and the storage line open the matching purchase
+document.querySelector('#account .box').addEventListener('click', (e) => {
+  if (e.target.closest('button, a')) return;
+  if (e.target.closest('#account-storage')) { if (!$('buy-storage').disabled) openBuy('storage'); }
+  else if (!$('buy').disabled) openBuy('credits');
+});
 $('buy-close').onclick = () => $('buy-dialog').close();

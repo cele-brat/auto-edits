@@ -373,3 +373,8 @@ body.viewing #app { padding-bottom: 56px; }
 #crop-panel { padding: 4px 0 14px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
 #crop-panel h3 { margin: 6px 0 4px; }
 #crop-panel .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* everything that looks like a card can be clicked */
+#account .box { cursor: pointer; transition: border-color .12s; } #account .box:hover { border-color: var(--marigold); }
+#account .box #account-storage:hover { color: var(--text); text-decoration: underline; }
+tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .05); }

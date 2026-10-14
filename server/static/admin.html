@@ -13,7 +13,13 @@ body { overflow-y: auto; }
 .admin header h1 { font: 400 24px var(--serif); margin: 0 auto 0 0; }
 .admin header a { color: var(--text); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 18px 0; }
-.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.tile { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; text-align: left; cursor: pointer; font: inherit; color: inherit; transition: border-color .12s, transform .12s; }
+.tile:hover, .tile:focus-visible { border-color: var(--marigold); transform: translateY(-1px); }
+.tile[aria-pressed=true] { border-color: var(--marigold); box-shadow: inset 0 0 0 1px var(--marigold); }
+tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .04); }
+.backup, .setup { cursor: pointer; } .backup:hover, .setup:hover { border-color: var(--marigold); }
+.filter-note { margin: -4px 0 10px; color: var(--dim); font-size: 13px; } .filter-note button { margin-left: 8px; padding: 2px 9px; font-size: 12px; }
+#backup-list { margin: -8px 0 14px; font-size: 13px; color: var(--dim); }
 .tile b { display: block; font: 400 28px/1.1 var(--serif); color: var(--text); }
 .tile span { color: var(--dim); font-size: 13px; }
 .tools { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
@@ -69,7 +75,9 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
   <div id="main">
   <div class="setup" id="setup" hidden></div>
   <div class="tiles" id="tiles"></div>
-  <div class="backup" id="backup"><b>Database backups</b><span class="sub">Loading…</span></div>
+  <p class="filter-note" id="filter-note" hidden></p>
+  <div class="backup" id="backup" title="Click to see every copy kept"><b>Database backups</b><span class="sub">Loading…</span></div>
+  <div id="backup-list" hidden></div>
   <div class="tools">
     <input type="search" id="q" placeholder="Search by email, name or address" aria-label="Search photographers">
     <label class="check"><input type="checkbox" id="only-unconfirmed"> Only unconfirmed</label>
@@ -81,7 +89,7 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
     </table>
   </div>
   <p id="error" role="alert" style="color:var(--danger)"></p>
-  <h2 class="section">Purchases <span class="sub" id="buy-mode" style="font-weight:400"></span></h2>
+  <h2 class="section" id="purchases-title">Purchases <span class="sub" id="buy-mode" style="font-weight:400"></span></h2>
   <div class="wrap">
     <table>
       <thead><tr><th>Paid</th><th>Photographer</th><th>What</th><th class="n">Taxable</th><th class="n">GST</th><th class="n">Total</th><th>Invoice</th></tr></thead>
@@ -128,7 +136,16 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
 <script>
 'use strict';
 const $ = (id) => document.getElementById(id);
-const A = { users: [], open: null };
+const A = { users: [], open: null, filter: null };
+const ACTIVE = () => Date.now() / 1000 - 7 * 86400;
+// What clicking each number at the top does: narrows and sorts the photographers list below it.
+const FILTERS = {
+  all: { name: 'everyone', keep: () => true },
+  confirmed: { name: 'confirmed email', keep: (u) => u.verified },
+  photos: { name: 'with photos, most first', keep: (u) => u.photos > 0, sort: 'photos' },
+  used: { name: 'who used credits, most first', keep: (u) => u.used > 0, sort: 'used' },
+  active: { name: 'active this week', keep: (u) => u.last_seen > ACTIVE(), sort: 'last_seen' },
+};
 const fmt = (n) => Number(n || 0).toLocaleString('en-IN');
 const day = (t) => (t ? new Date(t * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
 const when = (t) => (t ? new Date(t * 1000).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -148,15 +165,36 @@ async function api(path, options = {}) {
 function tiles() {
   const people = A.users.filter((u) => !u.admin);
   const sum = (k) => people.reduce((n, u) => n + (u[k] || 0), 0);
-  const t = [[fmt(people.length), 'photographers'], [fmt(people.filter((u) => u.verified).length), 'confirmed email'],
-    [fmt(sum('photos')), 'photos uploaded'], [fmt(sum('used')), 'credits used'], [fmt(sum('bought')), 'credits bought'],
-    [fmt(people.filter((u) => u.last_seen > Date.now() / 1000 - 7 * 86400).length), 'active this week']];
-  $('tiles').replaceChildren(...t.map(([b, s]) => el('div', { className: 'tile' }, el('b', { textContent: b }), el('span', { textContent: s }))));
+  const t = [[fmt(people.length), 'photographers', 'all'], [fmt(people.filter((u) => u.verified).length), 'confirmed email', 'confirmed'],
+    [fmt(sum('photos')), 'photos uploaded', 'photos'], [fmt(sum('used')), 'credits used', 'used'], [fmt(sum('bought')), 'credits bought', 'bought'],
+    [fmt(people.filter((u) => u.last_seen > ACTIVE()).length), 'active this week', 'active']];
+  $('tiles').replaceChildren(...t.map(([b, s, f]) => {
+    const tile = el('button', { type: 'button', className: 'tile', title: f === 'bought' ? 'Show purchases' : `Show photographers: ${FILTERS[f].name}` },
+      el('b', { textContent: b }), el('span', { textContent: s }));
+    tile.setAttribute('aria-pressed', String(A.filter === f));
+    tile.onclick = () => {
+      if (f === 'bought') { $('purchases-title').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      A.filter = f === 'all' || A.filter === f ? null : f;
+      tiles(); draw();
+      $('q').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    return tile;
+  }));
 }
 
 function draw() {
   const q = $('q').value.trim().toLowerCase(), only = $('only-unconfirmed').checked;
-  const list = A.users.filter((u) => (!q || `${u.email} ${u.name} ${u.signup_ip}`.toLowerCase().includes(q)) && (!only || !u.verified));
+  const f = A.filter && FILTERS[A.filter];
+  const list = A.users.filter((u) => (!q || `${u.email} ${u.name} ${u.signup_ip}`.toLowerCase().includes(q)) && (!only || !u.verified) &&
+    (!f || (!u.admin && f.keep(u))));
+  if (f && f.sort) list.sort((a, b) => (b[f.sort] || 0) - (a[f.sort] || 0));
+  const note = $('filter-note');
+  note.hidden = !f;
+  if (f) {
+    const all = el('button', { type: 'button', textContent: 'Show everyone' });
+    all.onclick = () => { A.filter = null; tiles(); draw(); };
+    note.replaceChildren(`Showing photographers: ${f.name} (${list.length}).`, all);
+  }
   if (!list.length) { $('rows').replaceChildren(el('tr', {}, el('td', { colSpan: 9, textContent: 'Nobody matches.' }))); return; }
   $('rows').replaceChildren(...list.map((u) => {
     const who = el('td', {}, el('div', { className: 'who', textContent: u.email }));
@@ -167,10 +205,12 @@ function draw() {
     const acts = el('div', { className: 'acts' });
     if (!u.admin) acts.append(el('button', { type: 'button', textContent: 'View as', onclick: () => viewAs(u.id) }));
     acts.append(el('button', { type: 'button', textContent: 'Details', onclick: () => openDetail(u.id) }));
-    return el('tr', {}, who, el('td', { textContent: day(u.created) }), el('td', { textContent: when(u.last_seen) }),
+    const row = el('tr', { className: 'go', title: 'Open details' }, who, el('td', { textContent: day(u.created) }), el('td', { textContent: when(u.last_seen) }),
       el('td', { className: 'n', textContent: fmt(u.weddings) }), el('td', { className: 'n', textContent: fmt(u.photos) }),
       el('td', { className: 'n', textContent: u.admin ? 'unlimited' : fmt(u.balance) }), el('td', { className: 'n', textContent: fmt(u.used) }),
       el('td', { className: 'n', textContent: fmt(u.bought) }), el('td', { className: 'n' }, acts));
+    row.onclick = (e) => { if (!e.target.closest('button, a')) openDetail(u.id); };
+    return row;
   }));
 }
 
@@ -186,6 +226,8 @@ function drawBackup(b) {
     btn.disabled = true; btn.textContent = 'Backing up…';
     try { drawBackup(await api('/api/admin/backups/run', { method: 'POST' })); } catch (err) { $('error').textContent = err.message; btn.disabled = false; btn.textContent = 'Back up now'; }
   };
+  $('backup-list').textContent = n ? 'Copies kept: ' + b.copies.map((c) => `${c.day} (${c.where})`).join(' · ') +
+    '. To restore one, see the handover notes (python -m server.restore --day).' : 'No copies yet.';
   $('backup').replaceChildren(el('b', { textContent: 'Database backups' }), el('span', { className: 'pill ' + pill[0], textContent: pill[1] }),
     el('span', { className: 'sub', textContent: parts.join(' · ') }), btn);
 }
@@ -217,10 +259,14 @@ function drawSetup(st) {
 async function loadActivity() {
   try {
     const { activity } = await api('/api/admin/activity');
-    $('activity').replaceChildren(...(activity.length ? activity.map((a) => el('tr', {},
-      el('td', { textContent: when(a.at) }), el('td', { textContent: a.action }), el('td', { textContent: a.target || '' }),
-      el('td', { className: 'sub', textContent: a.detail || '' }), el('td', { className: 'sub', textContent: a.ip || '' })))
-      : [el('tr', {}, el('td', { colSpan: 5, textContent: 'Nothing yet.' }))]));
+    $('activity').replaceChildren(...(activity.length ? activity.map((a) => {
+      const who = A.users.find((u) => u.id === a.target || u.email === a.target);
+      const row = el('tr', {},
+        el('td', { textContent: when(a.at) }), el('td', { textContent: a.action }), el('td', { textContent: who ? who.email : (a.target || '') }),
+        el('td', { className: 'sub', textContent: a.detail || '' }), el('td', { className: 'sub', textContent: a.ip || '' }));
+      if (who) { row.className = 'go'; row.title = 'Open this photographer'; row.onclick = () => openDetail(who.id); }
+      return row;
+    }) : [el('tr', {}, el('td', { colSpan: 5, textContent: 'Nothing yet.' }))]));
   } catch (err) { /* shown by the gate or the error line */ }
 }
 
@@ -231,7 +277,7 @@ async function loadPurchases() {
     const real = purchases.filter((o) => !o.test);
     const sum = real.reduce((n, o) => n + o.taxable, 0);
     $('buy-mode').textContent = `· ${real.length} paid · ${inr(sum)} before GST` + (purchases.length > real.length ? ` · ${purchases.length - real.length} test` : '') + (test ? ' · server on TEST keys' : '');
-    $('purchases').replaceChildren(...(purchases.length ? purchases.map((o) => el('tr', {},
+    $('purchases').replaceChildren(...(purchases.length ? purchases.map((o) => el('tr', { className: 'go', title: 'Open the invoice', onclick: (e) => { if (!e.target.closest('a')) window.open(`/invoice/${o.id}`, '_blank'); } },
       el('td', { textContent: when(o.paid) }), el('td', { textContent: o.email || '' }),
       el('td', { textContent: (o.test ? 'TEST · ' : '') + (o.kind === 'credits' ? `${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo`) }),
       el('td', { className: 'n', textContent: inr(o.taxable) }), el('td', { className: 'n', textContent: inr(o.cgst + o.sgst + o.igst) }),
@@ -242,14 +288,14 @@ async function loadPurchases() {
 }
 
 async function load() {
-  loadActivity();
   loadPurchases();
   api('/api/admin/backups').then(drawBackup).catch(() => {});
   try { A.users = (await api('/api/admin/users')).users; tiles(); draw(); } catch (err) { $('error').textContent = err.message; }
+  loadActivity();
 }
 
-async function viewAs(id) {
-  try { await api(`/api/admin/view-as/${id}`, { method: 'POST' }); location.href = '/'; } catch (err) { $('error').textContent = err.message; }
+async function viewAs(id, wedding) {
+  try { await api(`/api/admin/view-as/${id}`, { method: 'POST' }); location.href = wedding ? `/?wedding=${wedding}` : '/'; } catch (err) { $('error').textContent = err.message; }
 }
 
 async function openDetail(id) {
@@ -270,7 +316,8 @@ async function openDetail(id) {
   $('lim-photos').value = d.limits.photos; $('lim-photos').placeholder = d.limits.default_photos;
   $('lim-gb').value = d.limits.gb; $('lim-gb').placeholder = d.limits.default_gb;
   const size = (x) => (x === 0 ? 'full size' : `${x} px`);
-  $('detail-weddings').replaceChildren(...(d.weddings.length ? d.weddings.flatMap((w) => [el('tr', {},
+  $('detail-weddings').replaceChildren(...(d.weddings.length ? d.weddings.flatMap((w) => [el('tr', { className: 'go', title: 'Open this wedding (View as, read-only)',
+    onclick: (e) => { if (!e.target.closest('a') && !d.user.admin) viewAs(id, w.id); else if (!e.target.closest('a')) location.href = `/?wedding=${w.id}`; } },
     el('td', { textContent: `${w.name} · ${day(w.created)}` }), el('td', { className: 'n', textContent: fmt(w.photos) }),
     el('td', { className: 'n', textContent: fmt(w.exports.length) }),
     el('td', { className: 'n' }, w.photos ? el('a', { className: 'dl', href: `/api/admin/weddings/${w.id}/originals.zip`, textContent: 'Uploaded photos (zip)' }) : '')),
@@ -307,6 +354,9 @@ $('limits').onsubmit = async (e) => {
   } catch (err) { $('detail-error').textContent = err.message; }
 };
 $('detail-close').onclick = () => $('detail').close();
+$('backup').addEventListener('click', (e) => { if (!e.target.closest('button')) $('backup-list').hidden = !$('backup-list').hidden; });
+$('setup').onclick = () => { location.href = '/?account=1'; };
+$('setup').title = 'Open your account window in the app';
 $('q').oninput = draw;
 $('only-unconfirmed').onchange = draw;
 async function start() {
