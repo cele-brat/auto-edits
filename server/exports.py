@@ -163,7 +163,7 @@ class Exports:
             iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
             out.append({"export": e["id"], "wedding": e["wedding_id"], "photo": r["photo_id"], "name": i["name"],
                         "folder": i["folder"], "size": e["size"], "quality": e["quality"], "watermark": e["watermark"],
-                        "look": effective_look(p["settings"], p["folder_settings"]), "iso": iso})
+                        "look": effective_look(p["settings"], p["folder_settings"], p.get("crop")), "iso": iso})
         return out
 
     def key(self, item: dict) -> str:

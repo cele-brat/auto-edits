@@ -63,6 +63,8 @@ class Store:
                 db.execute("ALTER TABLE photos ADD COLUMN pick TEXT NOT NULL DEFAULT ''")
             if "applied" not in columns:             # stamp of the edit last applied to this photo in Lightroom
                 db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
+            if "crop" not in columns:                # the photo's own crop (JSON), kept apart from its look
+                db.execute("ALTER TABLE photos ADD COLUMN crop TEXT NOT NULL DEFAULT ''")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
@@ -289,7 +291,7 @@ class Store:
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
-        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.cull, p.pick, "
+        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.cull, p.pick, p.crop, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -299,7 +301,8 @@ class Store:
         with self._db() as db:
             rows = db.execute(q + " ORDER BY f.name, p.taken, p.file_name", args).fetchall()
         return [{**dict(r), "meta": json.loads(r["meta"]), "cull": json.loads(r["cull"]) if r["cull"] else None,
-                 "settings": json.loads(r["settings"]) if r["settings"] else None} for r in rows]
+                 "settings": json.loads(r["settings"]) if r["settings"] else None,
+                 "crop": json.loads(r["crop"]) if r["crop"] else None} for r in rows]
 
     def photo(self, wedding_id: str, photo_id: str) -> dict | None:
         with self._db() as db:
@@ -309,6 +312,7 @@ class Store:
             return None
         return {**dict(r), "meta": json.loads(r["meta"]),
                 "settings": json.loads(r["settings"]) if r["settings"] else None,
+                "crop": json.loads(r["crop"]) if r["crop"] else None,
                 "folder_settings": json.loads(r["folder_settings"] or "{}")}
 
     # ---- looks ----------------------------------------------------------
@@ -323,6 +327,12 @@ class Store:
         with self._db() as db:
             return bool(db.execute("UPDATE photos SET settings=? WHERE wedding_id=? AND id=?",
                                    (value, wedding_id, photo_id)).rowcount)
+
+    def set_crop(self, wedding_id: str, photo_id: str, crop: dict | None) -> bool:
+        """A photo's own crop, or None for the whole picture. Only a setting: the photo is never changed."""
+        with self._db() as db:
+            return bool(db.execute("UPDATE photos SET crop=? WHERE wedding_id=? AND id=?",
+                                   (json.dumps(crop) if crop else "", wedding_id, photo_id)).rowcount)
 
     def set_pick(self, wedding_id: str, photo_id: str, pick: str) -> bool:
         """The photographer's own rating: keep, maybe, reject, or '' to go back to the automatic one."""

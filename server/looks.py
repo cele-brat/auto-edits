@@ -33,6 +33,7 @@ import cv2
 import numpy as np
 
 from engine import render as _r
+from engine import crop as _crop
 from engine.auto import TOGGLES, auto_correct, combine
 from engine.presets import effective_settings, local_corrections
 
@@ -65,7 +66,7 @@ MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "s
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
             "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {},
-            "preset_masks": True, "adj": {}}
+            "preset_masks": True, "adj": {}, "crop": None}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -106,6 +107,7 @@ def clean_look(raw, preset_ids=None) -> dict:
         kept = {k: v for k, v in kept.items() if v}
         if kept:
             look["masks"][kind] = kept
+    look["crop"] = _crop.clean(raw.get("crop"))          # per photo; never changes the photo itself
     if look["mode"] == "auto":
         look["preset"], look["toggles"] = None, list(TOGGLES)
     elif look["mode"] == "preset":
@@ -113,9 +115,12 @@ def clean_look(raw, preset_ids=None) -> dict:
     return look
 
 
-def effective_look(photo_settings, folder_settings) -> dict:
-    """The look a photo is shown with: its own if it has one, otherwise its folder's."""
-    return clean_look(photo_settings if photo_settings else folder_settings)
+def effective_look(photo_settings, folder_settings, crop=None) -> dict:
+    """The look a photo is shown with: its own if it has one, otherwise its folder's, with the
+    photo's own crop (kept apart from the look, so cropping one photo does not detach it from its folder)."""
+    look = clean_look(photo_settings if photo_settings else folder_settings)
+    look["crop"] = _crop.clean(crop)
+    return look
 
 
 def straighten(img: np.ndarray, angle: float) -> np.ndarray:
@@ -450,10 +455,25 @@ class Renderer:
         corrections = local_corrections(preset) if preset and look["preset_masks"] else []
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
                 "masks": look["masks"], "corrections": corrections, "angle": float(settings.get("CropAngle") or 0.0),
-                "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None}
+                "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None,
+                "crop": look["crop"]}
 
-    def base(self, path: Path, size: int) -> bytes:
-        return self._jpeg(self._load(path, size))
+    def auto_crop(self, path: Path, look: dict, ratio: str = "original") -> tuple[dict | None, str]:
+        """AI crop for one photo, measured on the straightened picture the crop applies to."""
+        d = self.develop(path, look)
+        img = straighten(self._load(path, 1280), d["angle"])
+        return _crop.auto((np.clip(img, 0, 1) * 255).astype(np.uint8), ratio)
+
+    def base(self, path: Path, size: int, crop: dict | None = None, angle: float = 0.0) -> bytes:
+        """The photo untouched, but with the same crop (and straighten) as the edit, so before and after line up."""
+        if not crop:
+            return self._jpeg(self._load(path, size))
+        img = straighten(self._load(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1)), angle)
+        out = _crop.apply(img, crop)
+        if max(out.shape[:2]) > size:
+            k = size / max(out.shape[:2])
+            out = cv2.resize(out, (max(1, round(out.shape[1] * k)), max(1, round(out.shape[0] * k))), interpolation=cv2.INTER_AREA)
+        return self._jpeg(out)
 
     def export(self, path: Path, look: dict, max_side: int = 0, iso=None, quality: int = 90, watermark: str = "") -> bytes:
         """The finished picture for delivery: the look applied at max_side (0 = as large as the
@@ -463,8 +483,13 @@ class Renderer:
         if bgr is None:
             raise FileNotFoundError(path)
         h, w = bgr.shape[:2]
-        if max_side and max(h, w) > max_side:
-            k = max_side / max(h, w)
+        crop = _crop.clean(look.get("crop")) if isinstance(look, dict) else None
+        if max_side and crop:
+            max_side_read = int(max_side / _crop.zoom(crop)) + 1
+        else:
+            max_side_read = max_side
+        if max_side_read and max(h, w) > max_side_read:
+            k = max_side_read / max(h, w)
             bgr = cv2.resize(bgr, (max(1, round(w * k)), max(1, round(h * k))), interpolation=cv2.INTER_AREA)
         img8 = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         del bgr
@@ -477,6 +502,11 @@ class Renderer:
             out = local_adjust8(out, self.masks(path), d["masks"], d["corrections"])
         if abs(d["angle"]) >= 0.05:
             out = straighten(out, d["angle"])
+        if d["crop"]:
+            out = np.ascontiguousarray(_crop.apply(out, d["crop"]))
+            if max_side and max(out.shape[:2]) > max_side:       # the crop never comes out larger than asked
+                k = max_side / max(out.shape[:2])
+                out = cv2.resize(out, (max(1, round(out.shape[1] * k)), max(1, round(out.shape[0] * k))), interpolation=cv2.INTER_AREA)
         out = watermark8(out, watermark)
         ok, buf = cv2.imencode(".jpg", cv2.cvtColor(out, cv2.COLOR_RGB2BGR),
                                [cv2.IMWRITE_JPEG_QUALITY, int(min(100, max(40, quality))), cv2.IMWRITE_JPEG_OPTIMIZE, 1])
@@ -484,10 +514,13 @@ class Renderer:
             raise RuntimeError("could not write the picture")
         return buf.tobytes()
 
-    def render(self, path: Path, look: dict, size: int, iso=None, show: str = "", mark: bool = False) -> bytes:
-        """The photo with the look applied. show names a mask to tint red on top."""
+    def render(self, path: Path, look: dict, size: int, iso=None, show: str = "", mark: bool = False,
+               uncropped: bool = False) -> bytes:
+        """The photo with the look applied. show names a mask to tint red on top.
+        uncropped: the whole picture (the crop tool draws its box on top)."""
         d = self.develop(path, look, iso)
-        img = self._load(path, size)
+        crop = None if uncropped else d["crop"]
+        img = self._load(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1) if crop else size)
         out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
         texture = d["settings"].get("Texture")
         if isinstance(texture, (int, float)) and texture:        # the engine's own texture is too weak to see
@@ -498,6 +531,11 @@ class Renderer:
             if show in masks:
                 out = show_mask(out, masks[show])
         out = straighten(out, d["angle"])
+        if crop:
+            out = _crop.apply(out, crop)
+            if max(out.shape[:2]) > size:
+                k = size / max(out.shape[:2])
+                out = cv2.resize(out, (max(1, round(out.shape[1] * k)), max(1, round(out.shape[0] * k))), interpolation=cv2.INTER_AREA)
         if mark:
             out = preview_mark(out)
         return self._jpeg(out)
@@ -534,6 +572,13 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
     settings.pop("PerspectiveUpright", None), settings.pop("UprightVersion", None)
     if look["masks"]:
         not_yet.append("your own masks")
+    crop = d["crop"]
+    if crop and abs(d["angle"]) < 0.05:                  # Lightroom's own crop: non-destructive there too
+        settings.update({"HasCrop": True, "CropLeft": crop["x"], "CropTop": crop["y"],
+                         "CropRight": round(crop["x"] + crop["w"], 5), "CropBottom": round(crop["y"] + crop["h"], 5),
+                         "CropAngle": 0})
+    elif crop:
+        not_yet.append("crop on a straightened photo")
     temp, tint = float(d["manual"].get("temp") or 0), float(d["manual"].get("tint") or 0)
     wb = None
     if temp or tint:

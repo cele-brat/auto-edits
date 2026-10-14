@@ -692,7 +692,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             rows = [{"id": r["id"], "name": r["file_name"], "folder": r["folder_id"], "look": r["settings"],
                      "v": int(r["received"]), "w": r["meta"].get("width"), "h": r["meta"].get("height"),
                      "iso": r["meta"].get("iso"), "taken": r["taken"], "camera": r["meta"].get("camera"),
-                     "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None} for r in rows]
+                     "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None,
+                     "crop": r["crop"]} for r in rows]
         return {"photos": rows}
 
     def photo_or_404(wedding_id: str, photo_id: str, user: dict) -> dict:
@@ -920,6 +921,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def set_folder_look(wedding_id: str, folder_id: int, look: dict = Body(...), user: dict = Depends(signed_in)):
         wedding_or_404(wedding_id, user)
         look = clean_look(look, allowed_presets(user))
+        look["crop"] = None                      # crops belong to photos, not to looks
         if not store.set_folder_settings(wedding_id, folder_id, look):
             raise HTTPException(404, "no such folder")
         return {"look": look}
@@ -930,6 +932,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         """Give one photo its own look, or send null to put it back on its folder's look."""
         wedding_or_404(wedding_id, user)
         look = clean_look(look, allowed_presets(user)) if look else None
+        if look:
+            look["crop"] = None
         if not store.set_photo_settings(wedding_id, photo_id, look):
             raise HTTPException(404, "no such photo")
         return {"look": look}
@@ -942,7 +946,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     @app.get("/api/weddings/{wedding_id}/photos/{photo_id}/image")
     def image(wedding_id: str, photo_id: str, size: int = 1600, look: str = "", base: bool = False, show: str = "",
-              user: dict = Depends(signed_in)):
+              uncropped: bool = False, user: dict = Depends(signed_in)):
         """The photo as the app shows it: untouched (base), with the look given,
         or, with neither, with the look saved for it. Edited views larger than the grid's
         carry a light preview mark until they are exported (not on the studio account)."""
@@ -954,11 +958,14 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         path = store.preview_path(wedding_id, photo_id)
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
         headers = {"Cache-Control": "private, max-age=86400"}
-        if base:
-            return Response(renderer.base(path, size), media_type="image/jpeg", headers=headers)
         chosen = read_look(look, user) if look else effective_look(p["settings"], p["folder_settings"])
+        chosen["crop"] = crop_of(p)
+        if base:
+            crop = None if uncropped else chosen["crop"]
+            angle = renderer.develop(path, chosen, iso)["angle"] if crop else 0.0
+            return Response(renderer.base(path, size, crop, angle), media_type="image/jpeg", headers=headers)
         if size > 360:
-            return Response(renderer.render(path, chosen, size, iso, show, mark=not user["admin"]),
+            return Response(renderer.render(path, chosen, size, iso, show, mark=not user["admin"], uncropped=uncropped),
                             media_type="image/jpeg", headers=headers)
         # small pictures for the grid are kept on disk, one per photo and look
         tag = hashlib.sha1(json.dumps([photo_id, p["received"], size, chosen], sort_keys=True).encode()).hexdigest()[:20]
@@ -975,10 +982,56 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         """What a look works out to for this photo, including the automatic values."""
         p = photo_or_404(wedding_id, photo_id, user)
         chosen = read_look(look, user) if look else effective_look(p["settings"], p["folder_settings"])
+        chosen["crop"] = crop_of(p)
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
         d = renderer.develop(store.preview_path(wedding_id, photo_id), chosen, iso)
         return {"look": chosen, "preset": d["preset"], "auto": d["auto"], "auto_wb": d["auto_wb"], "masks": d["masks"],
                 "preset_masks": d["corrections"]}
+
+    # ---- crop: a setting per photo, never a change to the photo itself -----------------
+    def crop_of(p: dict) -> dict | None:
+        from engine.crop import clean
+        return clean(p.get("crop"))
+
+    @app.put("/api/weddings/{wedding_id}/photos/{photo_id}/crop")
+    def set_crop(wedding_id: str, photo_id: str, crop: dict | None = Body(default=None), user: dict = Depends(signed_in)):
+        """Save one photo's crop, or send null to show the whole picture again."""
+        from engine.crop import clean
+        photo_or_404(wedding_id, photo_id, user)
+        kept = clean(crop)
+        store.set_crop(wedding_id, photo_id, kept)
+        return {"crop": kept}
+
+    @app.post("/api/weddings/{wedding_id}/photos/{photo_id}/auto-crop")
+    def auto_crop(wedding_id: str, photo_id: str, save: bool = False, keep_own: bool = False, ratio: str = "original",
+                  user: dict = Depends(signed_in)):
+        """AI crop: finds the people and frames them (the photo's own shape unless a ratio is given).
+        save=1 keeps it; keep_own=1 leaves a crop made by hand alone (for a whole folder)."""
+        from engine.crop import RATIOS
+        p = photo_or_404(wedding_id, photo_id, user)
+        if keep_own and p.get("crop") and not p["crop"].get("auto"):
+            return {"crop": crop_of(p), "why": "kept your own crop", "changed": False}
+        if ratio not in RATIOS or ratio == "free":
+            ratio = "original"
+        look = effective_look(p["settings"], p["folder_settings"])
+        try:
+            crop, why = renderer.auto_crop(store.preview_path(wedding_id, photo_id), look, ratio)
+        except FileNotFoundError:
+            raise HTTPException(404, "no such photo")
+        if save:
+            store.set_crop(wedding_id, photo_id, crop)
+        return {"crop": crop, "why": why, "changed": True}
+
+    @app.delete("/api/weddings/{wedding_id}/folders/{folder_id}/crops")
+    def clear_crops(wedding_id: str, folder_id: int, user: dict = Depends(signed_in)):
+        """Every photo in the folder back to the whole picture."""
+        wedding_or_404(wedding_id, user)
+        n = 0
+        for r in store.photos(wedding_id, folder_id):
+            if r["crop"]:
+                store.set_crop(wedding_id, r["id"], None)
+                n += 1
+        return {"cleared": n}
 
     # ---- culling: 1 credit per 10 photos, every time it runs ----------------------
     @app.post("/api/weddings/{wedding_id}/cull")
@@ -1092,7 +1145,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         left = None if user["admin"] else accounts.balance(user["id"]) - promised
         out, short = [], 0
         for r in page:
-            look = effective_look(r["settings"], folders.get(r["folder_id"]))
+            look = effective_look(r["settings"], folders.get(r["folder_id"]), r["crop"])
             iso = r["meta"].get("iso") if isinstance(r["meta"].get("iso"), (int, float)) else None
             edit = lightroom_edit(renderer, store.preview_path(wedding_id, r["id"]), look, iso)
             item = {"uuid": r["lr_uuid"], "name": r["file_name"], "folder": r["folder"], "edit": edit}

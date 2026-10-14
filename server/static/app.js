@@ -102,10 +102,12 @@ function hash(text) {
   return (h >>> 0).toString(36);
 }
 const base = (p) => `/api/weddings/${S.wedding.id}/photos/${p.id}`;
-const thumbUrl = (p) => `${base(p)}/image?size=360&k=${hash(JSON.stringify(lookOf(p)))}${p.v}`;
+const thumbUrl = (p) => `${base(p)}/image?size=360&k=${hash(JSON.stringify([lookOf(p), p.crop || 0]))}${p.v}`;
 const afterUrl = (p, size) => `${base(p)}/image?size=${size}&v=${p.v}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}` +
+  (S.cropping ? '&uncropped=1' : `&c=${hash(JSON.stringify(p.crop || 0))}`) +
   (S.showMask && S.openMask ? `&show=${S.openMask}` : '');
-const beforeUrl = (p) => `${base(p)}/image?size=1600&base=1&v=${p.v}`;
+const beforeUrl = (p) => `${base(p)}/image?size=1600&base=1&v=${p.v}` +
+  (p.crop ? `&c=${hash(JSON.stringify(p.crop))}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}` : '');
 
 // ---- saving ---------------------------------------------------------------
 const pending = new Map();
@@ -293,6 +295,7 @@ function drawCaption() {
   if (p.camera) bits.push(el('span', { textContent: p.camera }));
   if (p.iso) bits.push(el('span', { textContent: `ISO ${p.iso}` }));
   if (p.edited) bits.push(el('span', { textContent: 'Came from Lightroom with edits already on it' }));
+  if (p.crop) bits.push(el('span', { textContent: p.crop.auto ? 'AI cropped' : 'Cropped' }));
   const r = ratingOf(p);
   if (r) {
     const why = p.pick ? 'set by you' : (p.cull.why.join(', ') || 'nothing wrong found');
@@ -309,22 +312,24 @@ function placeDivider() {
   const w = Math.min(W, H * a), h = w / a, left = (W - w) / 2, top = (H - h) / 2;
   const x = left + S.dividerAt * w;
   const before = $('before');
-  const whole = S.holdBefore;
-  before.style.visibility = S.split || whole ? 'visible' : 'hidden';
+  const whole = S.holdBefore && !S.cropping;
+  const split = S.split && !S.cropping;
+  before.style.visibility = split || whole ? 'visible' : 'hidden';
   before.style.clipPath = whole ? 'none' : `inset(0 ${W - x}px 0 0)`;
   const d = $('divider');
-  d.hidden = !S.split || whole;
+  d.hidden = !split || whole;
   d.style.left = `${x}px`;
   d.style.top = `${top}px`;
   d.style.bottom = `${H - top - h}px`;
   d.setAttribute('aria-valuenow', String(Math.round(S.dividerAt * 100)));
   const tb = $('tag-before'), ta = $('tag-after');
-  tb.hidden = !(S.split || whole);
-  ta.hidden = !S.split || whole;
+  tb.hidden = !(split || whole);
+  ta.hidden = !split || whole;
   tb.style.left = `${left + 8}px`;
   tb.style.top = ta.style.top = `${top + 8}px`;
   ta.style.right = `${W - left - w + 8}px`;
   $('split').setAttribute('aria-pressed', String(S.split));
+  if (window.placeCrop) placeCrop({ left, top, w, h });
 }
 
 // ---- drawing: the look panel --------------------------------------------------
@@ -658,6 +663,7 @@ function openFolder(id) {
 }
 
 function openPhoto(id) {
+  if (S.cropping && window.endCrop) endCrop(false);
   S.photoId = id;
   S.view = 'loupe';
   S.scope = photo() && photo().look ? 'photo' : 'folder';
@@ -677,6 +683,7 @@ function step(by) {
 
 function setView(view) {
   if (view === 'loupe' && !photo()) return;
+  if (S.cropping && window.endCrop) endCrop(false);
   if (view === 'loupe') return openPhoto(S.photoId);
   S.view = 'grid';
   S.scope = 'folder';
@@ -846,6 +853,7 @@ document.addEventListener('keydown', (e) => {
   const typing = t.matches('input[type=search], input[type=password], select') || t.closest('#looks');
   if (e.key === '\\' && !typing) { if (!S.holdBefore) { S.holdBefore = true; placeDivider(); } return; }
   if (typing || t.matches('input[type=range]') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (window.cropKey && cropKey(e)) { e.preventDefault(); return; }
   if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
   else if (!typing && typeof Cull !== 'undefined' && Cull.key(e.key)) e.preventDefault();

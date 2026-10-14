@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=19">
+<link rel="stylesheet" href="/static/app.css?v=20">
 </head>
 <body>
 <div id="app" hidden>
@@ -30,6 +30,7 @@
       <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
       <button id="view-loupe" type="button" aria-pressed="false" title="One photo (Enter)">One photo</button>
     </div>
+    <button id="crop-tool" type="button" aria-pressed="false" title="Crop this photo (R). Only a setting: your photo is never changed.">Crop</button>
     <button id="split" type="button" aria-pressed="true" title="Drag the line on the photo. Hold \ to see the whole photo before.">Before and after</button>
     <button id="credits" type="button" title="Your account and credits">Credits</button>
     <details id="more">
@@ -59,6 +60,17 @@
         <span id="tag-before" class="tag">Before</span>
         <span id="tag-after" class="tag">After</span>
         <span id="busy" hidden>Rendering</span>
+        <div id="crop-box" hidden><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
+          <b data-h="nw"></b><b data-h="n"></b><b data-h="ne"></b><b data-h="e"></b><b data-h="se"></b><b data-h="s"></b><b data-h="sw"></b><b data-h="w"></b></div>
+      </div>
+      <div id="crop-bar" hidden>
+        <label>Shape <select id="crop-ratio"></select></label>
+        <button id="crop-ai" type="button" title="Finds the people and frames them: eyes on the upper third, nobody's face cut">AI crop</button>
+        <button id="crop-whole" type="button" class="quiet">Whole photo</button>
+        <span id="crop-note"></span>
+        <span class="grow"></span>
+        <button id="crop-cancel" type="button" class="quiet">Cancel (Esc)</button>
+        <button id="crop-done" type="button" class="primary">Done (Enter)</button>
       </div>
       <div id="caption"></div>
       <div id="strip"></div>
@@ -114,6 +126,16 @@
     </section>
 
     <section id="adjust-box" data-pane="adjust">
+      <div id="crop-panel">
+        <h3>Crop</h3>
+        <p class="hint">Crops are a setting on each photo: the photo itself is never changed, and Lightroom gets an ordinary crop you can still move.</p>
+        <div class="tools">
+          <button id="crop-open" type="button">Crop this photo (R)</button>
+          <button id="crop-folder" type="button">AI crop every photo in this folder</button>
+          <button id="crop-clear" type="button" class="quiet">Remove crops in this folder</button>
+        </div>
+        <p id="crop-progress" class="hint"></p>
+      </div>
       <details class="help"><summary>How the sliders work</summary><p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back. Click a number to type it.</p></details>
       <div id="panels"></div>
       <p id="auto-values"></p>
@@ -304,11 +326,12 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=17"></script>
+<script src="/static/app.js?v=18"></script>
 <script src="/static/addfolder.js?v=15"></script>
 <script src="/static/cull.js?v=15"></script>
 <script src="/static/export.js?v=15"></script>
 <script src="/static/account.js?v=18"></script>
 <script src="/static/buy.js?v=3"></script>
+<script src="/static/crop.js?v=1"></script>
 </body>
 </html>
