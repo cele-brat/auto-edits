@@ -88,6 +88,17 @@ function quoteBuy() {
   }, 250);
 }
 
+// Razorpay's window cannot show above our open dialogs (they sit in the browser's top layer),
+// so they close while it is open and come back if the payment is cancelled or fails.
+function stepAside() {
+  Buy.aside = ['account', 'buy-dialog'].filter((id) => $(id).open);
+  for (const id of Buy.aside) $(id).close();
+}
+function comeBack() {
+  for (const id of Buy.aside || []) if (!$(id).open) $(id).showModal();
+  Buy.aside = [];
+}
+
 function checkoutScript() {
   return new Promise((resolve, reject) => {
     if (window.Razorpay) return resolve();
@@ -115,15 +126,17 @@ $('buy-form').onsubmit = async (e) => {
       handler: async (resp) => {
         try {
           const done = await api('/api/buy/verify', { method: 'POST', body: resp });
+          Buy.aside = [];
           $('buy-dialog').close();
           Buy.prices = null;
           notice(`Payment received, thank you. Invoice ${done.invoice} is in your account window.`);
           await openAccount();
-        } catch (err) { $('buy-error').textContent = err.message; }
+        } catch (err) { comeBack(); $('buy-error').textContent = err.message; }
       },
-      modal: { ondismiss: () => { $('buy-go').disabled = false; $('buy-go').textContent = label; } },
+      modal: { ondismiss: () => { comeBack(); $('buy-go').disabled = false; $('buy-go').textContent = label; } },
     });
-    rzp.on('payment.failed', (r) => { $('buy-error').textContent = (r.error && r.error.description) || 'The payment did not go through.'; $('buy-go').disabled = false; });
+    rzp.on('payment.failed', (r) => { comeBack(); $('buy-error').textContent = (r.error && r.error.description) || 'The payment did not go through.'; $('buy-go').disabled = false; });
+    stepAside();
     rzp.open();
     $('buy-go').textContent = label;
   } catch (err) { $('buy-error').textContent = err.message; $('buy-go').disabled = false; $('buy-go').textContent = label; }
