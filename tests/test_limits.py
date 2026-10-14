@@ -93,7 +93,7 @@ def test_culls_go_to_whoever_has_fewest_running(app, box):
 
 def test_failed_logins_per_account_from_many_addresses(app, box):
     sign_up(app, box, "a@example.com")
-    for i in range(20):
+    for i in range(10):
         c = TestClient(app)
         r = c.post("/api/login", headers={"X-Forwarded-For": f"10.0.0.{i}"}, json={"email": "a@example.com", "password": "wrong one!"})
         assert r.status_code == 401

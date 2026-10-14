@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=16">
+<link rel="stylesheet" href="/static/app.css?v=18">
 </head>
 <body>
 <div id="app" hidden>
@@ -217,7 +217,12 @@
     <div class="balance"><span id="account-balance">–</span> <small>credits</small></div>
     <p class="dim" id="account-storage"></p>
     <p class="dim">Export or send to Lightroom: 1 credit a photo, every time. Culling: 1 credit for every 10 photos, every time it runs.</p>
-    <div class="row"><button type="button" id="buy" class="primary" disabled title="Payments are being added">Buy credits (coming soon)</button></div>
+    <div class="row"><button type="button" id="buy" class="primary" disabled title="Payments are being added">Buy credits (coming soon)</button>
+      <button type="button" id="buy-storage" disabled>Add storage</button></div>
+  </section>
+  <section id="purchases-box" hidden>
+    <h3 class="sub">Purchases</h3>
+    <table id="purchases"><thead><tr><th>Date</th><th>What</th><th class="n">Paid</th><th class="n">Invoice</th></tr></thead><tbody></tbody></table>
   </section>
   <h3 class="sub">Lightroom plug-in key</h3>
   <p class="dim">Paste this key into Lightroom: Library &gt; Plug-in Extras &gt; “Auto Edits: server settings”. Making a new key stops the old one.</p>
@@ -256,6 +261,42 @@
   <p class="dim policies"><a href="/terms" target="_blank">Terms</a> · <a href="/privacy" target="_blank">Privacy</a> · <a href="/refunds" target="_blank">Refunds</a> · <a href="/contact" target="_blank">Contact us</a></p>
 </dialog>
 
+<dialog id="buy-dialog" aria-labelledby="buy-title">
+  <button class="x" type="button" id="buy-close" aria-label="Close">×</button>
+  <h2 class="title" id="buy-title">Buy credits</h2>
+  <p class="dim" id="buy-test" hidden>Test mode: no real money is taken.</p>
+  <div class="buy-tabs" role="tablist">
+    <button type="button" role="tab" data-kind="credits" aria-selected="true">Credits</button>
+    <button type="button" role="tab" data-kind="storage" aria-selected="false">Extra storage</button>
+  </div>
+  <form id="buy-form">
+    <div data-for="credits">
+      <label for="buy-credits">How many credits</label>
+      <div class="row"><button type="button" class="step" data-step="-100" aria-label="100 fewer">−</button>
+        <input id="buy-credits" type="number" min="500" step="100" value="500" inputmode="numeric">
+        <button type="button" class="step" data-step="100" aria-label="100 more">+</button></div>
+      <p class="dim" id="buy-credits-note"></p>
+    </div>
+    <div data-for="storage" hidden>
+      <label for="buy-blocks">Extra space</label>
+      <select id="buy-blocks"></select>
+      <label for="buy-months">For</label>
+      <select id="buy-months"></select>
+      <p class="dim" id="buy-grants"></p>
+    </div>
+    <label for="buy-state">Your state (for GST)</label>
+    <select id="buy-state" required></select>
+    <details id="buy-business"><summary>Invoice for a business (GSTIN)</summary>
+      <label for="buy-gstin">GSTIN</label><input id="buy-gstin" maxlength="15" autocapitalize="characters" spellcheck="false" placeholder="08ABCDE1234F1Z5">
+      <label for="buy-name">Business name on the invoice</label><input id="buy-name" maxlength="120">
+    </details>
+    <table class="sum"><tbody id="buy-sum"></tbody></table>
+    <p id="buy-error" role="alert"></p>
+    <div class="row"><button type="submit" class="primary" id="buy-go">Pay</button></div>
+    <p class="dim">Paid securely through Razorpay (UPI, cards, net banking). A GST invoice is made straight away. <a href="/refunds" target="_blank">Refund policy</a></p>
+  </form>
+</dialog>
+
 <dialog id="confirm">
   <p id="confirm-text"></p>
   <div class="row end">
@@ -267,6 +308,7 @@
 <script src="/static/addfolder.js?v=15"></script>
 <script src="/static/cull.js?v=15"></script>
 <script src="/static/export.js?v=15"></script>
-<script src="/static/account.js?v=17"></script>
+<script src="/static/account.js?v=18"></script>
+<script src="/static/buy.js?v=1"></script>
 </body>
 </html>

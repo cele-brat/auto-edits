@@ -83,6 +83,7 @@ async function openAccount() {
   $('password-new').placeholder = Acc.user.admin ? 'New password (12 or more characters)' : 'New password (8 or more characters)';
   $('code-needed').hidden = true;
   drawTwoStep();
+  if (typeof drawBuyButtons === 'function') { drawBuyButtons(); drawPurchases(); }
   try {
     const { history } = await api('/api/credits');
     const rows = history.map((h) => {

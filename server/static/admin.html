@@ -81,6 +81,13 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
     </table>
   </div>
   <p id="error" role="alert" style="color:var(--danger)"></p>
+  <h2 class="section">Purchases <span class="sub" id="buy-mode" style="font-weight:400"></span></h2>
+  <div class="wrap">
+    <table>
+      <thead><tr><th>Paid</th><th>Photographer</th><th>What</th><th class="n">Taxable</th><th class="n">GST</th><th class="n">Total</th><th>Invoice</th></tr></thead>
+      <tbody id="purchases"><tr><td colspan="7">Loading…</td></tr></tbody>
+    </table>
+  </div>
   <h2 class="section">Admin activity <span class="sub" style="font-weight:400">· every View as, download, credit change and sign-in of the studio account</span></h2>
   <div class="wrap">
     <table>
@@ -217,8 +224,25 @@ async function loadActivity() {
   } catch (err) { /* shown by the gate or the error line */ }
 }
 
+const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+async function loadPurchases() {
+  try {
+    const { purchases, test } = await api('/api/admin/purchases');
+    const sum = purchases.reduce((n, o) => n + o.taxable, 0);
+    $('buy-mode').textContent = `· ${purchases.length} paid · ${inr(sum)} before GST` + (test ? ' · TEST MODE' : '');
+    $('purchases').replaceChildren(...(purchases.length ? purchases.map((o) => el('tr', {},
+      el('td', { textContent: when(o.paid) }), el('td', { textContent: o.email || '' }),
+      el('td', { textContent: o.kind === 'credits' ? `${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo` }),
+      el('td', { className: 'n', textContent: inr(o.taxable) }), el('td', { className: 'n', textContent: inr(o.cgst + o.sgst + o.igst) }),
+      el('td', { className: 'n', textContent: inr(o.total) }),
+      el('td', {}, el('a', { className: 'dl', href: `/invoice/${o.id}`, target: '_blank', textContent: o.invoice_no }))))
+      : [el('tr', {}, el('td', { colSpan: 7, textContent: 'No purchases yet.' }))]));
+  } catch (err) { /* shown by the gate or the error line */ }
+}
+
 async function load() {
   loadActivity();
+  loadPurchases();
   api('/api/admin/backups').then(drawBackup).catch(() => {});
   try { A.users = (await api('/api/admin/users')).users; tiles(); draw(); } catch (err) { $('error').textContent = err.message; }
 }

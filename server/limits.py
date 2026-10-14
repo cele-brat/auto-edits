@@ -20,17 +20,30 @@ class LimitReached(Exception):
     pass
 
 
-def for_user(user: dict) -> dict:
-    """This photographer's limits (None = no limit)."""
+def extra_gb(store, user_id: str) -> int:
+    """Extra storage bought and still running (payments.py: storage_grants)."""
+    import time
+    with store._db() as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='storage_grants'").fetchone():
+            return 0
+        now = time.time()
+        return int(db.execute("SELECT COALESCE(SUM(gb),0) FROM storage_grants WHERE user_id=? AND start<=? AND until>?",
+                              (user_id, now, now)).fetchone()[0])
+
+
+def for_user(user: dict, store=None) -> dict:
+    """This photographer's limits (None = no limit): the base allowance plus any extra storage bought."""
     if user.get("admin"):
-        return {"photos_per_wedding": None, "storage_gb": None}
+        return {"photos_per_wedding": None, "storage_gb": None, "base_gb": None, "extra_gb": 0}
+    base = int(user.get("limit_gb") or 0) or STORAGE_GB
+    extra = extra_gb(store, user["id"]) if store is not None else 0
     return {"photos_per_wedding": int(user.get("limit_photos") or 0) or PHOTOS_PER_WEDDING,
-            "storage_gb": int(user.get("limit_gb") or 0) or STORAGE_GB}
+            "storage_gb": base + extra, "base_gb": base, "extra_gb": extra}
 
 
 def check_upload(store, user: dict, wedding_id: str, lr_uuid: str, size: int) -> None:
     """Raise LimitReached with a message the photographer can act on."""
-    lim = for_user(user)
+    lim = for_user(user, store)
     if lim["photos_per_wedding"] is None:
         return
     again = store.has_photo(wedding_id, lr_uuid)
@@ -38,11 +51,10 @@ def check_upload(store, user: dict, wedding_id: str, lr_uuid: str, size: int) ->
         raise LimitReached(f"This wedding has reached {lim['photos_per_wedding']:,} photos, the most one wedding can hold. "
                            "Send the rest as a second wedding (for example \"… day 2\").")
     if store.used_bytes(user["id"]) + size > lim["storage_gb"] * GB:
-        raise LimitReached(f"Your storage is full ({lim['storage_gb']} GB of uploads and exports). Remove a finished wedding "
-                           "or old exports to make room, or contact us to raise the limit.")
+        raise LimitReached(f"Your storage is full ({lim['storage_gb']} GB of uploads and exports). Add 50 GB more for "
+                           "Rs 150 a month in the app (Account window), or remove a finished wedding or old exports.")
 
 
 def usage(store, user: dict) -> dict:
-    lim = for_user(user)
-    return {"used_bytes": store.used_bytes(user["id"]), "storage_gb": lim["storage_gb"],
-            "photos_per_wedding": lim["photos_per_wedding"]}
+    lim = for_user(user, store)
+    return {"used_bytes": store.used_bytes(user["id"]), **lim}

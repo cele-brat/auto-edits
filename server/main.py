@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import legal, limits, security
+from . import legal, limits, payments as pay, security
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
@@ -70,6 +70,22 @@ class Reset(BaseModel):
     password: str
 
 
+class Buy(BaseModel):
+    kind: str
+    credits: int = 0
+    blocks: int = 0
+    months: int = 0
+    state: str = ""
+    gstin: str = ""
+    name: str = ""
+
+
+class Paid(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
 class Code(BaseModel):
     code: str
     ticket: str = ""                           # from the password step of a two-step login
@@ -99,7 +115,7 @@ class Pick(BaseModel):
 
 
 def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, admin_email: str | None = None,
-               mailer=None) -> FastAPI:
+               mailer=None, razorpay=None) -> FastAPI:
     key = key if key is not None else os.environ.get("AUTOEDITS_KEY", "")
     if len(key) < 16:
         raise RuntimeError("set AUTOEDITS_KEY to a secret of at least 16 characters")
@@ -108,6 +124,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     admin_email = admin_email if admin_email is not None else os.environ.get("AUTOEDITS_ADMIN_EMAIL", "")
     accounts = Accounts(store, admin_email or "studio@auto-edits.local")
     backups = Backups(store)
+    payments = pay.Payments(store, accounts, razorpay)
     mailer = mailer or mail.Mailer()
     base_url = os.environ.get("AUTOEDITS_BASE_URL", "").rstrip("/")
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
@@ -262,7 +279,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             if user and user["totp_on"]:     # the key cannot skip the code: use email, password and code
                 user = None
         elif body.email and body.password:
-            if failed_logins(body.email, False) >= 20:          # one address tried from many places
+            if failed_logins(body.email, False) >= 10:          # one address tried from many places
                 raise HTTPException(429, "Too many tries for this account. Please wait an hour, or use \"Forgot password\".")
             user = accounts.log_in(body.email, body.password)
             if user is None:
@@ -385,7 +402,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.get("/api/me")
     def me(user: dict = Depends(signed_in)):
         return {"user": public(user), "credits": accounts.balance(user["id"]), "free_given": accounts.got_free(user["id"]),
-                "storage": limits.usage(store, user),
+                "storage": limits.usage(store, user), "payments_on": payments.rzp.on,
                 "prices": {"export": 1, "cull_photos_per_credit": 10}}
 
     @app.get("/api/credits")
@@ -427,6 +444,93 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             accounts.log(user["id"], "studio Lightroom key made", detail="the previous one stopped working", ip=client_ip(request))
             accounts.retire_studio_key_if_ready(client_ip(request))
         return {"key": new}
+
+    # ---- buying credits and storage (payments.py) -------------------------------------------
+    # The Ajmer address goes only on invoices, and lives in deploy/.env (AUTOEDITS_INVOICE_ADDRESS, lines split by " | "),
+    # not in this public code.
+    SELLER = {"name": legal.BUSINESS, "gstin": legal.GSTIN, "email": legal.SUPPORT_EMAIL, "site": legal.SITE,
+              "address": os.environ.get("AUTOEDITS_INVOICE_ADDRESS", "Ajmer, Rajasthan").replace(" | ", "\n")}
+
+    @app.get("/api/buy/prices")
+    def buy_prices(user: dict = Depends(signed_in)):
+        return {"on": payments.rzp.on, "test": payments.rzp.test_mode, "credit_paise": pay.credit_price(),
+                "launch_ends": "31 December 2026", "min_credits": pay.MIN_CREDITS, "credit_step": pay.CREDIT_STEP,
+                "block_gb": pay.BLOCK_GB, "block_paise_month": pay.BLOCK_PAISE_MONTH, "max_blocks": pay.MAX_BLOCKS,
+                "months": pay.MONTHS, "gst": pay.GST_RATE, "states": pay.STATES,
+                "grants": payments.grants(user["id"])}
+
+    @app.post("/api/buy/quote")
+    def buy_quote(body: Buy, user: dict = Depends(signed_in)):
+        try:
+            return pay.quote(body.kind, body.credits, body.blocks, body.months, body.state, body.gstin)
+        except pay.PaymentError as e:
+            raise HTTPException(422, str(e))
+
+    @app.post("/api/buy")
+    def buy(body: Buy, request: Request, user: dict = Depends(confirmed)):
+        if user.get("viewing_as"):
+            raise HTTPException(403, "Not while viewing someone else's account.")
+        if too_many(f"buy-{user['id']}", request, 20, 3600):
+            raise HTTPException(429, "Too many tries. Please wait a while.")
+        try:
+            q = pay.quote(body.kind, body.credits, body.blocks, body.months, body.state, body.gstin)
+            return payments.start(user, q, body.name)
+        except pay.PaymentError as e:
+            raise HTTPException(422 if payments.rzp.on else 503, str(e))
+
+    @app.post("/api/buy/verify")
+    def buy_verify(body: Paid, user: dict = Depends(signed_in)):
+        """Checkout says the payment went through: check Razorpay's signature, then deliver."""
+        o = payments.by_rzp(body.razorpay_order_id)
+        if o is None or o["user_id"] != user["id"]:
+            raise HTTPException(404, "no such order")
+        if not payments.rzp.payment_ok(body.razorpay_order_id, body.razorpay_payment_id, body.razorpay_signature):
+            raise HTTPException(400, "The payment could not be confirmed. If money was taken, it will be added within minutes, "
+                                     "or refunded by Razorpay.")
+        o = payments.fulfil(body.razorpay_order_id, body.razorpay_payment_id)
+        return {"order": o["id"], "invoice": o["invoice_no"], "credits": accounts.balance(user["id"]),
+                "storage": limits.usage(store, user)}
+
+    @app.post("/api/razorpay/webhook")
+    async def razorpay_webhook(request: Request):
+        """Razorpay tells us about payments even when the browser tab was closed."""
+        raw = await request.body()
+        if not payments.rzp.webhook_ok(raw, request.headers.get("x-razorpay-signature", "")):
+            raise HTTPException(400, "bad signature")
+        try:
+            event = json.loads(raw)
+        except ValueError:
+            raise HTTPException(400, "bad body")
+        if event.get("event") in ("payment.captured", "order.paid"):
+            p = (event.get("payload", {}).get("payment") or {}).get("entity") or {}
+            if p.get("order_id") and p.get("status") == "captured":
+                try:
+                    payments.fulfil(p["order_id"], p.get("id", ""), int(p.get("amount", 0)))
+                except pay.PaymentError:
+                    raise HTTPException(400, "amount mismatch")
+        return {"ok": True}
+
+    @app.get("/api/purchases")
+    def purchases(user: dict = Depends(signed_in)):
+        return {"purchases": [{k: o[k] for k in ("id", "kind", "credits", "blocks", "months", "total", "invoice_no", "paid")}
+                              for o in payments.for_user(user["id"])], "grants": payments.grants(user["id"])}
+
+    @app.get("/invoice/{order_id}")
+    def invoice(order_id: str, autoedits: str = Cookie(default="")):
+        """A printable tax invoice: for the buyer, or the admin."""
+        me = accounts.session_user(autoedits)
+        o = payments.get(order_id)
+        if me is None or o is None or o["status"] != "paid" or (o["user_id"] != me["id"] and not me["admin"]):
+            raise HTTPException(404, "Not found")
+        return Response(pay.invoice_html(o, SELLER), media_type="text/html; charset=utf-8",
+                        headers={"Cache-Control": "private, no-store"})
+
+    @app.get("/api/admin/purchases")
+    def admin_purchases(admin: dict = Depends(the_admin)):
+        rows = payments.recent(300)
+        return {"purchases": [{k: o[k] for k in ("id", "email", "kind", "credits", "blocks", "months", "taxable", "cgst", "sgst",
+                                                 "igst", "total", "invoice_no", "paid", "rzp_payment", "buyer_gstin", "state")}
+                              for o in rows], "test": payments.rzp.test_mode}
 
     # ---- two-step login (offered to the studio account) ----------------------------------
     @app.get("/api/two-step")
