@@ -25,7 +25,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import security
+from . import legal, security
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
@@ -58,6 +58,7 @@ class SignUp(BaseModel):
     email: str
     password: str
     name: str = ""
+    agree: bool = False                        # ticked "I agree to the Terms of use and Privacy policy"
 
 
 class Forgot(BaseModel):
@@ -233,8 +234,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def sign_up(body: SignUp, request: Request, response: Response):
         if too_many("signup", request, 8, 3600):
             raise HTTPException(429, "Too many sign-ups from here. Please try again in an hour.")
+        if not body.agree:
+            raise HTTPException(422, "Please tick the box to agree to the Terms of use and Privacy policy.")
         try:
-            user = accounts.sign_up(body.email, body.password, body.name, client_ip(request))
+            user = accounts.sign_up(body.email, body.password, body.name, client_ip(request), legal.TERMS_VERSION)
         except ValueError as e:
             raise HTTPException(422, str(e))
         send_verify(request, user)
@@ -963,14 +966,25 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.api_route("/robots.txt", methods=["GET", "HEAD"])
     def robots():
         """The home page is public; everything behind the log-in stays out of search."""
-        return Response("User-agent: *\nAllow: /$\nAllow: /static/\nAllow: /llms.txt\nDisallow: /api/\nDisallow: /enter/\n"
+        return Response("User-agent: *\nAllow: /$\nAllow: /static/\nAllow: /llms.txt\n"
+                        + "".join(f"Allow: /{slug}\n" for slug in legal.PAGES) + "Disallow: /api/\nDisallow: /enter/\n"
                         "Disallow: /verify/\nDisallow: /reset/\nDisallow: /admin\n\n" f"Sitemap: {SITE}/sitemap.xml\n", media_type="text/plain")
 
     @app.api_route("/sitemap.xml", methods=["GET", "HEAD"])
     def sitemap():
         changed = time.strftime("%Y-%m-%d", time.gmtime((STATIC / "home.html").stat().st_mtime))
         return Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
-                        f"  <url><loc>{SITE}/</loc><lastmod>{changed}</lastmod></url>\n</urlset>\n", media_type="application/xml")
+                        f"  <url><loc>{SITE}/</loc><lastmod>{changed}</lastmod></url>\n"
+                        + "".join(f"  <url><loc>{SITE}/{slug}</loc></url>\n" for slug in legal.PAGES)
+                        + "</urlset>\n", media_type="application/xml")
+
+    @app.api_route("/{slug}", methods=["GET", "HEAD"])
+    def policy_page(slug: str):
+        """Terms, Privacy, Refunds, Delivery and Contact (server/legal.py)."""
+        body = legal.page(slug)
+        if body is None:
+            raise HTTPException(404, "Not found")
+        return Response(body, media_type="text/html; charset=utf-8", headers={"Cache-Control": "public, max-age=600"})
 
     @app.api_route("/llms.txt", methods=["GET", "HEAD"])
     def llms():

@@ -109,7 +109,8 @@ class Accounts:
             cols = {r["name"] for r in db.execute("PRAGMA table_info(users)")}
             for col, kind in (("totp_secret", "TEXT NOT NULL DEFAULT ''"), ("totp_pending", "TEXT NOT NULL DEFAULT ''"),
                               ("totp_on", "INTEGER NOT NULL DEFAULT 0"), ("totp_last", "INTEGER NOT NULL DEFAULT 0"),
-                              ("backup_codes", "TEXT NOT NULL DEFAULT ''")):
+                              ("backup_codes", "TEXT NOT NULL DEFAULT ''"),
+                              ("agreed", "REAL NOT NULL DEFAULT 0"), ("terms_version", "TEXT NOT NULL DEFAULT ''")):
                 if col not in cols:              # two-step login (see security.py)
                     db.execute(f"ALTER TABLE users ADD COLUMN {col} {kind}")
             if "checked" not in {r["name"] for r in db.execute("PRAGMA table_info(sessions)")}:
@@ -162,7 +163,7 @@ class Accounts:
             r = db.execute("SELECT * FROM users WHERE email=?", (email.strip().lower(),)).fetchone()
         return dict(r) if r else None
 
-    def sign_up(self, email: str, password: str, name: str = "", ip: str = "") -> dict:
+    def sign_up(self, email: str, password: str, name: str = "", ip: str = "", terms: str = "") -> dict:
         email = email.strip().lower()
         if not EMAIL_RE.match(email) or len(email) > 200:
             raise ValueError("Please enter a valid email address.")
@@ -174,8 +175,10 @@ class Accounts:
             raise ValueError("There is already an account with this email. Log in, or use \"Forgot password\".")
         uid = uuid.uuid4().hex[:12]
         with self._db() as db:
-            db.execute("INSERT INTO users (id, email, name, password, created, signup_ip) VALUES (?,?,?,?,?,?)",
-                       (uid, email, name.strip()[:80], hash_password(password), time.time(), ip[:64]))
+            now = time.time()
+            db.execute("INSERT INTO users (id, email, name, password, created, signup_ip, agreed, terms_version) "
+                       "VALUES (?,?,?,?,?,?,?,?)", (uid, email, name.strip()[:80], hash_password(password), now, ip[:64],
+                                                   now if terms else 0, terms))
         return self.user(uid)
 
     def log_in(self, email: str, password: str) -> dict | None:

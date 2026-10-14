@@ -201,6 +201,9 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 #auth .switch { margin-top: 18px; font-size: 16px; color: var(--soft); }
 #auth .switch button { font: inherit; color: var(--peacock); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 #auth .hint { font-size: 14px; margin-top: 6px; }
+#auth label.agree { display: flex; gap: 10px; align-items: flex-start; margin-top: 18px; font-weight: 400; font-size: 15px; line-height: 1.45; }
+#auth label.agree input { width: 18px; height: 18px; margin: 2px 0 0; flex: none; accent-color: var(--peacock); }
+footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
 
 @media (max-width: 520px) { .top-actions [data-signup] { display: none; } }
 @media (max-width: 900px) {
@@ -450,7 +453,7 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
 </section>
 </main>
 
-<footer><span>Auto Edits by Cele-Brat</span><a href="#faq">Questions</a><span>Made for wedding photographers</span></footer>
+<footer><span>Auto Edits by Cele-Brat</span><nav aria-label="Policies"><a href="#faq">Questions</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="/shipping">Delivery</a><a href="/contact">Contact us</a></nav></footer>
 
 <dialog id="auth" class="login" aria-labelledby="auth-title">
   <form id="auth-form" novalidate>
@@ -471,6 +474,9 @@ dialog .row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 2
       <label for="auth-password">Password</label>
       <input id="auth-password" type="password" autocomplete="current-password" maxlength="200">
       <p class="hint soft" data-mode="signup">At least 8 characters.</p>
+    </div>
+    <div data-mode="signup">
+      <label class="agree"><input type="checkbox" id="auth-agree"> <span>I agree to the <a href="/terms" target="_blank">Terms of use</a> and <a href="/privacy" target="_blank">Privacy policy</a>, including that the Auto Edits team can view my uploaded work for support and quality.</span></label>
     </div>
     <div data-mode="code">
       <label for="auth-code">Code</label>
@@ -641,12 +647,13 @@ $a('auth-form').onsubmit = async (e) => {
   if (m !== 'key' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { err.textContent = 'Please enter your email address.'; $a('auth-email').focus(); return; }
   if ((m === 'login' || m === 'signup') && !password) { err.textContent = 'Please enter your password.'; $a('auth-password').focus(); return; }
   if (m === 'signup' && password.length < 8) { err.textContent = 'The password needs at least 8 characters.'; $a('auth-password').focus(); return; }
+  if (m === 'signup' && !$a('auth-agree').checked) { err.textContent = 'Please tick the box to agree to the Terms of use and Privacy policy.'; $a('auth-agree').focus(); return; }
   $a('auth-go').disabled = true;
   try {
     let r;
     if (m === 'login') r = await post('/api/login', { email, password });
     else if (m === 'key') r = await post('/api/login', { key: $a('auth-key').value.trim() });
-    else if (m === 'signup') r = await post('/api/signup', { email, password, name: $a('auth-name').value.trim() });
+    else if (m === 'signup') r = await post('/api/signup', { email, password, name: $a('auth-name').value.trim(), agree: $a('auth-agree').checked });
     else r = await post('/api/forgot', { email });
     if (r.ok && m === 'forgot') { $a('auth-note').textContent = 'If there is an account with this email, the link is on its way. Check your inbox and spam folder.'; return; }
     if (r.ok && r.data.need_code) { auth.dataset.ticket = r.data.ticket; $a('auth-code').value = ''; mode('code'); return; }

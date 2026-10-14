@@ -167,7 +167,7 @@ def test_studio_lightroom_key_only_from_a_checked_browser(app, clock):
 
 def test_only_the_studio_is_offered_two_step(app, box):
     c = TestClient(app)
-    c.post("/api/signup", json={"email": "ravi@example.com", "password": "a good password"})
+    c.post("/api/signup", json={"email": "ravi@example.com", "password": "a good password", "agree": True})
     assert c.post("/api/two-step/start").status_code == 404
     assert c.get("/api/admin/activity").status_code == 404
 

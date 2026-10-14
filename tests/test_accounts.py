@@ -54,7 +54,7 @@ def browser(app):
 
 def sign_up(app, box, email, verify=True):
     c = browser(app)
-    r = c.post("/api/signup", json={"email": email, "password": "a good password", "name": "Ravi"})
+    r = c.post("/api/signup", json={"email": email, "password": "a good password", "name": "Ravi", "agree": True})
     assert r.status_code == 200, r.text
     if verify:
         assert c.get(f"/verify/{box.link(email, 'verify')}", follow_redirects=False).status_code == 303
@@ -93,8 +93,8 @@ def test_sign_up_rules(app, box):
     c = browser(app)
     assert c.post("/api/signup", json={"email": "not-an-email", "password": "a good password"}).status_code == 422
     assert c.post("/api/signup", json={"email": "a@b.co", "password": "short"}).status_code == 422
-    assert c.post("/api/signup", json={"email": "a@b.co", "password": "a good password"}).status_code == 200
-    assert c.post("/api/signup", json={"email": "A@B.co", "password": "a good password"}).status_code == 422
+    assert c.post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True}).status_code == 200
+    assert c.post("/api/signup", json={"email": "A@B.co", "password": "a good password", "agree": True}).status_code == 422
 
 
 def test_log_in_and_out(app, box):
@@ -302,7 +302,7 @@ def test_free_credits_once_per_internet_address(app, box):
     def from_ip(email, ip):
         c = browser(app)
         H = {"X-Forwarded-For": f"10.0.0.9, {ip}"}           # Traefik adds the real address last
-        assert c.post("/api/signup", headers=H, json={"email": email, "password": "a good password"}).status_code == 200
+        assert c.post("/api/signup", headers=H, json={"email": email, "password": "a good password", "agree": True}).status_code == 200
         r = c.get(f"/verify/{box.link(email, 'verify')}", follow_redirects=False)
         return c, r.headers["location"]
 
@@ -315,7 +315,7 @@ def test_free_credits_once_per_internet_address(app, box):
     assert c.get("/api/me").json()["credits"] == 50
     spoof = browser(app)                                               # a made-up first entry does not help
     spoof.post("/api/signup", headers={"X-Forwarded-For": "1.2.3.4, 203.0.113.5"},
-               json={"email": "d@example.com", "password": "a good password"})
+               json={"email": "d@example.com", "password": "a good password", "agree": True})
     spoof.get(f"/verify/{box.link('d@example.com', 'verify')}")
     assert spoof.get("/api/me").json()["credits"] == 0
 
