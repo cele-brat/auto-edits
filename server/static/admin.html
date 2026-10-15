@@ -318,7 +318,10 @@ async function openDetail(id) {
   const size = (x) => (x === 0 ? 'full size' : `${x} px`);
   $('detail-weddings').replaceChildren(...(d.weddings.length ? d.weddings.flatMap((w) => [el('tr', { className: 'go', title: 'Open this wedding (View as, read-only)',
     onclick: (e) => { if (!e.target.closest('a') && !d.user.admin) viewAs(id, w.id); else if (!e.target.closest('a')) location.href = `/?wedding=${w.id}`; } },
-    el('td', { textContent: `${w.name} · ${day(w.created)}` }), el('td', { className: 'n', textContent: fmt(w.photos) }),
+    el('td', {}, el('div', { textContent: `${w.name} · ${day(w.created)}` }),
+      el('div', { className: 'sub', textContent: (w.folders || []).map((f) => `${f.name}: ${fmt(f.photos)}` + (f.missing ? ` (${fmt(f.missing)} without a preview)` : '')).join(' · ') }),
+      w.missing ? el('div', { className: 'pill warn', textContent: `${fmt(w.missing)} of ${fmt(w.photos)} photos have no preview: the upload did not finish` }) : ''),
+    el('td', { className: 'n', textContent: fmt(w.photos) }),
     el('td', { className: 'n', textContent: fmt(w.exports.length) }),
     el('td', { className: 'n' }, w.photos ? el('a', { className: 'dl', href: `/api/admin/weddings/${w.id}/originals.zip`, textContent: 'Uploaded photos (zip)' }) : '')),
     ...w.exports.map((e) => el('tr', {}, el('td', { className: 'sub', textContent: `↳ Export ${day(e.created)} · ${e.scope || 'whole wedding'} · ${size(e.size)} · ${e.state}` }),

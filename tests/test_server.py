@@ -448,3 +448,14 @@ def test_cull_a_wedding_then_change_a_rating_by_hand_and_export_the_keepers(tmp_
     e = c.post(f"/api/weddings/{w['id']}/exports", headers=H, json={"size": 2560, "ratings": ["keep"]}).json()
     assert e["total"] == len(keepers) >= 1 and e["scope"] == "keep"
     assert c.put(url, headers=H, json={"pick": None}).json() == {"pick": None}
+
+
+def test_admin_sees_photos_per_folder_and_missing_previews(client, tmp_path):
+    w = client.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    for u, folder in (("u1", "Haldi"), ("u2", "Haldi"), ("u3", "Sangeet")):
+        send(client, w["id"], u, folder, u + ".NEF")
+    gone = next(tmp_path.glob(f"weddings/{w['id']}/previews/*.jpg"))
+    gone.unlink()                                               # an upload that never reached storage
+    from server.store import Store
+    h = Store(str(tmp_path)).health(w["id"])
+    assert [(f["name"], f["photos"]) for f in h["folders"]] == [("Haldi", 2), ("Sangeet", 1)] and h["missing"] == 1

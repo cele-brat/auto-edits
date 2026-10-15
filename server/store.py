@@ -197,6 +197,22 @@ class Store:
     def _key(wedding_id: str, photo_id: str) -> str:
         return f"weddings/{wedding_id}/previews/{photo_id}.jpg"
 
+    def health(self, wedding_id: str) -> dict:
+        """For the admin page: photos per event folder, and how many have no preview anywhere
+        (not on this disk and never copied to storage), so they cannot be shown."""
+        with self._db() as db:
+            rows = db.execute("SELECT p.id, p.stored, f.name AS folder FROM photos p JOIN folders f ON f.id=p.folder_id "
+                              "WHERE p.wedding_id=?", (wedding_id,)).fetchall()
+        folders: dict[str, dict] = {}
+        missing = 0
+        for r in rows:
+            f = folders.setdefault(r["folder"], {"name": r["folder"], "photos": 0, "missing": 0})
+            f["photos"] += 1
+            if not r["stored"] and not self._local(wedding_id, r["id"]).exists():
+                f["missing"] += 1
+                missing += 1
+        return {"folders": sorted(folders.values(), key=lambda f: f["name"].lower()), "missing": missing}
+
     def preview_path(self, wedding_id: str, photo_id: str) -> Path:
         """The preview as a file on this disk, fetched from storage first if the working copy is gone."""
         path = self._local(wedding_id, photo_id)

@@ -775,7 +775,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                 "storage": limits.usage(store, u), "limits": {"photos": u["limit_photos"], "gb": u["limit_gb"],
                                                                "default_photos": limits.PHOTOS_PER_WEDDING,
                                                                "default_gb": limits.STORAGE_GB},
-                "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes")} |
+                "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes")} | store.health(w["id"]) |
                              {"exports": [{k: e[k] for k in ("id", "size", "done", "total", "state", "created", "scope")}
                                           for e in exports.for_wedding(w["id"])]}
                              for w in store.weddings(user_id)]}
