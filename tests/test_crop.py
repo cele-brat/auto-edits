@@ -89,3 +89,19 @@ def test_export_is_cropped(tmp_path):
     import zipfile
     z = zipfile.ZipFile(io.BytesIO(c.get(f"/api/exports/{e['id']}/zip", headers=H).content))
     assert Image.open(io.BytesIO(z.read(z.namelist()[0]))).size == (450, 300)
+
+
+def test_reset_a_folder_to_original(tmp_path):
+    c = TestClient(create_app(str(tmp_path), KEY))
+    w = c.post("/api/weddings", headers=H, json={"name": "W"}).json()
+    for u in ("u1", "u2"):
+        send(c, w["id"], u, "Haldi", u + ".NEF")
+    folder = c.get(f"/api/weddings/{w['id']}", headers=H).json()["folders"][0]["id"]
+    photos = c.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"]
+    c.put(f"/api/weddings/{w['id']}/folders/{folder}/look", headers=H, json={"mode": "auto"})
+    c.put(f"/api/weddings/{w['id']}/photos/{photos[0]['id']}/look", headers=H, json={"mode": "preset", "ev": 1})
+    c.put(f"/api/weddings/{w['id']}/photos/{photos[1]['id']}/crop", headers=H, json={"x": 0.1, "y": 0.1, "w": 0.5, "h": 0.5})
+    assert c.post(f"/api/weddings/{w['id']}/folders/{folder}/reset", headers=H).json()["photos_with_own"] == 2
+    after = c.get(f"/api/weddings/{w['id']}/photos?compact=1", headers=H).json()["photos"]
+    assert all(p["look"] is None and p["crop"] is None for p in after)
+    assert c.get(f"/api/weddings/{w['id']}", headers=H).json()["folders"][0]["settings"] in ({}, None)

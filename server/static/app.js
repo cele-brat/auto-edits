@@ -639,6 +639,7 @@ function drawPanel() {
     note.textContent = `Settings for every photo in “${f.name}”.`;
   }
 
+  $('to-original').textContent = editingPhoto() ? 'Reset this photo to original' : 'Reset whole folder to original';
   const look = panelLook();
   for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === look.mode));
   $('mode-note').textContent = MODE_NOTES[look.mode];
@@ -828,6 +829,38 @@ $('delete-wedding').onclick = () => {
   $('confirm-text').textContent = `Delete “${S.wedding.name}” and its ${S.wedding.photos} photos from the server? ` +
     'Your Lightroom catalogue and the original files on your computer are not touched.';
   $('confirm').showModal();
+};
+// Reset to original: this photo (its own settings set to nothing, crop removed) or the whole folder
+// (folder look cleared, every photo's own settings and crops removed). Only settings: photos never change.
+$('to-original').onclick = () => {
+  const p = photo(), f = folder();
+  if (!f) return;
+  const one = editingPhoto();
+  $('original-title').textContent = one ? 'Reset this photo to original?' : `Reset all of “${f.name}” to original?`;
+  $('original-text').textContent = one
+    ? `“${p.name}” goes back to how it was uploaded: no preset, no adjustments, no masks and no crop. The rest of the folder is not changed.`
+    : `All ${f.photos} photos in “${f.name}” go back to how they were uploaded: the folder's preset and adjustments, every photo's own settings and every crop are removed. This cannot be undone.`;
+  $('original-dialog').showModal();
+};
+$('original-no').onclick = () => $('original-dialog').close();
+$('original-yes').onclick = async () => {
+  $('original-dialog').close();
+  const f = folder();
+  try {
+    if (editingPhoto()) {
+      const p = photo();
+      p.look = tidy(blankLook());
+      await api(`${base(p)}/look`, { method: 'PUT', body: p.look });
+      await api(`${base(p)}/crop`, { method: 'PUT', body: null });
+      p.crop = null;
+    } else {
+      await api(`/api/weddings/${S.wedding.id}/folders/${f.id}/reset`, { method: 'POST' });
+      f.settings = {};
+      for (const p of wholeFolder()) { p.look = null; p.crop = null; }
+    }
+    $('saved').textContent = 'Reset to original';
+    refreshThumbs(); drawFolders(); drawPanel(); drawCaption(); drawStage();
+  } catch (e) { if (e.message !== 'signed out') $('saved').textContent = e.message; }
 };
 $('confirm-no').onclick = () => $('confirm').close();
 $('confirm-yes').onclick = async () => {

@@ -1026,6 +1026,21 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             store.set_crop(wedding_id, photo_id, crop)
         return {"crop": crop, "why": why, "changed": True}
 
+    @app.post("/api/weddings/{wedding_id}/folders/{folder_id}/reset")
+    def reset_folder(wedding_id: str, folder_id: int, user: dict = Depends(signed_in)):
+        """Every photo in the folder back to how it was uploaded: no folder look, no photo's own
+        settings, no crops. Only settings change; the photos themselves never did."""
+        wedding_or_404(wedding_id, user)
+        if not store.set_folder_settings(wedding_id, folder_id, {}):
+            raise HTTPException(404, "no such folder")
+        n = 0
+        for r in store.photos(wedding_id, folder_id):
+            if r["settings"] or r["crop"]:
+                store.set_photo_settings(wedding_id, r["id"], None)
+                store.set_crop(wedding_id, r["id"], None)
+                n += 1
+        return {"reset": True, "photos_with_own": n}
+
     @app.delete("/api/weddings/{wedding_id}/folders/{folder_id}/crops")
     def clear_crops(wedding_id: str, folder_id: int, user: dict = Depends(signed_in)):
         """Every photo in the folder back to the whole picture."""

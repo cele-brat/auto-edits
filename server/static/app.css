@@ -439,3 +439,6 @@ tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .05)
   #account .acc-tabs button { padding: 10px 10px; white-space: nowrap; }
   #account td:first-child { white-space: normal; }
 }
+#to-original { grid-column: 2; justify-self: start; margin-top: 2px; padding: 5px 12px; font-size: 13px; background: none; border: 1px solid var(--line2); color: #e6e6e6; }
+#to-original:hover { border-color: #ff8a80; color: #ff8a80; }
+#original-dialog { width: min(440px, 94vw); }
