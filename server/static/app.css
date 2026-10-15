@@ -43,7 +43,8 @@ p { margin: 6px 0 0; color: var(--dim); }
 #bar { grid-area: bar; display: flex; align-items: center; gap: 6px; padding: 0 14px; background: var(--rail); border-bottom: 1px solid #000; }
 #bar > button, #more summary { background: none; border-color: transparent; color: #cfcfcf; font-weight: 500; padding: 7px 11px; }
 #bar > button:hover, #more summary:hover { background: var(--raise); color: var(--text); }
-#brand { font: italic 500 21px/1 var(--serif); margin-right: 10px; white-space: nowrap; }
+#brand { display: inline-flex; flex-direction: column; font: italic 500 21px/1 var(--serif); margin-right: 10px; white-space: nowrap; }
+#brand small { font: 500 9.5px/1 var(--sans); font-style: normal; letter-spacing: .14em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
 #count { color: var(--faint); font-size: 13px; margin: 0 8px 0 2px; white-space: nowrap; }
 #wedding { max-width: 240px; background: var(--raise); border-color: var(--line); font-weight: 500; }
 #bar > #export-open { background: var(--marigold); border-color: var(--marigold); color: var(--marigold-ink); font-weight: 600; margin-left: 2px; }
