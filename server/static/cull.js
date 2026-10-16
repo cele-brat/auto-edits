@@ -57,7 +57,7 @@ async function refreshCull() {
   $('cull-progress').textContent = !culls.length ? ''
     : busy.length ? `Culling: ${done} of ${total} photos looked at…`
     : `Finished: ${total} photos rated.` + (failed.length ? `\n${failed.length} folder(s) failed: ${failed[0].error}` : '');
-  $('cull-open').textContent = busy.length ? `Culling ${Math.round(100 * done / Math.max(1, total))}%` : 'Cull';
+  $('cull-open').textContent = busy.length ? `Culling ${Math.round(100 * done / Math.max(1, total))}%` : 'Cull…';
   if (busy.length) { Cull.wasBusy = true; Cull.timer = setTimeout(refreshCull, 2500); return; }
   if (Cull.wasBusy) {                                   // just finished: fetch the new ratings
     Cull.wasBusy = false;

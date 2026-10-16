@@ -10,15 +10,15 @@ const TOGGLES = [
 const SHOWN_HERE = new Set(['exposure', 'highlights', 'shadows', 'whites', 'blacks', 'white_balance', 'straighten']);
 const ALL_TOGGLES = TOGGLES.map((t) => t[0]);
 const MODE_NOTES = {
-  preset: 'Every photo gets the preset exactly as it is. Tick Auto on a setting below to have it worked out per photo instead.',
-  preset_auto: 'Settings with Auto ticked are worked out for each photo. Everything else comes from the preset.',
-  auto: 'No preset. Every setting below is worked out for each photo, so the Auto ticks are fixed.',
+  preset: 'The preset exactly as it is. Tick Auto on a slider to have it worked out per photo.',
+  preset_auto: 'Sliders with Auto ticked are worked out per photo; the rest come from the preset.',
+  auto: 'No preset: every setting is worked out for each photo.',
 };
 
 const S = {
   weddings: [], wedding: null, folderId: null, photos: [], presets: [], byPreset: new Map(), looks: [],
   photoId: null, view: 'grid', scope: 'folder', split: true, holdBefore: false, dividerAt: 0.5,
-  rating: null, panels: [], pack: '', query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
+  rating: null, panels: [], tool: 'adjust', openPacks: new Set(), query: '', openLook: null, lastToggles: ['exposure', 'white_balance'], openMask: null, showMask: false,
 };
 
 // ---- talking to the server ------------------------------------------------
@@ -171,7 +171,7 @@ function drawFolders() {
   nav.replaceChildren(...S.wedding.folders.map((f) => {
     const b = el('button', { type: 'button' }, [
       el('b', { textContent: f.name }),
-      el('small', { textContent: `${f.photos} photo${f.photos === 1 ? '' : 's'}` }),
+      el('small', { textContent: String(f.photos), title: `${f.photos} photo${f.photos === 1 ? '' : 's'}` }),
       el('small', { textContent: describe(folderLook(f)) }),
     ]);
     b.setAttribute('aria-current', String(f.id === S.folderId));
@@ -186,9 +186,10 @@ const wholeFolder = () => S.photos.filter((p) => p.folder === S.folderId);
 const inFolder = () => wholeFolder().filter((p) => !S.rating || ratingOf(p) === S.rating);
 const RATING_NAMES = { keep: 'Keep', maybe: 'Maybe', reject: 'Reject' };
 
-function thumb(p, withName) {
+function thumb(p, withName, idx) {
   const b = el('button', { type: 'button', title: p.name });
   b.dataset.id = p.id;
+  if (idx) b.append(el('span', { className: 'idx', textContent: String(idx) }));
   b.append(el('img', { loading: 'lazy', alt: p.name, src: thumbUrl(p) }));
   if (p.look) b.append(el('span', { className: 'own', title: 'Has its own settings' }));
   const r = ratingOf(p);
@@ -201,8 +202,8 @@ function thumb(p, withName) {
 
 function drawGrid() {
   const grid = $('grid');
-  grid.replaceChildren(...inFolder().map((p) => {
-    const b = thumb(p, true);
+  grid.replaceChildren(...inFolder().map((p, i) => {
+    const b = thumb(p, true, i + 1);
     b.onclick = () => { S.photoId = p.id; markCurrent(); };
     b.ondblclick = () => openPhoto(p.id);
     return b;
@@ -210,9 +211,22 @@ function drawGrid() {
   const strip = $('strip');
   strip.replaceChildren(...inFolder().map((p) => {
     const b = thumb(p, false);
-    b.onclick = () => openPhoto(p.id);
+    // as in Lightroom: in Develop the filmstrip changes the photo; in Library it selects one
+    b.onclick = () => { if (S.view === 'loupe') openPhoto(p.id); else { S.photoId = p.id; markCurrent(true); } };
+    b.ondblclick = () => openPhoto(p.id);
     return b;
   }));
+  drawFilmInfo();
+}
+
+// The line above the filmstrip: which folder, how many photos, which one is selected.
+function drawFilmInfo() {
+  const f = folder();
+  if (!f) { $('film-info').replaceChildren(); return; }
+  const shown = inFolder().length, all = wholeFolder().length, p = photo();
+  const bits = [el('b', { textContent: f.name }), ` · ${shown === all ? `${all} photo${all === 1 ? '' : 's'}` : `${shown} of ${all} photos shown`}`];
+  if (p) bits.push(' · ', el('b', { textContent: p.name }));
+  $('film-info').replaceChildren(...bits);
 }
 
 function refreshThumbs() {
@@ -228,12 +242,70 @@ function refreshThumbs() {
   }
 }
 
-function markCurrent() {
+function markCurrent(fromStrip = false) {
   for (const b of document.querySelectorAll('#grid button, #strip button')) {
     const on = b.dataset.id === S.photoId;
     b.setAttribute('aria-current', String(on));
     if (on && b.parentElement.id === 'strip') b.scrollIntoView({ block: 'nearest', inline: 'center' });
+    if (on && fromStrip && b.parentElement.id === 'grid') b.scrollIntoView({ block: 'nearest' });
   }
+  drawNavigator();
+  drawFilmInfo();
+  drawCaption();
+}
+
+// ---- navigator and histogram (top of each side panel, as in Lightroom) --------------------
+function drawNavigator() {
+  const p = photo(), img = $('nav-img');
+  if (!p) { img.removeAttribute('src'); clearHistogram(); return; }
+  const url = thumbUrl(p);
+  if (!img.src.endsWith(url)) img.src = url;
+  else if (S.view !== 'loupe' && img.complete) drawHistogram(img);
+}
+$('nav-img').onload = () => { if (S.view !== 'loupe') drawHistogram($('nav-img')); };
+
+const histoCanvas = document.createElement('canvas');
+function clearHistogram() {
+  const c = $('histo');
+  c.getContext('2d').clearRect(0, 0, c.width, c.height);
+}
+// Red, green and blue drawn on top of one another and added, so where all three meet it shows grey
+// to white, the way Lightroom's histogram does. Counted from a small copy of the picture.
+function drawHistogram(img) {
+  if (!img || !img.naturalWidth) return;
+  const w = 240, h = Math.max(1, Math.round(w * img.naturalHeight / img.naturalWidth));
+  histoCanvas.width = w; histoCanvas.height = h;
+  const g = histoCanvas.getContext('2d', { willReadFrequently: true });
+  let px;
+  try { g.drawImage(img, 0, 0, w, h); px = g.getImageData(0, 0, w, h).data; } catch (e) { return; }
+  const bins = [new Float32Array(256), new Float32Array(256), new Float32Array(256)];
+  for (let i = 0; i < px.length; i += 4) { bins[0][px[i]]++; bins[1][px[i + 1]]++; bins[2][px[i + 2]]++; }
+  // scale to the tallest bar away from the two ends, so a clipped end does not flatten the rest
+  // smooth a little, then scale to a tall bar but not the very tallest few, so one spike (a clipped end,
+  // a flat background) does not flatten the rest
+  const smooth = bins.map((b) => b.map((_, i) => {
+    let t = 0, n = 0;
+    for (let k = -2; k <= 2; k++) { const v = b[i + k]; if (v !== undefined) { t += v * (3 - Math.abs(k)); n += 3 - Math.abs(k); } }
+    return t / n;
+  }));
+  const heights = smooth.flatMap((b) => [...b.slice(2, 254)]).sort((x, y) => y - x);
+  const top = Math.max(1, heights[Math.floor(heights.length * 0.03)] || 1);
+  const c = $('histo'), ctx = c.getContext('2d'), W = c.width, H = c.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 1;
+  for (const x of [0.25, 0.5, 0.75]) { ctx.beginPath(); ctx.moveTo(Math.round(x * W) + 0.5, 0); ctx.lineTo(Math.round(x * W) + 0.5, H); ctx.stroke(); }
+  ctx.globalCompositeOperation = 'lighter';
+  const colours = ['rgba(210,60,60,.85)', 'rgba(60,180,70,.85)', 'rgba(60,100,230,.85)'];
+  smooth.forEach((b, ch) => {
+    ctx.fillStyle = colours[ch];
+    ctx.beginPath(); ctx.moveTo(0, H);
+    for (let i = 0; i < 256; i++) {
+      const v = b[i];
+      ctx.lineTo((i / 255) * W, H - Math.min(1, v / top) * (H - 4));
+    }
+    ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+  });
+  ctx.globalCompositeOperation = 'source-over';
 }
 
 // ---- drawing: the big photo ---------------------------------------------------
@@ -254,6 +326,7 @@ function showAfter(img) {
   img.onload = placeDivider;
   old.replaceWith(img);
   placeDivider();
+  drawHistogram(img);
 }
 
 async function drawStage() {
@@ -263,7 +336,8 @@ async function drawStage() {
   $('loupe').hidden = empty || S.view !== 'loupe';
   $('view-grid').setAttribute('aria-pressed', String(S.view === 'grid'));
   $('view-loupe').setAttribute('aria-pressed', String(S.view === 'loupe'));
-  $('split').hidden = S.view !== 'loupe';
+  $('view-loupe').disabled = !photo();
+  $('toolbar').dataset.view = S.view;
   const p = photo();
   if (empty || S.view !== 'loupe' || !p) return;
 
@@ -290,17 +364,17 @@ async function drawStage() {
 
 function drawCaption() {
   const p = photo();
-  if (!p) return;
-  const bits = [el('b', { textContent: p.name })];
-  if (p.camera) bits.push(el('span', { textContent: p.camera }));
-  if (p.iso) bits.push(el('span', { textContent: `ISO ${p.iso}` }));
-  if (p.edited) bits.push(el('span', { textContent: 'Came from Lightroom with edits already on it' }));
-  if (p.crop) bits.push(el('span', { textContent: p.crop.auto ? 'AI cropped' : 'Cropped' }));
-  const r = ratingOf(p);
-  if (r) {
-    const why = p.pick ? 'set by you' : (p.cull.why.join(', ') || 'nothing wrong found');
-    bits.push(el('span', { className: `rate ${r}`, textContent: RATING_NAMES[r] }), el('span', { textContent: why }));
+  const r = p ? ratingOf(p) : null;
+  for (const b of document.querySelectorAll('#toolbar .picks button')) {
+    b.setAttribute('aria-pressed', String(!!p && r === b.dataset.pick));
+    b.classList.toggle('auto-pick', !!p && r === b.dataset.pick && !p.pick);
+    b.disabled = !p;
   }
+  $('histo-info').textContent = p ? [p.camera, p.iso ? `ISO ${p.iso}` : '', p.crop ? (p.crop.auto ? 'AI cropped' : 'Cropped') : ''].filter(Boolean).join('  ·  ') : '';
+  if (!p) { $('caption').replaceChildren(); return; }
+  const bits = [el('b', { textContent: p.name })];
+  if (p.edited) bits.push(el('span', { textContent: 'Came from Lightroom with edits already on it' }));
+  if (r) bits.push(el('span', { textContent: p.pick ? `${RATING_NAMES[r]}: set by you` : `${RATING_NAMES[r]}: ${p.cull.why.join(', ') || 'nothing wrong found'}` }));
   $('caption').replaceChildren(...bits);
 }
 
@@ -343,45 +417,61 @@ function buildLooks() {
   S.looks = [...map.values()];
   const packs = [...new Set(S.presets.map((p) => p.pack))].sort((a, b) => (b === 'My presets') - (a === 'My presets'));
   S.looks.sort((a, b) => (b.pack === 'My presets') - (a.pack === 'My presets'));
-  $('pack').replaceChildren(el('option', { value: '', textContent: 'All packs' }),
-    ...packs.map((k) => el('option', { value: k, textContent: k })));
+  S.packs = packs;
 }
 
 function shownLooks() {
   const q = S.query.trim().toLowerCase();
-  return S.looks.filter((l) => (!S.pack || l.pack === S.pack) &&
-    (!q || l.look.toLowerCase().includes(q) || l.variants.some((v) => v.variant.toLowerCase().includes(q))));
+  return S.looks.filter((l) => (!q || l.pack.toLowerCase().includes(q) || l.look.toLowerCase().includes(q) || l.variants.some((v) => v.variant.toLowerCase().includes(q))));
 }
 
+// The Presets panel, as in Lightroom: one folding group per pack, its looks inside; a look with
+// several strengths opens to show them. A search opens every group that has a match.
+const lookKey = (p) => `${p.pack}|${p.look || p.name}`;
 function drawLooks() {
   const look = panelLook();
   const chosen = S.byPreset.get(look.preset);
-  const open = S.openLook || (chosen ? `${chosen.pack}|${chosen.look || chosen.name}` : null);
+  const open = S.openLook || (chosen ? lookKey(chosen) : null);
+  const searching = !!S.query.trim();
   const box = $('looks');
   const none = el('button', { type: 'button', className: 'look none', textContent: 'No preset' });
+  none.setAttribute('aria-pressed', String(!chosen));
   none.onclick = () => { S.openLook = null; change({ preset: null }); };
   const rows = [none];
-  for (const l of shownLooks()) {
-    const head = el('button', { type: 'button', className: 'look' }, [l.look, el('small', { textContent: l.pack.replace(' Looks', '') })]);
-    if (l.variants.some((v) => v.masks.length)) head.append(el('small', { className: 'has', textContent: 'with masks' }));
-    head.setAttribute('aria-expanded', String(l.key === open));
-    head.onclick = () => { S.openLook = l.key; change({ preset: l.variants[0].id }); };
+  const shown = shownLooks();
+  for (const pack of S.packs || []) {
+    const looks = shown.filter((l) => l.pack === pack);
+    if (!looks.length) continue;
+    const expanded = searching || S.openPacks.has(pack);
+    const head = el('button', { type: 'button', className: 'pack' }, [pack, el('small', { textContent: String(looks.length) })]);
+    head.setAttribute('aria-expanded', String(expanded));
+    head.onclick = () => { if (S.openPacks.has(pack)) S.openPacks.delete(pack); else S.openPacks.add(pack); drawLooks(); };
     rows.push(head);
-    if (l.key === open) {
-      rows.push(el('div', { className: 'variants' }, l.variants.map((v) => {
-        const b = el('button', { type: 'button', textContent: v.variant });
-        b.dataset.preset = v.id;
-        b.setAttribute('aria-pressed', String(v.id === look.preset));
-        b.onclick = () => change({ preset: v.id });
-        return b;
-      })));
+    if (!expanded) continue;
+    for (const l of looks) {
+      const row = el('button', { type: 'button', className: 'look' }, [l.look]);
+      if (l.variants.some((v) => v.masks.length)) row.append(el('small', { className: 'has', textContent: 'masks' }));
+      if (l.variants.length > 1) row.append(el('small', { textContent: String(l.variants.length) }));
+      row.setAttribute('aria-expanded', String(l.key === open));
+      row.onclick = () => { S.openLook = l.key; change({ preset: l.variants[0].id }); };
+      rows.push(row);
+      if (l.key === open && l.variants.length > 1) {
+        rows.push(el('div', { className: 'variants' }, l.variants.map((v) => {
+          const b = el('button', { type: 'button', textContent: v.variant });
+          b.dataset.preset = v.id;
+          b.setAttribute('aria-pressed', String(v.id === look.preset));
+          b.onclick = () => change({ preset: v.id });
+          return b;
+        })));
+      } else if (l.key === open) row.dataset.preset = l.variants[0].id;
     }
   }
+  if (!shown.length) rows.push(el('p', { className: 'empty', textContent: 'No preset matches that search.' }));
   const keep = box.scrollTop;
   box.replaceChildren(...rows);
   box.scrollTop = keep;
   $('preset-name').textContent = chosen ? chosen.name : 'No preset chosen';
-  $('about').textContent = chosen ? chosen.about : (shownLooks().length ? '' : 'No look matches that search.');
+  $('about').textContent = chosen ? chosen.about : '';
   $('remove-preset').hidden = !(chosen && chosen.mine);
   const maskBox = $('preset-masks');
   maskBox.hidden = !(chosen && chosen.masks.length);
@@ -408,7 +498,8 @@ function stepPreset(by) {
   if (!flat.length) return;
   const at = flat.findIndex((v) => v.id === panelLook().preset);
   const next = flat[Math.min(flat.length - 1, Math.max(0, at + by))] || flat[0];
-  S.openLook = `${next.pack}|${next.look || next.name}`;
+  S.openLook = lookKey(next);
+  S.openPacks.add(next.pack);
   change({ preset: next.id });
   const b = $('looks').querySelector(`[data-preset="${CSS.escape(next.id)}"]`);
   if (b) b.scrollIntoView({ block: 'nearest' });
@@ -493,7 +584,6 @@ function buildPanels() {
 }
 
 function drawSliders(look) {
-  let total = 0;
   for (const panel of S.panels) {
     let changed = 0;
     for (const group of panel.groups) {
@@ -523,9 +613,7 @@ function drawSliders(look) {
       }
     }
     panel.count.textContent = changed ? `${changed}` : '';
-    total += changed;
   }
-  $('tab-adjust').dataset.n = total || '';
 }
 
 function maskValue(kind, key) {
@@ -561,7 +649,8 @@ function drawMasks() {
       input.oninput = () => { paint(input, 0); out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
       input.onchange = () => { stageLive = false; drawPanel(); drawStage(); };
       input.ondblclick = () => { changeMask(kind, { [sl.key]: 0 }); drawMasks(); };
-      body.append(el('label', { className: 'slider' }, [el('span', { textContent: sl.label }), input, out]));
+      input.setAttribute('aria-label', `${label} mask, ${sl.label}`);
+      body.append(el('div', { className: 'adj' }, [el('span', { className: 'name', textContent: sl.label }), input, out]));
     }
     const show = el('input', { type: 'checkbox', checked: S.showMask, disabled: !loupe });
     show.onchange = () => { S.showMask = show.checked; drawStage(); };
@@ -572,7 +661,7 @@ function drawMasks() {
     rows.push(body);
   }
   $('masks').replaceChildren(...rows);
-  $('tab-masks').dataset.n = MASKS.reduce((n, [kind]) => n + Object.keys((look.masks || {})[kind] || {}).length, 0) || '';
+  $('mask-tool').dataset.n = MASKS.reduce((n, [kind]) => n + Object.keys((look.masks || {})[kind] || {}).length, 0) || '';
 }
 
 // Colours a slider's track between where it starts (the preset's value, or zero) and the thumb,
@@ -616,6 +705,7 @@ function drawPanel() {
   const p = photo();
   const loupe = S.view === 'loupe' && !!p;
   $('panel').style.visibility = f ? 'visible' : 'hidden';
+  $('preset-box').hidden = !f;
   if (!f) return;
   $('scope-photo').disabled = !loupe;
   $('scope-folder').setAttribute('aria-pressed', String(!editingPhoto()));
@@ -639,7 +729,8 @@ function drawPanel() {
     note.textContent = `Settings for every photo in “${f.name}”.`;
   }
 
-  $('to-original').textContent = editingPhoto() ? 'Reset this photo to original' : 'Reset whole folder to original';
+  $('to-original').textContent = editingPhoto() ? 'Photo to original' : 'Folder to original';
+  $('to-original').title = editingPhoto() ? 'Reset this photo to how it was uploaded' : `Reset every photo in “${f.name}” to how it was uploaded`;
   const look = panelLook();
   for (const b of document.querySelectorAll('[data-mode]')) b.setAttribute('aria-pressed', String(b.dataset.mode === look.mode));
   $('mode-note').textContent = MODE_NOTES[look.mode];
@@ -661,6 +752,7 @@ function openFolder(id) {
   S.rating = null;
   if (window.drawRatings) drawRatings();
   drawFolders(); drawGrid(); drawPanel(); drawStage();
+  markCurrent();
 }
 
 function openPhoto(id) {
@@ -719,22 +811,25 @@ async function start() {
   S.presets = presets.presets;
   S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
   buildLooks();
-  $('pack').value = S.pack = '';
   S.weddings = weddings.weddings;
   $('wedding').replaceChildren(...S.weddings.map((w) => el('option', { value: w.id, textContent: w.name })));
+  $('wedding').hidden = !S.weddings.length;
   if (!S.weddings.length) {
     for (const id of ['menu-wedding-title', 'originals', 'delete-wedding']) $(id).hidden = true;
     S.wedding = null;
     $('folders').replaceChildren();
     $('count').textContent = '';
     $('panel').style.visibility = 'hidden';
+    $('preset-box').hidden = true;
+    $('toolbar').dataset.view = 'grid';
+    drawFilmInfo(); drawNavigator();
     $('empty').replaceChildren(el('strong', { textContent: 'No photos here yet' }),
-      'Click “Add photos” at the top to pick a folder from this computer. Or, in Lightroom, choose Library > Plug-in Extras > “Auto Edits: send photos to the server”.');
+      'Click “Add photos…” at the bottom left to pick a folder from this computer. Or, in Lightroom, choose Library > Plug-in Extras > “Auto Edits: send photos to the server”.');
     $('empty').hidden = false;
     $('grid').hidden = $('loupe').hidden = true;
     return;
   }
-  $('empty').replaceChildren(el('strong', { textContent: 'This folder is empty' }), 'Add photos to it with “Add photos” at the top, or send them from Lightroom.');
+  $('empty').replaceChildren(el('strong', { textContent: 'This folder is empty' }), 'Add photos to it with “Add photos…” at the bottom left, or send them from Lightroom.');
   // /?wedding=<id> opens that wedding (from the admin page); /?account=1 opens the account window
   const asked = new URLSearchParams(location.search);
   const want = asked.get('wedding');
@@ -754,16 +849,12 @@ $('scope-photo').onclick = () => { S.scope = 'photo'; drawPanel(); };
 for (const b of document.querySelectorAll('[data-mode]')) {
   b.onclick = () => change({ mode: b.dataset.mode, toggles: b.dataset.mode === 'preset_auto' ? S.lastToggles : [] });
 }
-$('pack').onchange = (e) => { S.pack = e.target.value; drawLooks(); };
 $('use-preset-masks').onchange = (e) => change({ preset_masks: e.target.checked });
 
 async function loadPresets() {
   S.presets = (await api('/api/presets')).presets;
   S.byPreset = new Map(S.presets.map((p) => [p.id, p]));
-  const keep = S.pack;
   buildLooks();
-  $('pack').value = [...$('pack').options].some((o) => o.value === keep) ? keep : '';
-  S.pack = $('pack').value;
 }
 
 $('upload').onchange = async (e) => {
@@ -780,10 +871,10 @@ $('upload').onchange = async (e) => {
     if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
     const good = data.results.filter((x) => x.ok), bad = data.results.filter((x) => !x.ok);
     await loadPresets();
-    S.pack = 'My presets'; $('pack').value = S.pack; S.query = ''; $('search').value = '';
+    S.openPacks.add('My presets'); S.query = ''; $('search').value = '';
     const withMasks = good.filter((x) => x.masks).length;
     note.textContent = `Added ${good.length} preset${good.length === 1 ? '' : 's'}` +
-      (withMasks ? `, ${withMasks} with masks` : '') + '. They are under “My presets”.' +
+      (withMasks ? `, ${withMasks} with masks` : '') + '. They are in the “My presets” group.' +
       (bad.length ? ` Not added: ${bad.map((x) => `${x.file} (${x.why})`).join('; ')}` : '');
     if (good.length === 1 && folder()) { S.openLook = null; change({ preset: good[0].id, mode: panelLook().mode === 'auto' ? 'preset' : panelLook().mode }); }
     else drawLooks();
@@ -814,13 +905,50 @@ for (const [id, key] of [['amount', 'amount']]) {
   $(id).ondblclick = () => change({ [key]: key === 'amount' ? 1 : 0 });
 }
 $('reset').onclick = () => change(blankLook());
-// The three parts of the panel: Look, Adjust, Masks.
-for (const t of document.querySelectorAll('#tabs button')) {
-  t.onclick = () => {
-    $('panel').dataset.tab = t.dataset.tab;
-    for (const o of document.querySelectorAll('#tabs button')) o.setAttribute('aria-selected', String(o === t));
-    $('panel-body').scrollTop = 0;
+// The right panel shows one tool at a time, as in Lightroom: the sliders, Crop or Masks.
+function setTool(tool) {
+  if (S.tool === 'masks' && tool !== 'masks' && S.showMask) { S.showMask = false; drawStage(); }
+  S.tool = tool;
+  $('panel').dataset.tool = tool;
+  $('mask-tool').setAttribute('aria-pressed', String(tool === 'masks'));
+  $('crop-tool').setAttribute('aria-pressed', String(tool === 'crop'));
+  $('panel-body').scrollTop = 0;
+}
+$('mask-tool').onclick = () => setTool(S.tool === 'masks' ? 'adjust' : 'masks');
+$('mask-back').onclick = () => setTool('adjust');
+
+// Rating buttons under the photo: the same as keys 3, 2 and 1; clicking your own rating again
+// puts it back to the automatic one.
+for (const b of document.querySelectorAll('#toolbar .picks button')) {
+  b.onclick = () => {
+    const p = photo();
+    if (!p) return;
+    const again = p.pick === b.dataset.pick;
+    Cull.key(again ? '0' : { keep: '3', maybe: '2', reject: '1' }[b.dataset.pick]);
   };
+}
+
+// Thumbnail size in Library, remembered in this browser.
+function setCellSize(px) {
+  $('grid').style.setProperty('--cell', `${px}px`);
+  $('cell-size').value = px;
+}
+try { const kept = Number(localStorage.getItem('ae-cell')); if (kept) setCellSize(kept); } catch (e) { /* no storage: default size */ }
+$('cell-size').oninput = (e) => {
+  setCellSize(Number(e.target.value));
+  try { localStorage.setItem('ae-cell', e.target.value); } catch (err) { /* fine without */ }
+};
+
+// Folding the side panels away (F7 left, F8 right; Lightroom's own keys), remembered too.
+function sides(which, hide) {
+  const app = $('app');
+  app.classList.toggle(`no-${which}`, hide);
+  try { localStorage.setItem(`ae-no-${which}`, hide ? '1' : ''); } catch (e) { /* fine without */ }
+  requestAnimationFrame(placeDivider);
+}
+for (const which of ['left', 'right']) {
+  try { if (localStorage.getItem(`ae-no-${which}`)) $('app').classList.add(`no-${which}`); } catch (e) { /* fine without */ }
+  $(`hide-${which}`).onclick = () => sides(which, !$('app').classList.contains(`no-${which}`));
 }
 
 $('delete-wedding').onclick = () => {
@@ -893,12 +1021,18 @@ document.addEventListener('keydown', (e) => {
   const t = e.target;
   const typing = t.matches('input[type=search], input[type=password], select') || t.closest('#looks');
   if (e.key === '\\' && !typing) { if (!S.holdBefore) { S.holdBefore = true; placeDivider(); } return; }
+  if ((e.key === 'F7' || e.key === 'F8') && !document.querySelector('dialog[open]')) {
+    e.preventDefault(); const w = e.key === 'F7' ? 'left' : 'right'; sides(w, !$('app').classList.contains(`no-${w}`)); return;
+  }
   if (typing || t.matches('input[type=range]') || e.metaKey || e.ctrlKey || e.altKey) return;
   if (window.cropKey && cropKey(e)) { e.preventDefault(); return; }
   if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
   else if (!typing && typeof Cull !== 'undefined' && Cull.key(e.key)) e.preventDefault();
   else if (e.key === 'g' || e.key === 'G' || e.key === 'Escape') setView('grid');
+  else if (e.key === 'd' || e.key === 'D' || e.key === 'e' || e.key === 'E') setView('loupe');
+  else if ((e.key === 'y' || e.key === 'Y') && S.view === 'loupe') { S.split = !S.split; placeDivider(); }
+  else if (e.key === 'm' || e.key === 'M') setTool(S.tool === 'masks' ? 'adjust' : 'masks');
   else if (e.key === 'Enter' && S.view === 'grid' && !t.matches('button, summary')) setView('loupe');
 });
 document.addEventListener('keyup', (e) => { if (e.key === '\\' && S.holdBefore) { S.holdBefore = false; placeDivider(); } });

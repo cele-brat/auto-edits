@@ -49,15 +49,17 @@ function placeCrop(rect) {
 function drawCropBar() {
   const on = !!S.cropping;
   $('crop-bar').hidden = !on;
-  $('crop-tool').setAttribute('aria-pressed', String(on));
-  $('crop-tool').disabled = S.view !== 'loupe' || !photo();
-  $('crop-open').disabled = S.view !== 'loupe' || !photo();
+  $('crop-open').hidden = on;
+  $('crop-open').disabled = !photo();
+  $('crop-tool').setAttribute('aria-pressed', String(S.tool === 'crop'));
   if (on) $('crop-ratio').value = S.cropping.ratio;
 }
 
 function startCrop() {
+  if (S.view !== 'loupe' && photo()) openPhoto(S.photoId);       // R in Library: open the photo and crop it
   const p = photo();
   if (!p || S.view !== 'loupe' || S.cropping) return;
+  setTool('crop');
   const c = p.crop;
   S.cropping = { box: c ? { x: c.x, y: c.y, w: c.w, h: c.h } : { x: 0, y: 0, w: 1, h: 1 }, ratio: c ? c.ratio : 'original', auto: !!(c && c.auto) };
   $('crop-note').textContent = '';
@@ -68,6 +70,7 @@ async function endCrop(save) {
   const p = photo();
   const was = S.cropping;
   S.cropping = null;
+  if (S.tool === 'crop') setTool('adjust');                       // as in Lightroom: Done closes the crop tool
   drawCropBar();
   if (save && p && was) {
     const b = was.box;
@@ -90,7 +93,7 @@ function cropKey(e) {
     if (e.key === 'r' || e.key === 'R') { endCrop(true); return true; }
     return e.key === 'ArrowLeft' || e.key === 'ArrowRight';   // no moving to another photo mid-crop
   }
-  if ((e.key === 'r' || e.key === 'R') && S.view === 'loupe' && photo()) { startCrop(); return true; }
+  if ((e.key === 'r' || e.key === 'R') && photo()) { startCrop(); return true; }
   return false;
 }
 
@@ -131,7 +134,13 @@ cropBox.addEventListener('pointerup', () => { C.drag = null; });
 cropBox.addEventListener('pointercancel', () => { C.drag = null; });
 
 // ---- the bar ------------------------------------------------------------------------------
-$('crop-tool').onclick = () => (S.cropping ? endCrop(true) : startCrop());
+// The Crop button in the tool strip: crops the photo on screen; in Library it shows the folder's crop tools.
+$('crop-tool').onclick = () => {
+  if (S.cropping) return endCrop(true);
+  if (S.tool === 'crop') { setTool('adjust'); drawCropBar(); return; }
+  if (S.view === 'loupe' && photo()) return startCrop();
+  setTool('crop'); drawCropBar();
+};
 $('crop-open').onclick = startCrop;
 $('crop-done').onclick = () => endCrop(true);
 $('crop-cancel').onclick = () => endCrop(false);

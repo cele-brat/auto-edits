@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=25">
+<link rel="stylesheet" href="/static/app.css?v=26">
 </head>
 <body>
 <div id="app" hidden>
@@ -16,22 +16,11 @@
     <span id="brand">Auto Edits<small>by Cele-Brat</small></span>
     <select id="wedding" aria-label="Wedding"></select>
     <span id="count"></span>
-    <button id="add-photos" type="button">Add photos</button>
-    <button id="cull-open" type="button">Cull</button>
-    <button id="export-open" type="button">Export</button>
-    <div id="ratings" class="seg" role="group" aria-label="Show photos rated" hidden>
-      <button type="button" data-rating="" aria-pressed="true">All</button>
-      <button type="button" data-rating="keep" aria-pressed="false" title="Rate with key 3">Keep</button>
-      <button type="button" data-rating="maybe" aria-pressed="false" title="Rate with key 2">Maybe</button>
-      <button type="button" data-rating="reject" aria-pressed="false" title="Rate with key 1">Reject</button>
-    </div>
     <span class="grow"></span>
-    <div class="seg" role="group" aria-label="View">
-      <button id="view-grid" type="button" aria-pressed="true" title="Grid (G)">Grid</button>
-      <button id="view-loupe" type="button" aria-pressed="false" title="One photo (Enter)">One photo</button>
-    </div>
-    <button id="crop-tool" type="button" aria-pressed="false" title="Crop this photo (R). Only a setting: your photo is never changed.">Crop</button>
-    <button id="split" type="button" aria-pressed="true" title="Drag the line on the photo. Hold \ to see the whole photo before.">Before and after</button>
+    <nav id="modules" aria-label="Module">
+      <button id="view-grid" type="button" aria-pressed="true" title="All photos in a grid (G)">Library</button>
+      <button id="view-loupe" type="button" aria-pressed="false" title="Edit one photo (D)">Develop</button>
+    </nav>
     <button id="credits" type="button" title="Your account and credits">Credits</button>
     <details id="more">
       <summary title="Your account, this wedding, help"><span class="avatar" id="me-initial">·</span><span class="me-label">Account</span><svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></summary>
@@ -57,7 +46,39 @@
   <div id="viewing" role="status" hidden><span id="viewing-text"></span> <button id="viewing-stop" type="button" class="primary">Back to admin</button></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span> <button id="notice-action" type="button" hidden></button><button id="notice-x" type="button" class="quiet" aria-label="Hide this message">×</button></div>
 
-  <nav id="folders" aria-label="Event folders"></nav>
+  <aside id="left" aria-label="Folders and presets">
+    <details class="lp" id="nav-box" open>
+      <summary>Navigator</summary>
+      <div id="nav"><img id="nav-img" alt=""></div>
+    </details>
+    <details class="lp" id="folders-box" open>
+      <summary>Folders</summary>
+      <nav id="folders" aria-label="Event folders"></nav>
+    </details>
+    <details class="lp grow-box" id="preset-box" open>
+      <summary>Presets <label class="plus" title="Add presets from Lightroom (.xmp files, masks included)">+<input id="upload" type="file" accept=".xmp" multiple aria-label="Add presets from Lightroom"></label></summary>
+      <div class="lp-body">
+        <div class="adj amount"><span class="name">Amount</span><input id="amount" type="range" min="0" max="2" step="0.05" aria-label="Preset amount"><output></output></div>
+        <input id="search" type="search" placeholder="Search presets" aria-label="Search presets">
+        <div id="looks" tabindex="0" aria-label="Presets. Use the up and down arrow keys to try them."></div>
+        <p class="chosen"><span id="preset-name"></span></p>
+        <p id="about"></p>
+        <div id="preset-masks" hidden>
+          <label class="show"><input id="use-preset-masks" type="checkbox"> Use the masks inside this preset</label>
+          <ul id="preset-mask-list"></ul>
+          <p id="preset-mask-note"></p>
+        </div>
+        <button id="remove-preset" type="button" class="quiet small" hidden>Remove this preset</button>
+        <p id="upload-note" aria-live="polite">Add your own with <b>+</b>: in Lightroom, right-click a preset, then Export.</p>
+      </div>
+    </details>
+    <div id="left-foot">
+      <button id="add-photos" type="button">Add photos…</button>
+      <button id="cull-open" type="button">Cull…</button>
+      <button id="export-open" type="button" class="primary">Export…</button>
+    </div>
+  </aside>
+  <button id="hide-left" class="edge" type="button" title="Hide or show the left panel (F7)" aria-label="Hide or show the left panel"></button>
 
   <main id="stage">
     <div id="empty" hidden></div>
@@ -73,92 +94,112 @@
         <div id="crop-box" hidden><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
           <b data-h="nw"></b><b data-h="n"></b><b data-h="ne"></b><b data-h="e"></b><b data-h="se"></b><b data-h="s"></b><b data-h="sw"></b><b data-h="w"></b></div>
       </div>
-      <div id="crop-bar" hidden>
-        <label>Shape <select id="crop-ratio"></select></label>
-        <button id="crop-ai" type="button" title="Finds the people and frames them: eyes on the upper third, nobody's face cut">AI crop</button>
-        <button id="crop-whole" type="button" class="quiet">Whole photo</button>
-        <span id="crop-note"></span>
-        <span class="grow"></span>
-        <button id="crop-cancel" type="button" class="quiet">Cancel (Esc)</button>
-        <button id="crop-done" type="button" class="primary">Done (Enter)</button>
-      </div>
-      <div id="caption"></div>
-      <div id="strip"></div>
     </div>
   </main>
 
-  <aside id="panel" aria-label="Look" data-tab="look">
+  <div id="toolbar">
+    <span class="for-grid">
+      <label class="size" title="Thumbnail size"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="6" height="6"/><rect x="13" y="5" width="6" height="6"/><rect x="5" y="13" width="6" height="6"/><rect x="13" y="13" width="6" height="6"/></svg>
+        <input id="cell-size" type="range" min="130" max="380" step="10" value="200" aria-label="Thumbnail size"></label>
+      <span class="hint-keys">Double-click a photo to edit it · <b>D</b> Develop · <b>G</b> Library</span>
+    </span>
+    <span class="for-loupe">
+      <button id="split" type="button" aria-pressed="true" title="Before and after side by side (Y). Hold \ to see the whole photo before."><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="1"/><path d="M12 3v18"/></svg><span>Before / after</span></button>
+      <span class="picks" role="group" aria-label="Rate this photo">
+        <button type="button" data-pick="keep" title="Keep (3)">Keep</button>
+        <button type="button" data-pick="maybe" title="Maybe (2)">Maybe</button>
+        <button type="button" data-pick="reject" title="Reject (1)">Reject</button>
+      </span>
+      <span id="caption"></span>
+    </span>
+  </div>
+
+  <aside id="panel" aria-label="Edit settings" data-tool="adjust">
+    <div id="histo-box">
+      <canvas id="histo" width="512" height="160" aria-label="Histogram of the photo on screen"></canvas>
+      <p id="histo-info"></p>
+    </div>
+    <div id="toolstrip" role="toolbar" aria-label="Tools">
+      <button id="crop-tool" type="button" aria-pressed="false" title="Crop (R). Only a setting: your photo is never changed."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2v16h16M2 6h16v16"/></svg><span>Crop</span></button>
+      <button id="mask-tool" type="button" aria-pressed="false" title="Masks: change one part of the photo (M)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></svg><span>Masks</span></button>
+    </div>
     <div id="panel-head">
-      <section id="scope-box">
-        <h2>Apply to</h2>
+      <div class="head-row" id="scope-box">
+        <span class="lab">Apply to</span>
         <div class="seg wide" role="group" aria-label="What these settings apply to">
           <button id="scope-folder" type="button" aria-pressed="true">Whole folder</button>
-          <button id="scope-photo" type="button" aria-pressed="false">This photo only</button>
+          <button id="scope-photo" type="button" aria-pressed="false">This photo</button>
         </div>
         <p id="scope-note"></p>
-        <button id="to-original" type="button" class="original">Reset to original</button>
-      </section>
-      <section id="mode-box">
-        <h2>Edit with</h2>
+      </div>
+      <div class="head-row" id="mode-box">
+        <span class="lab">Edit with</span>
         <div class="seg wide three" role="group" aria-label="How to edit">
           <button data-mode="preset" type="button">Preset</button>
           <button data-mode="preset_auto" type="button">Preset + auto</button>
-          <button data-mode="auto" type="button">Auto Correct</button>
+          <button data-mode="auto" type="button">Auto</button>
         </div>
         <p id="mode-note"></p>
-      </section>
-      <div id="tabs" role="tablist" aria-label="Settings">
-        <button type="button" role="tab" id="tab-look" data-tab="look" aria-selected="true">Preset</button>
-        <button type="button" role="tab" id="tab-adjust" data-tab="adjust" aria-selected="false">Adjust</button>
-        <button type="button" role="tab" id="tab-masks" data-tab="masks" aria-selected="false">Masks</button>
       </div>
     </div>
     <div id="panel-body">
-
-    <section id="preset-box" data-pane="look">
-      <h2 class="chosen"><span id="preset-name"></span></h2>
-      <label class="slider"><span>Strength</span><input id="amount" type="range" min="0" max="2" step="0.05"><output></output></label>
-      <div class="row">
-        <select id="pack" aria-label="Preset pack"></select>
-        <input id="search" type="search" placeholder="Search looks" aria-label="Search looks">
-      </div>
-      <div id="looks" tabindex="0" aria-label="Presets. Use the up and down arrow keys to try them."></div>
-      <p id="about"></p>
-      <div id="preset-masks" hidden>
-        <label class="show"><input id="use-preset-masks" type="checkbox"> Use the masks inside this preset</label>
-        <ul id="preset-mask-list"></ul>
-        <p id="preset-mask-note"></p>
-      </div>
-      <div class="row between">
-        <label class="filebutton">Add presets from Lightroom<input id="upload" type="file" accept=".xmp" multiple></label>
-        <button id="remove-preset" type="button" class="quiet" hidden>Remove this preset</button>
-      </div>
-      <p id="upload-note" aria-live="polite">Exported .xmp files, masks included. In Lightroom: right-click a preset, then Export.</p>
-    </section>
-
-    <section id="adjust-box" data-pane="adjust">
-      <div id="crop-panel">
-        <h3>Crop</h3>
-        <p class="hint">Crops are a setting on each photo: the photo itself is never changed, and Lightroom gets an ordinary crop you can still move.</p>
-        <div class="tools">
-          <button id="crop-open" type="button">Crop this photo (R)</button>
-          <button id="crop-folder" type="button">AI crop every photo in this folder</button>
-          <button id="crop-clear" type="button" class="quiet">Remove crops in this folder</button>
+      <section id="crop-pane" data-pane="crop">
+        <h3 class="pane-title">Crop</h3>
+        <div id="crop-bar" hidden>
+          <label class="field-row">Shape <select id="crop-ratio"></select></label>
+          <div class="tools">
+            <button id="crop-ai" type="button" title="Finds the people and frames them: eyes on the upper third, nobody's face cut">AI crop</button>
+            <button id="crop-whole" type="button" class="quiet">Whole photo</button>
+          </div>
+          <p id="crop-note"></p>
+          <div class="tools end">
+            <button id="crop-cancel" type="button" class="quiet">Cancel (Esc)</button>
+            <button id="crop-done" type="button" class="primary">Done (Enter)</button>
+          </div>
         </div>
-        <p id="crop-progress" class="hint"></p>
-      </div>
-      <details class="help"><summary>How the sliders work</summary><p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back. Click a number to type it.</p></details>
-      <div id="panels"></div>
-      <p id="auto-values"></p>
-      <button id="reset" type="button" class="quiet">Reset these settings</button>
-    </section>
-    <section id="mask-box" data-pane="masks">
-      <details class="help"><summary>How your own masks work</summary><p class="hint">Extra changes to one part of the photo, on top of any masks in the preset. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p></details>
-      <div id="masks"></div>
-    </section>
+        <div id="crop-panel">
+          <p class="hint">Crops are a setting on each photo: the photo itself is never changed, and Lightroom gets an ordinary crop you can still move.</p>
+          <div class="tools">
+            <button id="crop-open" type="button">Crop this photo (R)</button>
+            <button id="crop-folder" type="button">AI crop every photo in this folder</button>
+            <button id="crop-clear" type="button" class="quiet">Remove crops in this folder</button>
+          </div>
+          <p id="crop-progress" class="dim small"></p>
+        </div>
+      </section>
+      <section id="adjust-box" data-pane="adjust">
+        <div id="panels"></div>
+        <p id="auto-values"></p>
+        <details class="help"><summary>How the sliders work</summary><p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back. Click a number to type it.</p></details>
+      </section>
+      <section id="mask-box" data-pane="masks">
+        <h3 class="pane-title">Masks <button id="mask-back" type="button" class="quiet small">Close</button></h3>
+        <details class="help"><summary>How your own masks work</summary><p class="hint">Extra changes to one part of the photo, on top of any masks in the preset. Open a part, then move its sliders. Lightroom makes the final mask itself, so the edges you see here are approximate.</p></details>
+        <div id="masks"></div>
+      </section>
+    </div>
+    <div id="panel-foot">
+      <button id="reset" type="button" title="Put these sliders back to the preset's own values">Reset sliders</button>
+      <button id="to-original" type="button" class="original">Reset to original</button>
     </div>
     <p id="saved" aria-live="polite"></p>
   </aside>
+  <button id="hide-right" class="edge" type="button" title="Hide or show the right panel (F8)" aria-label="Hide or show the right panel"></button>
+
+  <footer id="film">
+    <div id="film-head">
+      <span id="film-info"></span>
+      <span class="grow"></span>
+      <div id="ratings" class="seg" role="group" aria-label="Show photos rated" hidden>
+        <span class="lab">Filter</span>
+        <button type="button" data-rating="" aria-pressed="true">All</button>
+        <button type="button" data-rating="keep" aria-pressed="false" title="Rate with key 3">Keep</button>
+        <button type="button" data-rating="maybe" aria-pressed="false" title="Rate with key 2">Maybe</button>
+        <button type="button" data-rating="reject" aria-pressed="false" title="Rate with key 1">Reject</button>
+      </div>
+    </div>
+    <div id="strip"></div>
+  </footer>
 </div>
 
 <dialog id="add">
@@ -387,12 +428,12 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=21"></script>
+<script src="/static/app.js?v=22"></script>
 <script src="/static/addfolder.js?v=15"></script>
-<script src="/static/cull.js?v=15"></script>
+<script src="/static/cull.js?v=16"></script>
 <script src="/static/export.js?v=15"></script>
 <script src="/static/account.js?v=21"></script>
 <script src="/static/buy.js?v=5"></script>
-<script src="/static/crop.js?v=1"></script>
+<script src="/static/crop.js?v=2"></script>
 </body>
 </html>
