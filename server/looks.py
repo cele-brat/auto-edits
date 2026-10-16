@@ -200,11 +200,23 @@ def local_adjust(img: np.ndarray, masks: dict, adjustments: dict, corrections: l
     for kind, a in adjustments.items():
         jobs.append((masks.get(kind), a, None, 1.0))
     out = img
+    span = float(np.hypot(h, w))
     for m, a, curve, amount in jobs:
         if m is None or float(m.max()) < 0.02:
             continue
-        m = cv2.resize(m, (w, h), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
-        out = out + (_apply(out, a, curve) - out) * m
+        # Work only on the part of the picture the mask covers (a face is a small part of a
+        # photo), with room around it so clarity still sees past the mask's edge.
+        ys, xs = np.where(m > 0.01)
+        mh, mw = m.shape
+        pad = max(2, int(0.03 * max(mh, mw)))
+        y0, y1 = max(0, ys.min() - pad), min(mh, ys.max() + 1 + pad)
+        x0, x1 = max(0, xs.min() - pad), min(mw, xs.max() + 1 + pad)
+        Y0, Y1, X0, X1 = y0 * h // mh, min(h, -(-y1 * h // mh)), x0 * w // mw, min(w, -(-x1 * w // mw))
+        if out is img:
+            out = img.copy()
+        part = out[Y0:Y1, X0:X1]
+        cover = cv2.resize(m[y0:y1, x0:x1], (X1 - X0, Y1 - Y0), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
+        out[Y0:Y1, X0:X1] = part + (_apply(part, a, curve, span) - part) * cover
     return out
 
 
