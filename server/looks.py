@@ -318,6 +318,11 @@ class _Cache:
                 self.items.popitem(last=False)
         return value
 
+    def peek(self, key):
+        """The kept value, or None, without making it or changing what is kept."""
+        with self.lock:
+            return self.items.get(key)
+
 
 class Renderer:
     def __init__(self, presets_file: str | Path = PRESETS_FILE):
@@ -325,8 +330,12 @@ class Renderer:
         self.presets = {p["id"]: p for p in data["presets"]}
         self.library = set(self.presets)                 # the presets that ship with the app
         self._images = _Cache(24)
+        # Grid and filmstrip pictures have their own, smaller copies, so drawing a folder of
+        # thumbnails never pushes the big photo (and its masks) out of memory.
+        self._small_images = _Cache(160)
         self._autos = _Cache(4000)
         self._masks = _Cache(12)
+        self._small_masks = _Cache(160)
         self._mask_lock = threading.Lock()
 
     def add_uploaded(self, preset: dict):
@@ -387,7 +396,8 @@ class Renderer:
             if scale < 1:
                 bgr = cv2.resize(bgr, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
             return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
-        return self._images.get((str(path), path.stat().st_mtime_ns, size), make)
+        cache = self._small_images if size <= 400 else self._images
+        return cache.get((str(path), path.stat().st_mtime_ns, size), make)
 
     @staticmethod
     def _jpeg(img: np.ndarray, quality=88) -> bytes:
@@ -401,24 +411,37 @@ class Renderer:
     def masks(self, path: Path) -> dict:
         """The photo's masks. Made the first time they are needed, then kept beside the preview."""
         stamp = path.stat().st_mtime_ns
+        return self._masks.get((str(path), stamp), lambda: self._make_masks(path, stamp))
+
+    def small_masks(self, path: Path, shape) -> dict:
+        """The masks at the size of a grid picture, kept apart (as bytes) from the full ones."""
+        stamp = path.stat().st_mtime_ns
+        h, w = shape[:2]
 
         def make():
-            from engine import masks as maker
-            kept = path.with_suffix(".masks.npz")
-            if kept.exists():
-                try:
-                    with np.load(kept) as z:
-                        if int(z["stamp"]) == stamp:
-                            return {k: z[k].astype(np.float32) / 255 for k in maker.KINDS}
-                except Exception:
-                    pass                                     # unreadable or from an older photo: make it again
-            with self._mask_lock:                            # the mask models take one photo at a time
-                made = maker.compute(self._load(path, 1600))
-            part = kept.with_suffix(f".{threading.get_ident()}.part.npz")
-            np.savez_compressed(part, stamp=np.int64(stamp), **{k: (v * 255 + 0.5).astype(np.uint8) for k, v in made.items()})
-            part.replace(kept)
-            return made
-        return self._masks.get((str(path), stamp), make)
+            full = self._masks.peek((str(path), stamp)) or self._make_masks(path, stamp)
+            return {k: (cv2.resize(v, (w, h), interpolation=cv2.INTER_AREA) * 255 + 0.5).astype(np.uint8)
+                    for k, v in full.items()}
+        kept = self._small_masks.get((str(path), stamp, h, w), make)
+        return {k: v.astype(np.float32) / 255 for k, v in kept.items()}
+
+    def _make_masks(self, path: Path, stamp: int) -> dict:
+        """Masks from the copy kept beside the preview, or made now (and kept) if there is none."""
+        from engine import masks as maker
+        kept = path.with_suffix(".masks.npz")
+        if kept.exists():
+            try:
+                with np.load(kept) as z:
+                    if int(z["stamp"]) == stamp:
+                        return {k: z[k].astype(np.float32) / 255 for k in maker.KINDS}
+            except Exception:
+                pass                                     # unreadable or from an older photo: make it again
+        with self._mask_lock:                            # the mask models take one photo at a time
+            made = maker.compute(self._load(path, 1600))
+        part = kept.with_suffix(f".{threading.get_ident()}.part.npz")
+        np.savez_compressed(part, stamp=np.int64(stamp), **{k: (v * 255 + 0.5).astype(np.uint8) for k, v in made.items()})
+        part.replace(kept)
+        return made
 
     # ---- looks ----------------------------------------------------------
     def auto_values(self, path: Path, toggles, iso=None) -> dict:
@@ -526,7 +549,7 @@ class Renderer:
         if isinstance(texture, (int, float)) and texture:        # the engine's own texture is too weak to see
             out = _detail(out, float(texture) * d["amount"], 0)
         if d["masks"] or d["corrections"] or show:
-            masks = self.masks(path)
+            masks = self.small_masks(path, out.shape) if size <= 400 and not show else self.masks(path)
             out = local_adjust(out, masks, d["masks"], d["corrections"])
             if show in masks:
                 out = show_mask(out, masks[show])

@@ -229,17 +229,52 @@ function drawFilmInfo() {
   $('film-info').replaceChildren(...bits);
 }
 
+// Thumbnails after a change: the server has few cores, so asking for a whole folder of new
+// thumbnails at once would make the big photo wait behind them. Instead: the big photo first,
+// then only the thumbnails on screen, two at a time, the selected photo's first. A thumbnail
+// scrolled into view later is fetched then. The old picture stays until the new one is ready.
+const thumbs = { queue: [], running: 0 };
+const onScreen = new IntersectionObserver((entries) => {
+  for (const e of entries) if (e.isIntersecting) queueThumb(e.target);
+}, { rootMargin: '120px' });
+function queueThumb(b, first = false) {
+  const img = b.querySelector('img');
+  if (!img || !img.dataset.want || img.src.endsWith(img.dataset.want) || thumbs.queue.includes(b)) return;
+  if (first) thumbs.queue.unshift(b); else thumbs.queue.push(b);
+  pumpThumbs();
+}
+function pumpThumbs() {
+  while (thumbs.running < 2 && thumbs.queue.length && !stageBusy) {
+    const b = thumbs.queue.shift();
+    const img = b.querySelector('img');
+    const url = img && img.dataset.want;
+    if (!url || img.src.endsWith(url) || !b.isConnected) continue;
+    thumbs.running += 1;
+    const pre = new Image();
+    pre.src = url;
+    pre.decode().catch(() => {}).then(() => {
+      if (img.dataset.want === url) img.src = url;
+      thumbs.running -= 1;
+      pumpThumbs();
+    });
+  }
+}
 function refreshThumbs() {
+  thumbs.queue = [];
   for (const b of document.querySelectorAll('#grid button, #strip button')) {
     const p = S.photos.find((x) => x.id === b.dataset.id);
     if (!p) continue;
     const img = b.querySelector('img');
-    const url = thumbUrl(p);
-    if (!img.src.endsWith(url)) img.src = url;
+    img.dataset.want = thumbUrl(p);
+    onScreen.unobserve(b);
+    onScreen.observe(b);                       // queued when (and if) it is on screen
     const dot = b.querySelector('.own');
     if (p.look && !dot) b.append(el('span', { className: 'own', title: 'Has its own settings' }));
     if (!p.look && dot) dot.remove();
   }
+  const cur = document.querySelector('#strip button[aria-current=true]');
+  if (cur) queueThumb(cur, true);
+  drawNavigator();
 }
 
 function markCurrent(fromStrip = false) {
@@ -258,6 +293,7 @@ function markCurrent(fromStrip = false) {
 function drawNavigator() {
   const p = photo(), img = $('nav-img');
   if (!p) { img.removeAttribute('src'); clearHistogram(); return; }
+  if (S.view === 'loupe') return;                 // Develop: showAfter puts the photo on screen here too
   const url = thumbUrl(p);
   if (!img.src.endsWith(url)) img.src = url;
   else if (S.view !== 'loupe' && img.complete) drawHistogram(img);
@@ -309,7 +345,7 @@ function drawHistogram(img) {
 }
 
 // ---- drawing: the big photo ---------------------------------------------------
-let renderTurn = 0, busyTimer = null, stageLive = false;
+let renderTurn = 0, busyTimer = null, stageLive = false, stageBusy = false;
 // Loads a picture and has it fully decoded before it is handed back, so putting it on screen
 // never shows a blank frame.
 async function loadImage(url) {
@@ -327,6 +363,7 @@ function showAfter(img) {
   old.replaceWith(img);
   placeDivider();
   drawHistogram(img);
+  if ($('nav-img').src !== img.src) $('nav-img').src = img.src;   // same picture, already loaded
 }
 
 async function drawStage() {
@@ -339,13 +376,14 @@ async function drawStage() {
   $('view-loupe').disabled = !photo();
   $('toolbar').dataset.view = S.view;
   const p = photo();
-  if (empty || S.view !== 'loupe' || !p) return;
+  if (empty || S.view !== 'loupe' || !p) { stageBusy = false; pumpThumbs(); return; }
 
   const before = $('before');
   const wanted = beforeUrl(p);
   if (!before.src.endsWith(wanted)) before.src = wanted;
 
   const turn = ++renderTurn;
+  stageBusy = true;
   // "Rendering" only shows when a render is slow, so it does not blink on every small move
   clearTimeout(busyTimer);
   busyTimer = setTimeout(() => { if (turn === renderTurn) $('busy').hidden = false; }, 600);
@@ -359,7 +397,7 @@ async function drawStage() {
   } catch (e) {
     if (turn === renderTurn) $('saved').textContent = e.message;
   }
-  if (turn === renderTurn) { clearTimeout(busyTimer); $('busy').hidden = true; }
+  if (turn === renderTurn) { clearTimeout(busyTimer); $('busy').hidden = true; stageBusy = false; pumpThumbs(); }
 }
 
 function drawCaption() {
