@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=28">
+<link rel="stylesheet" href="/static/app.css?v=30">
 </head>
 <body>
 <div id="app" hidden>
@@ -52,7 +52,12 @@
       <div id="nav"><img id="nav-img" alt=""></div>
     </details>
     <details class="lp" id="folders-box" open>
-      <summary>Folders</summary>
+      <summary>Folders <button id="folder-plus" class="plus" type="button" title="Add folders or photos" aria-haspopup="menu" aria-expanded="false">+</button></summary>
+      <div id="folder-menu" class="mini-menu" role="menu" hidden>
+        <button id="folder-add-folder" type="button" role="menuitem">Add a folder…<small>Into this wedding; sub-folders become event folders</small></button>
+        <button id="folder-add-photos" type="button" role="menuitem">Add photos…<small>Single photos into an event folder you name</small></button>
+        <button id="folder-new-wedding" type="button" role="menuitem">New wedding…<small>Start a new wedding from a folder</small></button>
+      </div>
       <nav id="folders" aria-label="Event folders"></nav>
     </details>
     <details class="lp grow-box" id="preset-box" open>
@@ -130,6 +135,7 @@
     <div id="toolstrip" role="toolbar" aria-label="Tools">
       <button id="crop-tool" type="button" aria-pressed="false" title="Crop (R). Only a setting: your photo is never changed."><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2v16h16M2 6h16v16"/></svg><span>Crop</span></button>
       <button id="mask-tool" type="button" aria-pressed="false" title="Masks: change one part of the photo (M)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16Z" fill="currentColor"/></svg><span>Masks</span></button>
+      <button id="precision" type="button" aria-pressed="false" title="Precision: every slider moves at a fifth of the speed, and Exposure, Strength, Radius, Temp and Tint take finer steps. Hold Shift while dragging for the same, just once."><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 2v5m0 10v5M2 12h5m10 0h5"/></svg><span>Precision</span></button>
     </div>
     <div id="panel-head">
       <div class="head-row" id="scope-box">
@@ -469,8 +475,8 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=24"></script>
-<script src="/static/addfolder.js?v=16"></script>
+<script src="/static/app.js?v=26"></script>
+<script src="/static/addfolder.js?v=17"></script>
 <script src="/static/cull.js?v=16"></script>
 <script src="/static/export.js?v=15"></script>
 <script src="/static/account.js?v=21"></script>

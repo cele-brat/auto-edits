@@ -447,22 +447,24 @@ class Renderer:
 
     # ---- images ---------------------------------------------------------
     def _load(self, path: Path, size: int) -> np.ndarray:
-        def make():
-            flag = cv2.IMREAD_COLOR
-            if size <= 320:
-                flag = cv2.IMREAD_REDUCED_COLOR_4
-            elif size <= 1280:
-                flag = cv2.IMREAD_REDUCED_COLOR_2
-            bgr = cv2.imread(str(path), flag)
-            if bgr is None:
-                raise FileNotFoundError(path)
-            h, w = bgr.shape[:2]
-            scale = size / max(h, w)
-            if scale < 1:
-                bgr = cv2.resize(bgr, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
-            return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
         cache = self._small_images if size <= 400 else self._images
-        return cache.get((str(path), path.stat().st_mtime_ns, size), make)
+        return cache.get((str(path), path.stat().st_mtime_ns, size), lambda: self._load_uncached(path, size))
+
+    @staticmethod
+    def _load_uncached(path: Path, size: int) -> np.ndarray:
+        flag = cv2.IMREAD_COLOR
+        if size <= 320:
+            flag = cv2.IMREAD_REDUCED_COLOR_4
+        elif size <= 1280:
+            flag = cv2.IMREAD_REDUCED_COLOR_2
+        bgr = cv2.imread(str(path), flag)
+        if bgr is None:
+            raise FileNotFoundError(path)
+        h, w = bgr.shape[:2]
+        scale = size / max(h, w)
+        if scale < 1:
+            bgr = cv2.resize(bgr, (max(1, round(w * scale)), max(1, round(h * scale))), interpolation=cv2.INTER_AREA)
+        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
     @staticmethod
     def _jpeg(img: np.ndarray, quality=88) -> bytes:
@@ -609,32 +611,47 @@ class Renderer:
             raise RuntimeError("could not write the picture")
         return buf.tobytes()
 
+    def _load8(self, path: Path, size: int) -> np.ndarray:
+        """The photo at this size as 8-bit RGB, for the fast renderer (a quarter of the memory of _load)."""
+        cache = self._small_images if size <= 400 else self._images
+        return cache.get((str(path), path.stat().st_mtime_ns, size, 8),
+                         lambda: (np.clip(self._load_uncached(path, size), 0, 1) * 255 + 0.5).astype(np.uint8))
+
     def render(self, path: Path, look: dict, size: int, iso=None, show: str = "", mark: bool = False,
                uncropped: bool = False) -> bytes:
-        """The photo with the look applied. show names a mask to tint red on top.
-        uncropped: the whole picture (the crop tool draws its box on top)."""
+        """The photo with the look applied, made the same way as exports (the fast 8-bit renderer,
+        about twice as quick as the float one and the same to within a level or two).
+        show names a mask to tint red on top. uncropped: the whole picture (the crop tool draws its box on top)."""
+        from engine.fast import render8
         d = self.develop(path, look, iso)
         crop = None if uncropped else d["crop"]
-        img = self._load(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1) if crop else size)
-        out = render(img, d["settings"], d["curves"], d["manual"], amount=d["amount"])
-        texture = d["settings"].get("Texture")
-        if isinstance(texture, (int, float)) and texture:        # the engine's own texture is too weak to see
-            out = _detail(out, float(texture) * d["amount"], 0)
-        out = finish_detail(out, d["settings"], d["amount"])
+        img8 = self._load8(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1) if crop else size)
+        out = render8(img8, d["settings"], d["curves"], d["manual"], amount=d["amount"])
+        s = d["settings"]
+        texture = s.get("Texture") if isinstance(s.get("Texture"), (int, float)) else 0
+        sharp = isinstance(s.get("Sharpness"), (int, float)) and abs(float(s["Sharpness"]) - 40) >= 0.5
+        if texture or s.get("Dehaze") or sharp:
+            f = out.astype(np.float32) / 255
+            if texture:                                          # the engine's own texture is too weak to see
+                f = _detail(f, float(texture) * d["amount"], 0)
+            out = (finish_detail(f, s, d["amount"]) * 255 + 0.5).astype(np.uint8)
         if d["masks"] or d["corrections"] or show:
             masks = self.small_masks(path, out.shape) if size <= 400 and not show else self.masks(path)
-            out = local_adjust(out, masks, d["masks"], d["corrections"])
+            out = local_adjust8(out, masks, d["masks"], d["corrections"])
             if show in masks:
-                out = show_mask(out, masks[show])
+                out = (np.clip(show_mask(out.astype(np.float32) / 255, masks[show]), 0, 1) * 255 + 0.5).astype(np.uint8)
         out = straighten(out, d["angle"])
         if crop:
-            out = _crop.apply(out, crop)
+            out = np.ascontiguousarray(_crop.apply(out, crop))
             if max(out.shape[:2]) > size:
                 k = size / max(out.shape[:2])
                 out = cv2.resize(out, (max(1, round(out.shape[1] * k)), max(1, round(out.shape[0] * k))), interpolation=cv2.INTER_AREA)
         if mark:
-            out = preview_mark(out)
-        return self._jpeg(out)
+            out = (np.clip(preview_mark(out.astype(np.float32) / 255), 0, 1) * 255 + 0.5).astype(np.uint8)
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(out, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, 88])
+        if not ok:
+            raise RuntimeError("could not write the preview")
+        return buf.tobytes()
 
 
 # ---- handing the edits to Lightroom ------------------------------------------

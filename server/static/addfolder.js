@@ -288,3 +288,11 @@ $('add-start').onclick = async () => {
   Add.running = false;
   describeChoice();
 };
+
+// The + on the Folders panel: add a folder or photos to the open wedding, or start a new wedding.
+function folderMenu(open) { $('folder-menu').hidden = !open; $('folder-plus').setAttribute('aria-expanded', String(open)); }
+$('folder-plus').onclick = (e) => { e.preventDefault(); e.stopPropagation(); $('folders-box').open = true; folderMenu($('folder-menu').hidden); };
+document.addEventListener('click', (e) => { if (!e.target.closest('#folder-menu, #folder-plus')) folderMenu(false); });
+$('folder-add-folder').onclick = () => { folderMenu(false); openAdd(S.wedding ? 'this' : 'new'); $('add-folder').click(); };
+$('folder-add-photos').onclick = () => { folderMenu(false); openAdd(S.wedding ? 'this' : 'new'); $('add-files').click(); };
+$('folder-new-wedding').onclick = () => { folderMenu(false); openAdd('new'); };

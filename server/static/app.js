@@ -389,11 +389,21 @@ async function drawStage() {
   clearTimeout(busyTimer);
   busyTimer = setTimeout(() => { if (turn === renderTurn) $('busy').hidden = false; }, 600);
   try {
-    // while a slider is being dragged only the quick size is made; the sharp one follows on release
-    for (const size of (stageLive ? [800] : [800, 1600])) {
-      const img = await loadImage(afterUrl(p, size));
+    // While a slider is being dragged only the quick size is made. Otherwise the quick and the sharp
+    // one are asked for together: the quick one shows first, the sharp one replaces it when ready
+    // (and if the sharp one comes first, the quick one is not shown at all).
+    if (stageLive) {
+      const img = await loadImage(afterUrl(p, 800));
       if (turn !== renderTurn) return;
       showAfter(img);
+    } else {
+      let sharpShown = false;
+      const quick = loadImage(afterUrl(p, 800)).then((img) => { if (turn === renderTurn && !sharpShown) showAfter(img); }, () => {});
+      const img = await loadImage(afterUrl(p, 1600));
+      if (turn !== renderTurn) return;
+      sharpShown = true;
+      showAfter(img);
+      quick.catch(() => {});
     }
   } catch (e) {
     if (turn === renderTurn) $('saved').textContent = e.message;
@@ -586,7 +596,7 @@ function typeValue(sl) {
   sl.out.replaceWith(box);
   box.select();
 }
-const digitsOf = (sl) => (sl.step < 0.1 ? 2 : sl.step < 1 ? 1 : 0);
+const digitsOf = (sl) => { const st = Number((sl.input && sl.input.step) || sl.step); return st < 0.1 ? 2 : st < 1 ? 1 : 0; };
 
 function buildPanels() {
   $('panels').replaceChildren(...S.panels.map((panel) => {
@@ -611,6 +621,8 @@ function buildPanels() {
         row.append(el('span', { className: `name${sl.shown ? '' : ' later'}${sl.switch ? ' wide' : ''}`, textContent: sl.label }));
         if (!sl.switch) {
           sl.input = el('input', { type: 'range', step: sl.step });
+          sl.input.dataset.step0 = String(sl.step);
+          if (S.precise) sl.input.step = String(sl.step < 1 ? sl.step / 5 : sl.relative ? 0.1 : sl.step);
           sl.input.setAttribute('aria-label', `${panel.name}, ${group.name ? group.name + ', ' : ''}${sl.label}`);
           sl.input.oninput = () => {
             const base = sliderBase(panelLook(), sl);
@@ -691,6 +703,8 @@ function drawMasks() {
       const input = el('input', { type: 'range', min: sl.min ?? -100, max: sl.max ?? 100, step: sl.step ?? 1, value });
       const out = el('output', { textContent: signed(value, sl.digits || 0) });
       input.dataset.mask = `${kind}.${sl.key}`;
+      input.dataset.step0 = String(sl.step ?? 1);
+      if (S.precise && (sl.step ?? 1) < 1) input.step = String((sl.step ?? 1) / 5);
       paint(input, 0);
       input.oninput = () => { paint(input, 0); out.textContent = signed(Number(input.value), sl.digits || 0); changeMask(kind, { [sl.key]: Number(input.value) }, true); };
       input.onchange = () => { stageLive = false; drawPanel(); drawStage(); };
@@ -1174,5 +1188,68 @@ $('preset-form').onsubmit = async (e) => {
   $('preset-new-save').disabled = false;
 };
 
-start().catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });
+// ---- Precision -----------------------------------------------------------------------------------
+// One switch for every slider (and Shift while dragging, just for that drag): the slider moves at a
+// fifth of the hand's speed, so every value can be landed on. Sliders whose value Lightroom keeps
+// in decimals (Exposure, Strength, Radius) and the relative Temp and Tint also take finer steps.
+const FINE_SPEED = 0.2;
+function fineStep(input) {
+  const own = Number(input.dataset.step0 || input.step || 1);
+  if (own < 1) return own / 5;                                   // 0.05 → 0.01, 0.1 → 0.02
+  const sl = allSliders().find((x) => x.input === input);
+  return sl && sl.relative ? 0.1 : own;                          // Temp and Tint: tenths
+}
+function setPrecision(on) {
+  S.precise = on;
+  $('app').classList.toggle('precise', on);
+  $('precision').setAttribute('aria-pressed', String(on));
+  for (const input of document.querySelectorAll('#app input[type=range]')) {
+    if (input.id === 'cell-size') continue;
+    if (!input.dataset.step0) input.dataset.step0 = input.step || '1';
+    input.step = on ? String(fineStep(input)) : input.dataset.step0;
+  }
+  try { localStorage.setItem('ae-precise', on ? '1' : ''); } catch (e) { /* fine without */ }
+  if (folder()) drawSliders(panelLook());
+}
+$('precision').onclick = () => setPrecision(!S.precise);
+
+// The slow drag: the slider no longer jumps to where it is clicked; it follows the hand, slowed down.
+document.addEventListener('pointerdown', (e) => {
+  const input = e.target;
+  if (!(input instanceof HTMLInputElement) || input.type !== 'range' || input.id === 'cell-size' || e.button !== 0) return;
+  if (!S.precise && !e.shiftKey) return;
+  e.preventDefault();
+  input.focus();
+  input.setPointerCapture(e.pointerId);
+  input.classList.add('fine-drag');
+  const lo = Number(input.min), hi = Number(input.max), width = input.getBoundingClientRect().width || 1;
+  const step = S.precise ? Number(input.step) : fineStep(input);
+  const start = Number(input.value), x0 = e.clientX;
+  let moved = false;
+  const move = (m) => {
+    const raw = start + (m.clientX - x0) / width * (hi - lo) * FINE_SPEED;
+    const v = Math.min(hi, Math.max(lo, Math.round(raw / step) * step));
+    const text = String(Math.round(v * 1000) / 1000);
+    if (input.value === text) return;
+    if (!S.precise) input.step = String(step);                     // Shift alone: the fine step for this drag
+    input.value = text;
+    moved = true;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const up = () => {
+    input.removeEventListener('pointermove', move);
+    input.removeEventListener('pointerup', up);
+    input.removeEventListener('pointercancel', up);
+    input.classList.remove('fine-drag');
+    if (moved) input.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!S.precise && input.dataset.step0) input.step = input.dataset.step0;
+  };
+  input.addEventListener('pointermove', move);
+  input.addEventListener('pointerup', up);
+  input.addEventListener('pointercancel', up);
+}, true);
+try { if (localStorage.getItem('ae-precise')) S.precise = true; } catch (e) { /* fine without */ }
+
+start().then(() => { if (S.precise) setPrecision(true); })
+  .catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });
 

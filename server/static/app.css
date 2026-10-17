@@ -322,11 +322,11 @@ tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .05)
 
 /* presets */
 #preset-box .lp-body { display: flex; flex-direction: column; padding: 8px 12px 10px; gap: 8px; }
-#preset-box .plus { margin-left: auto; position: relative; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; background: none; border-radius: 4px; font-size: 17px; font-weight: 500; color: #bdbdbd; cursor: pointer; }
-#preset-box .plus:hover { background: var(--raise); color: #fff; }
+#preset-box .plus, #folders-box .plus { margin-left: auto; position: relative; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; background: none; border-radius: 4px; font-size: 17px; font-weight: 500; color: #bdbdbd; cursor: pointer; }
+#preset-box .plus:hover, #folders-box .plus:hover { background: var(--raise); color: #fff; }
 #preset-box .plus:focus-within { outline: 2px solid var(--marigold); }
 #preset-box .plus input { position: absolute; width: 1px; height: 1px; opacity: 0; }
-#preset-box > summary::after { margin-left: 8px; }
+#preset-box > summary::after, #folders-box > summary::after { margin-left: 8px; }
 #preset-box .amount { margin: 0; }
 #search { width: 100%; padding: 5px 9px; font-size: 13px; }
 #looks { height: clamp(150px, calc(100vh - 640px), 640px); overflow: auto; border: 1px solid #1a1a1a; border-radius: 3px; background: #1f1f1f; padding: 2px 0; }
@@ -559,7 +559,7 @@ p.small, .dim.small { font-size: 12px; color: var(--dim); }
 }
 
 /* the + menu on the Presets panel, and tools for your own presets */
-#preset-box { position: relative; }
+#preset-box, #folders-box { position: relative; }
 .mini-menu { position: absolute; right: 8px; top: 32px; z-index: 15; width: 250px; display: grid; gap: 1px; padding: 5px; background: #1c1c1c; border: 1px solid var(--line2); border-radius: 8px; box-shadow: 0 14px 36px rgba(0, 0, 0, .6); }
 .mini-menu button, .mini-menu .as-item { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 9px; border-radius: 5px; font-size: 13px; font-weight: 500; color: var(--text); cursor: pointer; position: relative; }
 .mini-menu button:hover, .mini-menu .as-item:hover, .mini-menu .as-item:focus-within { background: var(--raise); }
@@ -596,3 +596,8 @@ a.button:hover { background: #3a3a3a; }
 .filebutton:hover { border-color: #555; background: #3a3a3a; }
 .filebutton:focus-within { outline: 2px solid var(--marigold); outline-offset: 1px; }
 .filebutton input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+
+/* Precision: sliders move at a fifth of the speed; the thumbs get a ring so the mode is plain to see */
+#app.precise input[type=range]::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--marigold); }
+#app.precise input[type=range]::-moz-range-thumb { box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--marigold); }
+input[type=range].fine-drag { cursor: col-resize; }
