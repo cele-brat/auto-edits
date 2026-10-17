@@ -34,6 +34,7 @@ import numpy as np
 
 from engine import render as _r
 from engine import crop as _crop
+from engine import shapes as _shapes
 from engine.auto import TOGGLES, auto_correct, combine
 from engine.presets import effective_settings, local_corrections
 
@@ -66,7 +67,7 @@ MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "s
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
             "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {},
-            "preset_masks": True, "adj": {}, "crop": None}
+            "preset_masks": True, "adj": {}, "crop": None, "shapes": []}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -97,7 +98,7 @@ def clean_look(raw, preset_ids=None) -> dict:
     look["tint"] = _number(raw.get("tint"), -100.0, 100.0)
     for key in ("hl", "sh", "wh", "bl", "noise"):
         look[key] = _number(raw.get(key), -100.0, 100.0)
-    look["angle"] = _number(raw.get("angle"), -15.0, 15.0)
+    look["angle"] = _number(raw.get("angle"), -45.0, 45.0)
     look["adj"] = adjustments.clean_adj(raw.get("adj"))                     # every other Lightroom slider
     look["preset_masks"] = raw.get("preset_masks", True) is not False       # use the masks inside the preset
     masks = raw.get("masks") if isinstance(raw.get("masks"), dict) else {}
@@ -108,6 +109,7 @@ def clean_look(raw, preset_ids=None) -> dict:
         if kept:
             look["masks"][kind] = kept
     look["crop"] = _crop.clean(raw.get("crop"))          # per photo; never changes the photo itself
+    look["shapes"] = _shapes.clean(raw.get("shapes"), MASK_ADJUST)   # radial, linear and brush masks you draw
     if look["mode"] == "auto":
         look["preset"], look["toggles"] = None, list(TOGGLES)
     elif look["mode"] == "preset":
@@ -154,7 +156,7 @@ def _detail(img: np.ndarray, texture: float, clarity: float, span: float | None 
 
     change = np.zeros_like(y)
     if texture:
-        change += texture / 100.0 * 1.0 * (y - smooth(0.004, 0.004))
+        change += texture / 100.0 * 2.6 * (y - smooth(0.004, 0.004))      # was 1.0: barely visible
     if clarity:
         change += clarity / 100.0 * 0.7 * (y - smooth(0.02, 0.02)) * (4 * y * (1 - y))
     return np.clip(img + change[..., None], 0, 1)          # brightness only: colour stays where it was
@@ -195,7 +197,7 @@ def _sharpen(img: np.ndarray, settings: dict, amount_scale: float = 1.0) -> np.n
     high = y - cv2.GaussianBlur(y, (0, 0), max(0.3, radius))
     limit = 0.03 + 0.25 * detail / 100.0                 # low Detail keeps only the larger edges (fewer halos)
     high = limit * np.tanh(high / limit)
-    gain = extra / 100.0 * 1.6
+    gain = extra / 100.0 * 2.4
     if extra > 0 and masking > 0:                        # Masking: sharpen edges only, leave smooth skin and sky
         g = cv2.GaussianBlur(y, (0, 0), 1.5)
         edge = np.hypot(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
@@ -269,6 +271,24 @@ def local_adjust(img: np.ndarray, masks: dict, adjustments: dict, corrections: l
         part = out[Y0:Y1, X0:X1]
         cover = cv2.resize(m[y0:y1, x0:x1], (X1 - X0, Y1 - Y0), interpolation=cv2.INTER_LINEAR)[..., None] * float(amount)
         out[Y0:Y1, X0:X1] = part + (_apply(part, a, curve, span) - part) * cover
+    return out
+
+
+def apply_shapes8(img8: np.ndarray, shapes: list, show: str = "") -> np.ndarray:
+    """The masks you drew (radial, linear, brush), each with its own changes, on an 8-bit picture
+    that is straightened but not yet cropped (the frame the shapes were drawn on).
+    show = "shape<n>" tints that shape's mask red."""
+    h, w = img8.shape[:2]
+    out = img8
+    for i, shape in enumerate(shapes):
+        want_red = show == f"shape{i}"
+        if not shape.get("adj") and not want_red:
+            continue
+        m = _shapes.mask(shape, h, w)
+        if shape.get("adj"):
+            out = local_adjust8(out, {"s": m}, {"s": shape["adj"]})
+        if want_red:
+            out = (np.clip(show_mask(out.astype(np.float32) / 255, m), 0, 1) * 255 + 0.5).astype(np.uint8)
     return out
 
 
@@ -548,21 +568,23 @@ class Renderer:
             masks[kind] = {**masks.get(kind, {}), **values}
         corrections = local_corrections(preset) if preset and look["preset_masks"] else []
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
-                "masks": masks, "corrections": corrections, "angle": float(settings.get("CropAngle") or 0.0),
+                "masks": masks, "corrections": corrections,
+                "shapes": ([*((preset or {}).get("app_shapes") or [])] if look["preset_masks"] else []) + look["shapes"], "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None,
                 "crop": look["crop"]}
 
     def auto_crop(self, path: Path, look: dict, ratio: str = "original") -> tuple[dict | None, str]:
         """AI crop for one photo, measured on the straightened picture the crop applies to."""
         d = self.develop(path, look)
-        img = straighten(self._load(path, 1280), d["angle"])
+        img = straighten(_crop.turned(self._load(path, 1280), _crop.turn_of(d["crop"])), d["angle"])
         return _crop.auto((np.clip(img, 0, 1) * 255).astype(np.uint8), ratio)
 
-    def base(self, path: Path, size: int, crop: dict | None = None, angle: float = 0.0) -> bytes:
-        """The photo untouched, but with the same crop (and straighten) as the edit, so before and after line up."""
+    def base(self, path: Path, size: int, crop: dict | None = None, angle: float = 0.0, turn: int = 0) -> bytes:
+        """The photo untouched, but with the same turn, crop (and straighten) as the edit, so before and after line up."""
+        crop = _crop.rect(crop)
         if not crop:
-            return self._jpeg(self._load(path, size))
-        img = straighten(self._load(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1)), angle)
+            return self._jpeg(_crop.turned(self._load(path, size), turn))
+        img = straighten(_crop.turned(self._load(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1)), turn), angle)
         out = _crop.apply(img, crop)
         if max(out.shape[:2]) > size:
             k = size / max(out.shape[:2])
@@ -577,7 +599,8 @@ class Renderer:
         if bgr is None:
             raise FileNotFoundError(path)
         h, w = bgr.shape[:2]
-        crop = _crop.clean(look.get("crop")) if isinstance(look, dict) else None
+        full = _crop.clean(look.get("crop")) if isinstance(look, dict) else None
+        turn, crop = _crop.turn_of(full), _crop.rect(full)
         if max_side and crop:
             max_side_read = int(max_side / _crop.zoom(crop)) + 1
         else:
@@ -585,7 +608,7 @@ class Renderer:
         if max_side_read and max(h, w) > max_side_read:
             k = max_side_read / max(h, w)
             bgr = cv2.resize(bgr, (max(1, round(w * k)), max(1, round(h * k))), interpolation=cv2.INTER_AREA)
-        img8 = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+        img8 = _crop.turned(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), turn)
         del bgr
         d = self.develop(path, look, iso)
         out = render8(img8, d["settings"], d["curves"], d["manual"], amount=d["amount"])
@@ -596,11 +619,14 @@ class Renderer:
         if s.get("Dehaze") or (isinstance(s.get("Sharpness"), (int, float)) and abs(float(s["Sharpness"]) - 40) >= 0.5):
             out = (finish_detail(out.astype(np.float32) / 255, s, d["amount"]) * 255 + 0.5).astype(np.uint8)
         if d["masks"] or d["corrections"]:
-            out = local_adjust8(out, self.masks(path), d["masks"], d["corrections"])
+            masks = {k: _crop.turned(v, turn) for k, v in self.masks(path).items()} if turn else self.masks(path)
+            out = local_adjust8(out, masks, d["masks"], d["corrections"])
         if abs(d["angle"]) >= 0.05:
             out = straighten(out, d["angle"])
-        if d["crop"]:
-            out = np.ascontiguousarray(_crop.apply(out, d["crop"]))
+        if d["shapes"]:
+            out = apply_shapes8(out, d["shapes"])
+        if crop:
+            out = np.ascontiguousarray(_crop.apply(out, crop))
             if max_side and max(out.shape[:2]) > max_side:       # the crop never comes out larger than asked
                 k = max_side / max(out.shape[:2])
                 out = cv2.resize(out, (max(1, round(out.shape[1] * k)), max(1, round(out.shape[0] * k))), interpolation=cv2.INTER_AREA)
@@ -624,8 +650,9 @@ class Renderer:
         show names a mask to tint red on top. uncropped: the whole picture (the crop tool draws its box on top)."""
         from engine.fast import render8
         d = self.develop(path, look, iso)
-        crop = None if uncropped else d["crop"]
-        img8 = self._load8(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1) if crop else size)
+        turn = _crop.turn_of(d["crop"])                            # a quarter turn comes first, cropped or not
+        crop = None if uncropped else _crop.rect(d["crop"])
+        img8 = _crop.turned(self._load8(path, min(max(SIZES), int(size / _crop.zoom(crop)) + 1) if crop else size), turn)
         out = render8(img8, d["settings"], d["curves"], d["manual"], amount=d["amount"])
         s = d["settings"]
         texture = s.get("Texture") if isinstance(s.get("Texture"), (int, float)) else 0
@@ -635,12 +662,16 @@ class Renderer:
             if texture:                                          # the engine's own texture is too weak to see
                 f = _detail(f, float(texture) * d["amount"], 0)
             out = (finish_detail(f, s, d["amount"]) * 255 + 0.5).astype(np.uint8)
-        if d["masks"] or d["corrections"] or show:
-            masks = self.small_masks(path, out.shape) if size <= 400 and not show else self.masks(path)
+        ai_show = show if show and not show.startswith("shape") else ""
+        if d["masks"] or d["corrections"] or ai_show:
+            masks = self.small_masks(path, out.shape[1::-1] if turn in (90, 270) else out.shape) if size <= 400 and not ai_show else self.masks(path)
+            masks = {k: _crop.turned(v, turn) for k, v in masks.items()} if turn else masks
             out = local_adjust8(out, masks, d["masks"], d["corrections"])
             if show in masks:
                 out = (np.clip(show_mask(out.astype(np.float32) / 255, masks[show]), 0, 1) * 255 + 0.5).astype(np.uint8)
         out = straighten(out, d["angle"])
+        if d["shapes"]:
+            out = apply_shapes8(out, d["shapes"], show)
         if crop:
             out = np.ascontiguousarray(_crop.apply(out, crop))
             if max(out.shape[:2]) > size:
@@ -687,7 +718,12 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
     settings.pop("PerspectiveUpright", None), settings.pop("UprightVersion", None)
     if d["masks"]:
         not_yet.append("your own masks")
-    crop = d["crop"]
+    if d["shapes"]:
+        not_yet.append("radial, linear and brush masks")
+    crop = _crop.rect(d["crop"])
+    if _crop.turn_of(d["crop"]):
+        not_yet.append("rotation by 90 or 180 degrees")
+        crop = None
     if crop and abs(d["angle"]) < 0.05:                  # Lightroom's own crop: non-destructive there too
         settings.update({"HasCrop": True, "CropLeft": crop["x"], "CropTop": crop["y"],
                          "CropRight": round(crop["x"] + crop["w"], 5), "CropBottom": round(crop["y"] + crop["h"], 5),
@@ -728,7 +764,7 @@ def preset_from_look(renderer: "Renderer", look: dict, name: str, group: str, ow
     from engine.presets import write_xmp
     look = clean_look(look, renderer.presets)
     base = renderer.presets.get(look["preset"]) if look["preset"] else None
-    plain = {**look, "mode": "preset", "toggles": [], "masks": {}, "crop": None}
+    plain = {**look, "mode": "preset", "toggles": [], "masks": {}, "crop": None, "shapes": []}
     d = renderer.develop(Path("/nonexistent"), plain)            # no auto values, so no photo is read
     settings = {k: v for k, v in d["settings"].items() if k not in ("CropAngle",)}
     amount = float(look["amount"])
@@ -755,6 +791,9 @@ def preset_from_look(renderer: "Renderer", look: dict, name: str, group: str, ow
             own[kind] = {**own.get(kind, {}), **values}
         if own:
             preset["app_masks"] = own
+        drawn = ([*((base or {}).get("app_shapes") or [])] if look["preset_masks"] else []) + look["shapes"]
+        if drawn:
+            preset["app_shapes"] = drawn
     if with_wb:
         base_wb = (base or {}).get("app_wb") or {}
         temp, tint = float(base_wb.get("temp", 0)) + look["temp"], float(base_wb.get("tint", 0)) + look["tint"]

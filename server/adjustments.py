@@ -37,8 +37,8 @@ PANELS = [
     ]},
     {"name": "Tone Curve", "groups": [
         {"name": "Region", "sliders": [
-            _s("ParametricHighlights", "Highlights", shown=False), _s("ParametricLights", "Lights", shown=False),
-            _s("ParametricDarks", "Darks", shown=False), _s("ParametricShadows", "Shadows", shown=False)]},
+            _s("ParametricHighlights", "Highlights"), _s("ParametricLights", "Lights"),
+            _s("ParametricDarks", "Darks"), _s("ParametricShadows", "Shadows")]},
     ]},
     {"name": "Color Mixer", "groups": [
         {"name": "Hue", "sliders": [_s("HueAdjustment" + c, c) for c in COLOURS]},
@@ -82,7 +82,7 @@ PANELS = [
     ]},
     {"name": "Transform", "groups": [
         {"name": "", "sliders": [
-            _s("CropAngle", "Straighten", -15, 15, 0.1, field="angle", toggle="straighten"),
+            _s("CropAngle", "Straighten", -45, 45, 0.1, field="angle", toggle="straighten"),
             _s("PerspectiveVertical", "Vertical", shown=False), _s("PerspectiveHorizontal", "Horizontal", shown=False),
             _s("PerspectiveRotate", "Rotate", -10, 10, 0.1, shown=False), _s("PerspectiveAspect", "Aspect", shown=False),
             _s("PerspectiveScale", "Scale", 50, 150, shown=False, neutral=100),

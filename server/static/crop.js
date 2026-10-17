@@ -47,6 +47,9 @@ function placeCrop(rect) {
 }
 
 function drawCropBar() {
+  const one = editingPhoto();
+  if (!cropRun) $('crop-folder').textContent = one ? 'AI crop this photo' : 'AI crop every photo in this folder';
+  $('crop-clear').textContent = one ? 'Remove this photo’s crop' : 'Remove crops in this folder';
   const on = !!S.cropping;
   $('crop-bar').hidden = !on;
   $('crop-open').hidden = on;
@@ -60,7 +63,7 @@ function startCrop() {
   const p = photo();
   if (!p || S.view !== 'loupe' || S.cropping) return;
   setTool('crop');
-  const c = p.crop;
+  const c = p.crop && p.crop.w ? p.crop : null;           // a crop of only a turn: the whole picture
   S.cropping = { box: c ? { x: c.x, y: c.y, w: c.w, h: c.h } : { x: 0, y: 0, w: 1, h: 1 }, ratio: c ? c.ratio : 'original', auto: !!(c && c.auto) };
   $('crop-note').textContent = '';
   drawCropBar(); placeDivider(); drawStage();
@@ -177,7 +180,7 @@ $('crop-ai').onclick = async () => {
 let cropRun = 0;
 $('crop-folder').onclick = async () => {
   if (cropRun) { cropRun = 0; return; }               // the button stops a run
-  const list = wholeFolder();
+  const list = editingPhoto() ? [photo()] : wholeFolder();   // follows Apply to: this photo, or the whole folder
   if (!list.length) return;
   const run = cropRun = Date.now();
   $('crop-folder').textContent = 'Stop';
@@ -185,7 +188,7 @@ $('crop-folder').onclick = async () => {
   for (const p of list) {
     if (run !== cropRun) break;
     try {
-      const r = await api(`${base(p)}/auto-crop?save=1&keep_own=1`, { method: 'POST' });
+      const r = await api(`${base(p)}/auto-crop?save=1${list.length > 1 ? '&keep_own=1' : ''}`, { method: 'POST' });
       p.crop = r.crop;
       if (!r.changed) kept += 1; else if (r.crop) framed += 1; else none += 1;
     } catch (e) { if (e.message === 'signed out') return; }
@@ -194,7 +197,7 @@ $('crop-folder').onclick = async () => {
     if (done % 12 === 0) refreshThumbs();
   }
   cropRun = 0;
-  $('crop-folder').textContent = 'AI crop every photo in this folder';
+  drawCropBar();
   $('crop-progress').textContent = `AI cropped ${framed} photo${framed === 1 ? '' : 's'}` +
     (none ? `; ${none} left whole (no people, or already well framed)` : '') +
     (kept ? `; ${kept} kept your own crop` : '') + (done < list.length ? ` (stopped at ${done} of ${list.length})` : '') + '.';
@@ -203,6 +206,16 @@ $('crop-folder').onclick = async () => {
 $('crop-clear').onclick = async () => {
   const f = folder();
   if (!f) return;
+  if (editingPhoto()) {                                    // Apply to: This photo
+    const p = photo();
+    try {
+      const r = await api(`${base(p)}/crop`, { method: 'PUT', body: null });
+      p.crop = r.crop;
+      $('crop-progress').textContent = 'This photo shows whole again.';
+      refreshThumbs(); drawCaption(); drawStage();
+    } catch (e) { if (e.message !== 'signed out') $('crop-progress').textContent = e.message; }
+    return;
+  }
   try {
     const r = await api(`/api/weddings/${S.wedding.id}/folders/${f.id}/crops`, { method: 'DELETE' });
     for (const p of wholeFolder()) p.crop = null;

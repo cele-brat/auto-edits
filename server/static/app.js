@@ -41,7 +41,7 @@ async function api(path, options = {}) {
 
 // ---- looks ----------------------------------------------------------------
 const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [], ev: 0, temp: 0, tint: 0,
-  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true, adj: {} });
+  hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true, adj: {}, shapes: [] });
 // Parts of the photo that can be changed on their own (Lightroom's own mask kinds).
 const MASKS = [
   ['subject', 'Subject', 'the people (Select Subject)'], ['background', 'Background', 'everything but the people'],
@@ -79,17 +79,18 @@ function tidy(look) {
   l.masks = masks;
   l.preset_masks = l.preset_masks !== false;
   l.adj = Object.fromEntries(Object.entries(l.adj || {}).filter(([, v]) => v));
+  l.shapes = Array.isArray(l.shapes) ? l.shapes : [];
   return l;
 }
 const folder = () => (S.wedding ? S.wedding.folders.find((f) => f.id === S.folderId) : null);
 const photo = () => S.photos.find((p) => p.id === S.photoId) || null;
 const folderLook = (f = folder()) => tidy(f && f.settings && f.settings.mode ? f.settings : {});
 const lookOf = (p) => (p.look ? tidy(p.look) : folderLook(S.wedding.folders.find((f) => f.id === p.folder)));
-const editingPhoto = () => S.scope === 'photo' && S.view === 'loupe' && !!photo();
+const editingPhoto = () => S.scope === 'photo' && !!photo();      // Library: the selected photo; Develop: the one on screen
 const panelLook = () => (editingPhoto() ? lookOf(photo()) : folderLook());
 
 function describe(look) {
-  const masks = Object.keys(look.masks || {}).length ? ' + masks' : '';
+  const masks = Object.keys(look.masks || {}).length || (look.shapes || []).length ? ' + masks' : '';
   if (look.mode === 'auto') return `Auto Correct${masks}`;
   const p = S.byPreset.get(look.preset);
   const own = ['ev', 'temp', 'tint', 'hl', 'sh', 'wh', 'bl', 'noise', 'angle'].some((k) => look[k]) || Object.keys(look.adj || {}).length;
@@ -104,11 +105,27 @@ function hash(text) {
 }
 const base = (p) => `/api/weddings/${S.wedding.id}/photos/${p.id}`;
 const thumbUrl = (p) => `${base(p)}/image?size=360&k=${hash(JSON.stringify([lookOf(p), p.crop || 0]))}${p.v}`;
-const afterUrl = (p, size) => `${base(p)}/image?size=${size}&v=${p.v}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}` +
-  (S.cropping ? '&uncropped=1' : `&c=${hash(JSON.stringify(p.crop || 0))}`) +
-  (S.showMask && S.openMask ? `&show=${S.openMask}` : '');
+// A look goes in the picture's address; one too long for that (brush masks) is handed to the server
+// once (POST /api/looks) and named by a short key. lookKeys must be filled (keyLook) before use.
+const lookKeys = new Map();
+function lookParam(look) {
+  const text = JSON.stringify(look);
+  if (text.length < 1500) return `look=${encodeURIComponent(text)}`;
+  const key = lookKeys.get(text);
+  return key ? `lk=${key}` : `look=${encodeURIComponent(text)}`;
+}
+async function keyLook(look) {
+  const text = JSON.stringify(look);
+  if (text.length < 1500 || lookKeys.has(text)) return;
+  const r = await api('/api/looks', { method: 'POST', body: look });
+  lookKeys.set(text, r.key);
+  if (lookKeys.size > 300) lookKeys.delete(lookKeys.keys().next().value);
+}
+const showParam = () => (S.showShape != null ? `&show=shape${S.showShape}` : S.showMask && S.openMask ? `&show=${S.openMask}` : '');
+const afterUrl = (p, size) => `${base(p)}/image?size=${size}&v=${p.v}&${lookParam(lookOf(p))}` +
+  (S.cropping ? '&uncropped=1' : `&c=${hash(JSON.stringify(p.crop || 0))}`) + showParam();
 const beforeUrl = (p) => `${base(p)}/image?size=1600&base=1&v=${p.v}` +
-  (p.crop ? `&c=${hash(JSON.stringify(p.crop))}&look=${encodeURIComponent(JSON.stringify(lookOf(p)))}` : '');
+  (p.crop ? `&c=${hash(JSON.stringify(p.crop))}&${lookParam(lookOf(p))}` : '');
 
 // ---- saving ---------------------------------------------------------------
 const pending = new Map();
@@ -288,6 +305,7 @@ function markCurrent(fromStrip = false) {
   drawNavigator();
   drawFilmInfo();
   drawCaption();
+  if (editingPhoto() && S.view === 'grid') drawPanel();      // the panel shows the selected photo's settings
 }
 
 // ---- navigator and histogram (top of each side panel, as in Lightroom) --------------------
@@ -379,6 +397,7 @@ async function drawStage() {
   const p = photo();
   if (empty || S.view !== 'loupe' || !p) { stageBusy = false; pumpThumbs(); return; }
 
+  try { await keyLook(lookOf(p)); } catch (e) { /* the long address is tried instead */ }
   const before = $('before');
   const wanted = beforeUrl(p);
   if (!before.src.endsWith(wanted)) before.src = wanted;
@@ -406,6 +425,10 @@ async function drawStage() {
       quick.catch(() => {});
     }
   } catch (e) {
+    if (turn === renderTurn && lookKeys.size && !drawStage.retried) {   // the server forgot a long look: hand it over again
+      lookKeys.clear(); drawStage.retried = true;
+      return drawStage().finally(() => { drawStage.retried = false; });
+    }
     if (turn === renderTurn) $('saved').textContent = e.message;
   }
   if (turn === renderTurn) { clearTimeout(busyTimer); $('busy').hidden = true; stageBusy = false; pumpThumbs(); }
@@ -419,7 +442,8 @@ function drawCaption() {
     b.classList.toggle('auto-pick', !!p && r === b.dataset.pick && !p.pick);
     b.disabled = !p;
   }
-  $('histo-info').textContent = p ? [p.camera, p.iso ? `ISO ${p.iso}` : '', p.crop ? (p.crop.auto ? 'AI cropped' : 'Cropped') : ''].filter(Boolean).join('  ·  ') : '';
+  $('histo-info').textContent = p ? [p.camera, p.iso ? `ISO ${p.iso}` : '', p.crop && p.crop.w ? (p.crop.auto ? 'AI cropped' : 'Cropped') : '',
+    p.crop && p.crop.turn ? `Turned ${p.crop.turn}°` : ''].filter(Boolean).join('  ·  ') : '';
   if (!p) { $('caption').replaceChildren(); return; }
   const bits = [el('b', { textContent: p.name })];
   if (p.edited) bits.push(el('span', { textContent: 'Came from Lightroom with edits already on it' }));
@@ -453,6 +477,7 @@ function placeDivider() {
   ta.style.right = `${W - left - w + 8}px`;
   $('split').setAttribute('aria-pressed', String(S.split));
   if (window.placeCrop) placeCrop({ left, top, w, h });
+  if (window.placeShapes) placeShapes({ left, top, w, h });
 }
 
 // ---- drawing: the look panel --------------------------------------------------
@@ -727,7 +752,8 @@ function drawMasks() {
     rows.push(body);
   }
   $('masks').replaceChildren(...rows);
-  $('mask-tool').dataset.n = MASKS.reduce((n, [kind]) => n + Object.keys((look.masks || {})[kind] || {}).length, 0) || '';
+  $('mask-tool').dataset.n = (MASKS.reduce((n, [kind]) => n + Object.keys((look.masks || {})[kind] || {}).length, 0) + (look.shapes || []).length) || '';
+  if (window.drawDrawn) drawDrawn();
 }
 
 // Colours a slider's track between where it starts (the preset's value, or zero) and the thumb,
@@ -755,7 +781,8 @@ async function drawAutoValues(look) {
     return;
   }
   try {
-    const d = await api(`${base(p)}/develop?look=${encodeURIComponent(JSON.stringify(lookOf(p)))}`);
+    await keyLook(lookOf(p));
+    const d = await api(`${base(p)}/develop?${lookParam(lookOf(p))}`);
     if (turn !== autoTurn) return;
     const names = { Exposure2012: 'exposure', Highlights2012: 'highlights', Shadows2012: 'shadows', Whites2012: 'whites', Blacks2012: 'blacks', CropAngle: 'straighten' };
     const bits = Object.entries(names).filter(([k]) => k in d.auto)
@@ -773,7 +800,7 @@ function drawPanel() {
   $('panel').style.visibility = f ? 'visible' : 'hidden';
   $('preset-box').hidden = !f;
   if (!f) return;
-  $('scope-photo').disabled = !loupe;
+  $('scope-photo').disabled = !p;
   $('scope-folder').setAttribute('aria-pressed', String(!editingPhoto()));
   $('scope-photo').setAttribute('aria-pressed', String(editingPhoto()));
   const note = $('scope-note');
@@ -813,7 +840,7 @@ function drawPanel() {
 function openFolder(id) {
   S.folderId = id;
   S.photoId = (inFolder()[0] || {}).id || null;
-  S.scope = 'folder';
+  S.scope = S.developScope;
   S.openLook = null;
   S.rating = null;
   if (window.drawRatings) drawRatings();
@@ -825,7 +852,7 @@ function openPhoto(id) {
   if (S.cropping && window.endCrop) endCrop(false);
   S.photoId = id;
   S.view = 'loupe';
-  S.scope = (photo() && photo().look) || S.developScope !== 'folder' ? 'photo' : 'folder';   // Develop: this photo, as in Lightroom
+  S.scope = (photo() && photo().look) || S.developScope !== 'folder' ? 'photo' : 'folder';   // this photo, as in Lightroom
   S.openLook = null;
   $('after').removeAttribute('src');
   markCurrent(); drawCaption(); drawPanel(); drawStage();
@@ -845,7 +872,7 @@ function setView(view) {
   if (S.cropping && window.endCrop) endCrop(false);
   if (view === 'loupe') return openPhoto(S.photoId);
   S.view = 'grid';
-  S.scope = 'folder';
+  S.scope = S.developScope;
   drawPanel(); drawStage();
 }
 
@@ -910,18 +937,17 @@ $('wedding').onchange = (e) => openWedding(e.target.value);
 $('view-grid').onclick = () => setView('grid');
 $('view-loupe').onclick = () => setView('loupe');
 $('split').onclick = () => { S.split = !S.split; placeDivider(); };
-// In Develop the choice is remembered from photo to photo (and in this browser); Library always edits the folder.
+// Apply to: This photo by default (in Library the selected photo); the choice is remembered from
+// photo to photo, view to view, and in this browser.
 function setDevelopScope(scope) {
   S.scope = scope;
-  if (S.view === 'loupe') {
-    S.developScope = scope;
-    try { localStorage.setItem('ae-develop-scope', scope); } catch (e) { /* fine without */ }
-  }
+  S.developScope = scope;
+  try { localStorage.setItem('ae-scope', scope); } catch (e) { /* fine without */ }
   drawPanel();
 }
 $('scope-folder').onclick = () => setDevelopScope('folder');
 $('scope-photo').onclick = () => setDevelopScope('photo');
-try { S.developScope = localStorage.getItem('ae-develop-scope') || 'photo'; } catch (e) { S.developScope = 'photo'; }
+try { S.developScope = localStorage.getItem('ae-scope') || 'photo'; } catch (e) { S.developScope = 'photo'; }
 for (const b of document.querySelectorAll('[data-mode]')) {
   b.onclick = () => change({ mode: b.dataset.mode, toggles: b.dataset.mode === 'preset_auto' ? S.lastToggles : [] });
 }
@@ -1265,6 +1291,37 @@ document.addEventListener('pointerdown', (e) => {
   input.addEventListener('pointercancel', up);
 }, true);
 try { if (localStorage.getItem('ae-precise')) S.precise = true; } catch (e) { /* fine without */ }
+
+// ---- Rotate (this photo only) and Straighten (a look setting, like every slider) ----------------
+async function turnPhoto(by) {
+  const p = photo();
+  if (!p) return;
+  if (S.cropping && window.endCrop) await endCrop(true);   // finish the crop, then turn
+  try {
+    const r = await api(`${base(p)}/turn`, { method: 'PUT', body: { by } });
+    p.crop = r.crop;
+    $('saved').textContent = 'Saved';
+    refreshThumbs(); drawCaption(); drawStage(); drawNavigator();
+  } catch (e) { if (e.message !== 'signed out') $('saved').textContent = e.message; }
+}
+for (const b of document.querySelectorAll('[data-turn]')) b.onclick = () => turnPhoto(Number(b.dataset.turn));
+document.addEventListener('keydown', (e) => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.target.matches('input, select, textarea')) return;
+  if (e.key === '[' || e.key === ']') { e.preventDefault(); turnPhoto(e.key === ']' ? 90 : -90); }
+});
+function drawStraighten() {
+  const look = panelLook();
+  const v = Number(look.angle || 0);
+  const input = $('straighten');
+  if (document.activeElement !== input) input.value = v;
+  $('straighten-value').textContent = `${v > 0 ? '+' : ''}${v.toFixed(1)}°`;
+  paint(input, 0);
+}
+$('straighten').oninput = (e) => { paint(e.target, 0); $('straighten-value').textContent = `${Number(e.target.value).toFixed(1)}°`; change({ angle: Number(e.target.value) }, true); };
+$('straighten').onchange = () => { stageLive = false; drawPanel(); drawStage(); };
+$('straighten').ondblclick = () => change({ angle: 0 });
+const _drawPanelBeforeTurn = drawPanel;
+drawPanel = function () { _drawPanelBeforeTurn(); if (folder()) drawStraighten(); };   // eslint-disable-line no-global-assign
 
 start().then(() => { if (S.precise) setPrecision(true); })
   .catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });

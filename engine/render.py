@@ -262,6 +262,12 @@ def _delta_table(entry, value):
     return d.astype(np.float32), side["mode"]
 
 
+# How much stronger than the Lightroom measurements each tone slider acts in the app, so every
+# slider at its end makes about the same size of change (17 Oct 2026: Highlights and Shadows were
+# hard to see next to Contrast and Blacks).
+TONE_GAIN = {"Highlights2012": 2.4, "Shadows2012": 1.55, "Whites2012": 1.25}
+
+
 def tone(img, settings, P, R=None):
     """Contrast, highlights, shadows, whites, blacks."""
     R = RESPONSE if R is None else R
@@ -275,6 +281,7 @@ def tone(img, settings, P, R=None):
         if not v:
             continue
         d, mode = _delta_table(entry, v)
+        d = d * TONE_GAIN.get(key, 1.0)
         if mode == "luma":
             luma_delta += d
         else:
@@ -282,6 +289,10 @@ def tone(img, settings, P, R=None):
         used = True
     if not used:
         return img
+    # a curve that never turns back on itself (strong values would otherwise fold tones over)
+    grid = np.linspace(0, 1, _N + 1, dtype=np.float32)
+    luma_delta = np.maximum.accumulate(grid + luma_delta) - grid
+    rgb_delta = np.maximum.accumulate(grid + rgb_delta) - grid
     out = img
     if np.any(luma_delta):                          # brightness-only sliders keep colour
         y = _luma(out)
@@ -324,6 +335,39 @@ def _curve_lut(points, size=_N + 1):
 
 def _is_identity(points):
     return [list(map(float, p)) for p in points] == [[0.0, 0.0], [255.0, 255.0]]
+
+
+def parametric(img, settings):
+    """Lightroom's Tone Curve regions (Highlights, Lights, Darks, Shadows, -100..100): each lifts or
+    lowers its own quarter of the tones, split where ParametricShadowSplit / MidtoneSplit /
+    HighlightSplit say (25 / 50 / 75 by default). Black and white stay where they are, and the
+    curve never turns back on itself."""
+    vals = [_g(settings, k) for k in ("ParametricShadows", "ParametricDarks", "ParametricLights", "ParametricHighlights")]
+    if not any(vals):
+        return img
+    s1 = (_g(settings, "ParametricShadowSplit") or 25) / 100
+    s2 = (_g(settings, "ParametricMidtoneSplit") or 50) / 100
+    s3 = (_g(settings, "ParametricHighlightSplit") or 75) / 100
+    x = np.linspace(0, 1, 1024, dtype=np.float64)
+    y = x.copy()
+    zones = [(0.0, s1), (s1, s2), (s2, s3), (s3, 1.0)]
+    for i, (v, (a, b)) in enumerate(zip(vals, zones)):
+        if not v:
+            continue
+        edge = i in (0, 3)                                  # the outer zones hold fewer tones: reach wider, lift more
+        spread = 1.1 if edge else 0.6
+        lo, hi = max(0.0, a - (b - a) * spread), min(1.0, b + (b - a) * spread)
+        t = np.clip((x - lo) / max(1e-6, hi - lo), 0, 1)
+        y += (v / 100.0) * (0.2 if edge else 0.13) * np.sin(np.pi * t) ** 2
+    # keep the curve smooth: nowhere flatter than a fifth of a straight line, so no tones fold over
+    # into blotches; if it would be, the whole change is scaled down just enough
+    slope = np.diff(y) / np.diff(x)
+    if slope.min() < 0.2:
+        y = x + (y - x) * min(1.0, (1 - 0.2) / max(1e-6, 1 - slope.min()))
+    y = np.clip(np.maximum.accumulate(y), 0, 1)
+    y[0], y[-1] = 0.0, 1.0
+    out = np.clip(img, 0, 1)
+    return np.interp(out, x, y).astype(np.float32)
 
 
 def point_curves(img, curves):
@@ -496,6 +540,7 @@ def render(img, settings=None, curves=None, manual=None, params=None, seed=0, am
     out = calibration(out, settings, P)
     out = tone(out, settings, P)
     out = local_contrast(out, settings, P)
+    out = parametric(out, settings)
     out = point_curves(out, curves or {})
     out = colour_mixer(out, settings, P)
     out = vibrance_saturation(out, settings, P)

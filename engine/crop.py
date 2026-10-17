@@ -35,23 +35,64 @@ def _f(v, lo, hi):
 
 
 def clean(raw) -> dict | None:
-    """A crop that is safe to use, or None for no crop (or the whole picture)."""
+    """A crop that is safe to use, or None for no crop (or the whole picture).
+    It can also carry "turn": a quarter turn clockwise (90, 180 or 270), made before anything
+    else; the crop's own numbers are fractions of the turned picture. A crop of only a turn
+    has no x, y, w, h."""
     if not isinstance(raw, dict):
         return None
+    try:
+        turn = int(raw.get("turn") or 0) % 360
+    except (TypeError, ValueError):
+        turn = 0
+    turn = turn if turn in (90, 180, 270) else 0
     x, y = _f(raw.get("x"), 0, 1), _f(raw.get("y"), 0, 1)
     w, h = _f(raw.get("w"), MIN_SIDE, 1), _f(raw.get("h"), MIN_SIDE, 1)
-    if None in (x, y, w, h):
-        return None
+    if None in (x, y, w, h) or (w >= 0.999 and h >= 0.999):
+        return {"turn": turn} if turn else None
     x, y = min(x, 1 - w), min(y, 1 - h)
-    if w >= 0.999 and h >= 0.999:
-        return None
     ratio = raw.get("ratio") if raw.get("ratio") in RATIOS else "free"
-    return {"x": round(x, 5), "y": round(y, 5), "w": round(w, 5), "h": round(h, 5), "ratio": ratio,
-            "auto": raw.get("auto") is True}
+    out = {"x": round(x, 5), "y": round(y, 5), "w": round(w, 5), "h": round(h, 5), "ratio": ratio,
+           "auto": raw.get("auto") is True}
+    if turn:
+        out["turn"] = turn
+    return out
+
+
+def rect(crop: dict | None) -> dict | None:
+    """Only the cut-out part of a crop (None when it is only a turn, or nothing)."""
+    return crop if crop and "w" in crop else None
+
+
+def turn_of(crop: dict | None) -> int:
+    return int((crop or {}).get("turn") or 0)
+
+
+def turned(img: np.ndarray, turn: int) -> np.ndarray:
+    """The picture turned clockwise by a quarter turn (90), a half (180) or three quarters (270)."""
+    return img if not turn else np.ascontiguousarray(np.rot90(img, k=-(turn // 90)))
+
+
+def turn_by(crop: dict | None, by: int) -> dict | None:
+    """The crop after turning the photo a further `by` degrees clockwise: the cut-out turns with it."""
+    old = clean(crop) or {}
+    by = by % 360
+    out = {"turn": (turn_of(old) + by) % 360}
+    r = rect(old)
+    if r:
+        x, y, w, h = r["x"], r["y"], r["w"], r["h"]
+        for _ in range(by // 90):                                  # one quarter clockwise at a time
+            x, y, w, h = 1 - (y + h), x, h, w
+        ratio = r["ratio"]
+        if by in (90, 270) and ":" in ratio:
+            a, b = ratio.split(":")
+            ratio = f"{b}:{a}" if f"{b}:{a}" in RATIOS else "free"
+        out.update(x=x, y=y, w=w, h=h, ratio=ratio, auto=r.get("auto", False))
+    return clean(out)
 
 
 def apply(img: np.ndarray, crop: dict | None) -> np.ndarray:
-    if not crop:
+    if not crop or "w" not in crop:
         return img
     h, w = img.shape[:2]
     x0, y0 = int(round(crop["x"] * w)), int(round(crop["y"] * h))
@@ -62,7 +103,7 @@ def apply(img: np.ndarray, crop: dict | None) -> np.ndarray:
 
 def zoom(crop: dict | None) -> float:
     """How much smaller the crop is than the picture along its longer cut (1 = no crop)."""
-    return 1.0 if not crop else max(crop["w"], crop["h"])
+    return 1.0 if not crop or "w" not in crop else max(crop["w"], crop["h"])
 
 
 # ---- finding the people -------------------------------------------------------------

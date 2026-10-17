@@ -10,6 +10,7 @@ and signs in as the admin account. The server refuses to start without it.
 from __future__ import annotations
 
 import hashlib
+from collections import OrderedDict
 import hmac
 import json
 import os
@@ -984,16 +985,40 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         except ValueError:
             raise HTTPException(422, "the look could not be read")
 
+    # Looks too long for a picture's address (brush masks) are handed over once and named by a short key.
+    looks_kept: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
+
+    @app.post("/api/looks")
+    def keep_look(look: dict = Body(...), user: dict = Depends(signed_in)):
+        text = json.dumps(look, sort_keys=True, separators=(",", ":"))
+        if len(text) > 400_000:
+            raise HTTPException(413, "This look is too large.")
+        key = hashlib.sha1((user["id"] + text).encode()).hexdigest()[:24]
+        looks_kept[key] = (user["id"], text)
+        looks_kept.move_to_end(key)
+        while len(looks_kept) > 3000:
+            looks_kept.popitem(last=False)
+        return {"key": key}
+
+    def given_look(look: str, lk: str, user: dict) -> str:
+        if not lk:
+            return look
+        owner, text = looks_kept.get(lk, ("", ""))
+        if owner != user["id"]:
+            raise HTTPException(410, "look not kept any more")         # the app hands it over again
+        return text
+
     @app.get("/api/weddings/{wedding_id}/photos/{photo_id}/image")
     def image(wedding_id: str, photo_id: str, size: int = 1600, look: str = "", base: bool = False, show: str = "",
-              uncropped: bool = False, user: dict = Depends(signed_in)):
+              uncropped: bool = False, lk: str = "", user: dict = Depends(signed_in)):
         """The photo as the app shows it: untouched (base), with the look given,
         or, with neither, with the look saved for it. Edited views larger than the grid's
         carry a light preview mark until they are exported (not on the studio account)."""
         if size not in SIZES:
             raise HTTPException(422, f"size must be one of {SIZES}")
-        if show and not show.replace("_", "").isalpha():
+        if show and not show.replace("_", "").isalnum():
             raise HTTPException(422, "show must name a mask")
+        look = given_look(look, lk, user)
         p = photo_or_404(wedding_id, photo_id, user)
         path = store.preview_path(wedding_id, photo_id)
         iso = p["meta"].get("iso") if isinstance(p["meta"].get("iso"), (int, float)) else None
@@ -1001,9 +1026,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         chosen = read_look(look, user) if look else effective_look(p["settings"], p["folder_settings"])
         chosen["crop"] = crop_of(p)
         if base:
-            crop = None if uncropped else chosen["crop"]
+            from engine.crop import rect, turn_of
+            crop = None if uncropped else rect(chosen["crop"])
             angle = renderer.develop(path, chosen, iso)["angle"] if crop else 0.0
-            return Response(renderer.base(path, size, crop, angle), media_type="image/jpeg", headers=headers)
+            return Response(renderer.base(path, size, crop, angle, turn_of(chosen["crop"])), media_type="image/jpeg", headers=headers)
         if size > 360:
             return Response(renderer.render(path, chosen, size, iso, show, mark=not user["admin"], uncropped=uncropped),
                             media_type="image/jpeg", headers=headers)
@@ -1018,8 +1044,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return FileResponse(cached, media_type="image/jpeg", headers=headers)
 
     @app.get("/api/weddings/{wedding_id}/photos/{photo_id}/develop")
-    def develop(wedding_id: str, photo_id: str, look: str = "", user: dict = Depends(signed_in)):
+    def develop(wedding_id: str, photo_id: str, look: str = "", lk: str = "", user: dict = Depends(signed_in)):
         """What a look works out to for this photo, including the automatic values."""
+        look = given_look(look, lk, user)
         p = photo_or_404(wedding_id, photo_id, user)
         chosen = read_look(look, user) if look else effective_look(p["settings"], p["folder_settings"])
         chosen["crop"] = crop_of(p)
@@ -1036,9 +1063,26 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.put("/api/weddings/{wedding_id}/photos/{photo_id}/crop")
     def set_crop(wedding_id: str, photo_id: str, crop: dict | None = Body(default=None), user: dict = Depends(signed_in)):
         """Save one photo's crop, or send null to show the whole picture again."""
-        from engine.crop import clean
-        photo_or_404(wedding_id, photo_id, user)
-        kept = clean(crop)
+        from engine.crop import clean, turn_of
+        p = photo_or_404(wedding_id, photo_id, user)
+        turn = (crop or {}).get("turn", turn_of(crop_of(p)))       # a crop sent without a turn keeps the photo's turn
+        kept = clean({**(crop or {}), "turn": turn})
+        store.set_crop(wedding_id, photo_id, kept)
+        return {"crop": kept}
+
+    @app.put("/api/weddings/{wedding_id}/photos/{photo_id}/turn")
+    def turn_photo(wedding_id: str, photo_id: str, body: dict = Body(...), user: dict = Depends(signed_in)):
+        """Turn one photo by 90 degrees (by: 90 clockwise, -90 the other way, 180). Only a setting: the
+        photo itself is never changed; its crop turns with it."""
+        from engine.crop import turn_by
+        try:
+            by = int(body.get("by"))
+        except (TypeError, ValueError):
+            raise HTTPException(422, "by must be 90, -90 or 180")
+        if by not in (90, -90, 180, 270):
+            raise HTTPException(422, "by must be 90, -90 or 180")
+        p = photo_or_404(wedding_id, photo_id, user)
+        kept = turn_by(crop_of(p), by)
         store.set_crop(wedding_id, photo_id, kept)
         return {"crop": kept}
 
@@ -1049,15 +1093,19 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         save=1 keeps it; keep_own=1 leaves a crop made by hand alone (for a whole folder)."""
         from engine.crop import RATIOS
         p = photo_or_404(wedding_id, photo_id, user)
-        if keep_own and p.get("crop") and not p["crop"].get("auto"):
+        if keep_own and p.get("crop") and p["crop"].get("w") and not p["crop"].get("auto"):
             return {"crop": crop_of(p), "why": "kept your own crop", "changed": False}
         if ratio not in RATIOS or ratio == "free":
             ratio = "original"
-        look = effective_look(p["settings"], p["folder_settings"])
+        look = effective_look(p["settings"], p["folder_settings"], crop_of(p))
         try:
             crop, why = renderer.auto_crop(store.preview_path(wedding_id, photo_id), look, ratio)
         except FileNotFoundError:
             raise HTTPException(404, "no such photo")
+        from engine.crop import clean, turn_of
+        turn = turn_of(crop_of(p))
+        if turn:                                                    # the AI crop is of the turned photo; keep the turn
+            crop = clean({**(crop or {}), "turn": turn})
         if save:
             store.set_crop(wedding_id, photo_id, crop)
         return {"crop": crop, "why": why, "changed": True}
@@ -1082,9 +1130,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         """Every photo in the folder back to the whole picture."""
         wedding_or_404(wedding_id, user)
         n = 0
+        from engine.crop import clean, rect, turn_of
         for r in store.photos(wedding_id, folder_id):
-            if r["crop"]:
-                store.set_crop(wedding_id, r["id"], None)
+            if rect(clean(r["crop"])):                              # cut-outs go; a photo's quarter turn stays
+                store.set_crop(wedding_id, r["id"], clean({"turn": turn_of(clean(r["crop"]))}))
                 n += 1
         return {"cleared": n}
 

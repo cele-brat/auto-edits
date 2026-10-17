@@ -601,3 +601,55 @@ a.button:hover { background: #3a3a3a; }
 #app.precise input[type=range]::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--marigold); }
 #app.precise input[type=range]::-moz-range-thumb { box-shadow: 0 0 0 3px var(--panel), 0 0 0 4.5px var(--marigold); }
 input[type=range].fine-drag { cursor: col-resize; }
+
+/* masks you draw: radial, linear, brush */
+#shape-layer { position: absolute; inset: 0; z-index: 4; pointer-events: none; overflow: visible; }
+#shape-layer .shape [data-h] { pointer-events: all; cursor: pointer; }
+#shape-layer .edge { fill: none; stroke: rgba(255, 255, 255, .55); stroke-width: 1.5; }
+#shape-layer .sel .edge { stroke: #fff; stroke-width: 1.8; filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, .9)); }
+#shape-layer .edge, #shape-layer .inner { pointer-events: none; }
+#shape-layer .sel .edge.full { stroke: var(--marigold); }
+#shape-layer .hit { fill: none; stroke: #000; stroke-opacity: 0; stroke-width: 14; pointer-events: stroke !important; cursor: move; }
+#shape-layer .inner { fill: none; stroke: rgba(255, 255, 255, .7); stroke-width: 1.2; stroke-dasharray: 4 4; }
+#shape-layer .knob { fill: #fff; stroke: rgba(0, 0, 0, .7); stroke-width: 1.5; cursor: grab; }
+#shape-layer .pin { fill: var(--marigold); stroke: #1a1a1a; stroke-width: 2; cursor: move; }
+#shape-layer .paint { fill: none; stroke: #e5484d; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+#shape-layer .paint.erase { stroke: #6ab0ff; }
+#shape-layer .cursor { fill: none; stroke: #fff; stroke-width: 1.2; pointer-events: none; filter: drop-shadow(0 0 1px #000); }
+#shape-layer.painting { pointer-events: all; cursor: crosshair; }
+.mask-add { display: flex; align-items: center; gap: 5px; padding: 10px 14px; border-bottom: 1px solid #000; }
+.mask-add > span { font-size: 12px; color: var(--dim); margin-right: 4px; }
+.mask-add button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 5px 6px; font-size: 12.5px; background: none; border-color: #3a3a3a; }
+.mask-add button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.mask-add button:hover { background: var(--raise); }
+.mask-sub { margin: 0; padding: 12px 14px 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--faint); }
+#drawn .part { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; border: 0; border-bottom: 1px solid #1a1a1a; border-radius: 0; background: none; padding: 8px 14px; font-weight: 500; font-size: 13px; }
+#drawn .part::before { content: ""; align-self: center; border: 4.5px solid transparent; border-left-color: #8a8a8a; border-right-width: 0; transition: transform .12s; }
+#drawn .part[aria-expanded=true] { background: #303030; border-bottom-color: transparent; }
+#drawn .part[aria-expanded=true]::before { transform: rotate(90deg); }
+#drawn .part:hover { background: #2e2e2e; }
+#drawn .part small { color: var(--faint); font-size: 11.5px; font-weight: 400; }
+#drawn .part .changed { margin-left: auto; font-size: 10.5px; font-weight: 700; padding: 0 6px; line-height: 16px; border-radius: 8px; background: var(--marigold-wash); color: var(--marigold); }
+#drawn .body { padding: 6px 0 12px; background: #2a2a2a; border-bottom: 1px solid #1a1a1a; }
+#drawn .body .sub { margin: 10px 14px 2px; font-size: 11.5px; font-weight: 500; color: var(--faint); }
+#drawn .body .tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 10px 14px 0; font-size: 12.5px; }
+#drawn .body .tools .show { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+#drawn .body .tools .show input { accent-color: var(--marigold); margin: 0; }
+#drawn .brush-mode { margin: 4px 14px 6px; }
+#drawn .body > p { margin: 0 14px 6px; }
+#drawn .empty-drawn { margin: 8px 14px 4px; }
+.danger-text { color: #ff8a80 !important; margin-left: auto; }
+.adj output { grid-column: 3 / 5; }
+#drawn .adj output, #masks .adj output { grid-column: 3 / 5; justify-self: end; }
+
+/* rotate and straighten */
+#turn-panel { padding: 10px 14px 12px; border-bottom: 1px solid var(--line); }
+#turn-panel .turn-row { display: flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+#turn-panel .lab { width: 82px; font-size: 12.5px; color: #cfcfcf; }
+#turn-panel button[data-turn] { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 12.5px; background: none; border-color: #3a3a3a; }
+#turn-panel button[data-turn]:hover { background: var(--raise); }
+#turn-panel svg, #toolbar .turns svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+#turn-panel .adj { margin: 0; }
+#turn-panel p { margin: 6px 0 0; }
+#toolbar .turns { display: inline-flex; gap: 1px; }
+#toolbar .turns button { padding: 3px 6px; }

@@ -52,7 +52,7 @@ def render8(img8: np.ndarray, settings=None, curves=None, manual=None, params=No
     first = [lambda x: R.white_balance(x, manual.get("temp", 0.0), manual.get("tint", 0.0), P),
              lambda x: R.exposure(x, ev, P)]
     before = [lambda x: R.calibration(x, settings, P), lambda x: R.tone(x, settings, P)]
-    after = [lambda x: R.point_curves(x, curves), lambda x: R.colour_mixer(x, settings, P),
+    after = [lambda x: R.parametric(x, settings), lambda x: R.point_curves(x, curves), lambda x: R.colour_mixer(x, settings, P),
              lambda x: R.vibrance_saturation(x, settings, P), lambda x: R.colour_grading(x, settings, P)]
     local = bool(R._g(settings, "Clarity2012") or R._g(settings, "Texture"))
     h, w = img8.shape[:2]

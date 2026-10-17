@@ -146,7 +146,7 @@ def test_own_adjustments_add_on_top(client, tmp_path):
     assert d["angle"] == 2.5
     auto = r.develop(photo, {"mode": "preset_auto", "preset": preset["id"], "toggles": ["highlights"], "hl": 10})
     assert auto["settings"]["Highlights2012"] == min(100, auto["auto"]["Highlights2012"] + 10)   # auto value plus your own change
-    assert clean_look({"hl": 900, "angle": -99})["hl"] == 100 and clean_look({"angle": -99})["angle"] == -15
+    assert clean_look({"hl": 900, "angle": -99})["hl"] == 100 and clean_look({"angle": -99})["angle"] == -45
     img = np.zeros((60, 90, 3), np.float32); img[:, :45] = 1
     turned = straighten(img, 5)
     assert turned.shape == img.shape and not np.array_equal(turned, img) and straighten(img, 0) is img
