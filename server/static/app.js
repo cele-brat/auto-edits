@@ -480,7 +480,8 @@ const lookKey = (p) => `${p.pack}|${p.look || p.name}`;
 function drawLooks() {
   const look = panelLook();
   const chosen = S.byPreset.get(look.preset);
-  const open = S.openLook || (chosen ? lookKey(chosen) : null);
+  // S.openLook: the look shown open; '' means all closed; null follows the preset in use
+  const open = S.openLook !== null && S.openLook !== undefined ? S.openLook : (chosen ? lookKey(chosen) : null);
   const searching = !!S.query.trim();
   const box = $('looks');
   const none = el('button', { type: 'button', className: 'look none', textContent: 'No preset' });
@@ -504,7 +505,12 @@ function drawLooks() {
       if (l.variants.some((v) => v.masks.length)) row.append(el('small', { className: 'has', textContent: 'masks' }));
       if (l.variants.length > 1) row.append(el('small', { textContent: String(l.variants.length) }));
       row.setAttribute('aria-expanded', String(l.key === open));
-      row.onclick = () => { S.openLook = l.key; change({ preset: l.variants[0].id }); };
+      row.onclick = () => {
+        if (l.key === open && !single) { S.openLook = ''; drawLooks(); return; }            // open: fold it closed
+        S.openLook = l.key;
+        if (l.variants.some((v) => v.id === look.preset)) drawLooks();                     // holds the preset in use: just open it
+        else change({ preset: l.variants[0].id });
+      };
       rows.push(row);
       if (l.key === open && l.variants.length > 1) {
         rows.push(el('div', { className: 'variants' }, l.variants.map((v) => {
