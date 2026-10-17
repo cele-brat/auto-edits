@@ -776,13 +776,13 @@ function drawPanel() {
     const back = el('button', { type: 'button', className: 'quiet', textContent: 'Use the folder’s settings again' });
     back.onclick = async () => {
       p.look = null;
-      S.scope = 'folder';
-      drawPanel(); drawStage();
+      drawPanel(); drawStage(); refreshThumbs();
       queueSave(`p${p.id}`, () => api(`${base(p)}/look`, { method: 'PUT', body: null }));
     };
     note.append('This photo has its own settings. ', back);
   } else if (editingPhoto()) {
-    note.textContent = 'Change anything below and only this photo gets it.';
+    const from = S.byPreset.get(folderLook(f).preset);
+    note.textContent = `Not edited yet: the sliders show ${from ? `the folder’s preset (${from.name})` : 'the folder’s settings'}. Change anything and only this photo gets it.`;
   } else if (loupe && p.look) {
     note.textContent = `Settings for every photo in “${f.name}”. The photo on screen has its own settings, so it will not change.`;
   } else {
@@ -819,7 +819,7 @@ function openPhoto(id) {
   if (S.cropping && window.endCrop) endCrop(false);
   S.photoId = id;
   S.view = 'loupe';
-  S.scope = photo() && photo().look ? 'photo' : 'folder';
+  S.scope = (photo() && photo().look) || S.developScope !== 'folder' ? 'photo' : 'folder';   // Develop: this photo, as in Lightroom
   S.openLook = null;
   $('after').removeAttribute('src');
   markCurrent(); drawCaption(); drawPanel(); drawStage();
@@ -904,8 +904,18 @@ $('wedding').onchange = (e) => openWedding(e.target.value);
 $('view-grid').onclick = () => setView('grid');
 $('view-loupe').onclick = () => setView('loupe');
 $('split').onclick = () => { S.split = !S.split; placeDivider(); };
-$('scope-folder').onclick = () => { S.scope = 'folder'; drawPanel(); };
-$('scope-photo').onclick = () => { S.scope = 'photo'; drawPanel(); };
+// In Develop the choice is remembered from photo to photo (and in this browser); Library always edits the folder.
+function setDevelopScope(scope) {
+  S.scope = scope;
+  if (S.view === 'loupe') {
+    S.developScope = scope;
+    try { localStorage.setItem('ae-develop-scope', scope); } catch (e) { /* fine without */ }
+  }
+  drawPanel();
+}
+$('scope-folder').onclick = () => setDevelopScope('folder');
+$('scope-photo').onclick = () => setDevelopScope('photo');
+try { S.developScope = localStorage.getItem('ae-develop-scope') || 'photo'; } catch (e) { S.developScope = 'photo'; }
 for (const b of document.querySelectorAll('[data-mode]')) {
   b.onclick = () => change({ mode: b.dataset.mode, toggles: b.dataset.mode === 'preset_auto' ? S.lastToggles : [] });
 }
