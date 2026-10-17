@@ -278,6 +278,48 @@ def parse_xmp(text: str, source_file: str = "", pack: str = "") -> Preset:
     )
 
 
+def write_xmp(name: str, group: str, settings: dict, curves: dict, uuid: str) -> str:
+    """A Lightroom Classic preset file (.xmp) with these settings and point curves, which
+    Lightroom can import (File > Import Develop Profiles and Presets) and parse_xmp reads back."""
+    from xml.sax.saxutils import escape, quoteattr
+
+    def value(v):
+        if isinstance(v, bool):
+            return "True" if v else "False"
+        if isinstance(v, int):
+            return f"{v:+d}" if v else "0"
+        if isinstance(v, float):
+            if v.is_integer() and abs(v) < 1e9:
+                return f"{int(v):+d}" if v else "0"
+            return f"{v:+.4f}".rstrip("0").rstrip(".")
+        return str(v)
+
+    attrs = {"PresetType": "Normal", "Cluster": "", "UUID": uuid, "SupportsAmount": "True",
+             "SupportsColor": "True", "SupportsMonochrome": "True", "SupportsHighDynamicRange": "True",
+             "SupportsNormalDynamicRange": "True", "SupportsSceneReferred": "True", "SupportsOutputReferred": "True",
+             "CameraModelRestriction": "", "Copyright": "", "ContactInfo": "", "Version": "16.0",
+             "ProcessVersion": "11.0"}
+    for k, v in settings.items():
+        if re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", k) and k not in _META_KEYS and k not in _SKIP_KEYS:
+            attrs[k] = value(v)
+    attrs["HasSettings"] = "True"
+    lines = ['<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Auto Edits">',
+             ' <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">',
+             '  <rdf:Description rdf:about=""',
+             '    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"']
+    lines += [f'   crs:{k}={quoteattr(v)}' for k, v in attrs.items()]
+    lines[-1] += ">"
+    lines += [f'   <crs:Name><rdf:Alt><rdf:li xml:lang="x-default">{escape(name)}</rdf:li></rdf:Alt></crs:Name>',
+              f'   <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">{escape(group)}</rdf:li></rdf:Alt></crs:Group>']
+    for key in CURVE_KEYS:
+        pts = curves.get(key)
+        if pts:
+            items = "".join(f"<rdf:li>{int(round(x))}, {int(round(y))}</rdf:li>" for x, y in pts)
+            lines.append(f"   <crs:{key}><rdf:Seq>{items}</rdf:Seq></crs:{key}>")
+    lines += ["  </rdf:Description>", " </rdf:RDF>", "</x:xmpmeta>", ""]
+    return "\n".join(lines)
+
+
 def load_folder(root: str | Path) -> list[Preset]:
     """Load every .xmp under root. The top-level folder name is used as the pack."""
     root = Path(root)

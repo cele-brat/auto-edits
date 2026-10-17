@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=26">
+<link rel="stylesheet" href="/static/app.css?v=28">
 </head>
 <body>
 <div id="app" hidden>
@@ -56,7 +56,11 @@
       <nav id="folders" aria-label="Event folders"></nav>
     </details>
     <details class="lp grow-box" id="preset-box" open>
-      <summary>Presets <label class="plus" title="Add presets from Lightroom (.xmp files, masks included)">+<input id="upload" type="file" accept=".xmp" multiple aria-label="Add presets from Lightroom"></label></summary>
+      <summary>Presets <button id="preset-plus" class="plus" type="button" title="Create or import presets" aria-haspopup="menu" aria-expanded="false">+</button></summary>
+      <div id="preset-menu" class="mini-menu" role="menu" hidden>
+        <button id="preset-create" type="button" role="menuitem">Create preset…<small>From the settings on screen</small></button>
+        <label class="as-item" role="menuitem">Import from Lightroom…<small>Exported .xmp files, masks included</small><input id="upload" type="file" accept=".xmp" multiple aria-label="Import presets from Lightroom"></label>
+      </div>
       <div class="lp-body">
         <div class="adj amount"><span class="name">Amount</span><input id="amount" type="range" min="0" max="2" step="0.05" aria-label="Preset amount"><output></output></div>
         <input id="search" type="search" placeholder="Search presets" aria-label="Search presets">
@@ -68,8 +72,12 @@
           <ul id="preset-mask-list"></ul>
           <p id="preset-mask-note"></p>
         </div>
-        <button id="remove-preset" type="button" class="quiet small" hidden>Remove this preset</button>
-        <p id="upload-note" aria-live="polite">Add your own with <b>+</b>: in Lightroom, right-click a preset, then Export.</p>
+        <div id="mine-tools" hidden>
+          <button id="update-preset" type="button" class="small" title="Save the settings on screen into this preset">Update with current settings</button>
+          <a id="download-preset" class="small button" href="#" download title="A Lightroom preset file: in Lightroom, File › Import Develop Profiles and Presets">Download for Lightroom</a>
+          <button id="remove-preset" type="button" class="quiet small">Remove</button>
+        </div>
+        <p id="upload-note" aria-live="polite">Use <b>+</b> to save the settings on screen as a preset, or import your Lightroom presets.</p>
       </div>
     </details>
     <div id="left-foot">
@@ -204,10 +212,25 @@
 
 <dialog id="add">
   <h2 class="title">Add photos from this computer</h2>
-  <p>Pick the wedding's folder. Raw files stay on this computer: only the preview stored inside each one is uploaded. Sub-folders (Haldi, Sangeet…) become event folders.</p>
-  <label class="field">Folder <input id="add-folder" type="file" webkitdirectory multiple></label>
+  <p>Raw files stay on this computer: only the preview stored inside each one is uploaded. JPEGs are used as they are.</p>
+  <div id="add-drop" tabindex="0">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M12 10v6m-3-3 3-3 3 3"/></svg>
+    <b>Drag folders or photos here from Finder</b>
+    <span>or</span>
+    <div class="row">
+      <label class="filebutton">Choose a folder…<input id="add-folder" type="file" webkitdirectory multiple></label>
+      <label class="filebutton">Choose photos…<input id="add-files" type="file" multiple accept=".jpg,.jpeg,.nef,.nrw,.cr2,.cr3,.arw,.sr2,.dng,.raf,.orf,.rw2,.pef,.srw"></label>
+    </div>
+    <small>Sub-folders (Haldi, Sangeet…) become event folders.</small>
+  </div>
+  <ul id="add-list"></ul>
   <p id="add-summary"></p>
-  <label class="field">Wedding name <input id="add-name" type="text" autocomplete="off"></label>
+  <div class="seg wide" role="group" aria-label="Where to add them" id="add-where">
+    <button type="button" data-where="new" aria-pressed="true">New wedding</button>
+    <button type="button" data-where="this" aria-pressed="false" id="add-where-this">This wedding</button>
+  </div>
+  <label class="field" id="add-name-row">Wedding name <input id="add-name" type="text" autocomplete="off"></label>
+  <label class="field" id="add-event-row">Event folder for single photos <input id="add-event" type="text" autocomplete="off" list="add-events" placeholder="e.g. Haldi"><datalist id="add-events"></datalist></label>
   <label class="field">Upload size
     <select id="add-size">
       <option value="2560">Proof size, 2560 px (fast)</option>
@@ -221,6 +244,7 @@
     <button id="add-start" type="button" class="primary" disabled>Add these photos</button>
   </div>
 </dialog>
+<div id="drop-veil" hidden><div><b>Drop to add photos</b><span>Folders or single photos</span></div></div>
 
 <dialog id="cull">
   <h2 class="title">Cull photos</h2>
@@ -413,6 +437,23 @@
   </form>
 </dialog>
 
+<dialog id="preset-dialog" aria-labelledby="preset-dialog-title">
+  <h2 class="title" id="preset-dialog-title">Create preset</h2>
+  <p class="dim">Saves the settings on screen: the preset in use with your slider changes laid over it. It goes in “My presets”, and you can download it for Lightroom.</p>
+  <form id="preset-form">
+    <label class="field">Preset name <input id="preset-new-name" type="text" maxlength="80" autocomplete="off" required></label>
+    <label class="field">Group (optional) <input id="preset-new-group" type="text" maxlength="60" autocomplete="off" list="preset-groups" placeholder="e.g. Haldi, Reception"><datalist id="preset-groups"></datalist></label>
+    <label class="check"><input id="preset-new-masks" type="checkbox" checked> Include your mask changes (face, skin, sky…)</label>
+    <label class="check"><input id="preset-new-wb" type="checkbox" checked> Include your white balance change</label>
+    <p class="dim small" id="preset-new-note"></p>
+    <p id="preset-new-error" role="alert"></p>
+    <div class="row end">
+      <button id="preset-new-close" type="button" class="quiet">Cancel</button>
+      <button type="submit" class="primary" id="preset-new-save">Create</button>
+    </div>
+  </form>
+</dialog>
+
 <dialog id="original-dialog" aria-labelledby="original-title">
   <h2 class="title" id="original-title">Reset to original?</h2>
   <p id="original-text"></p>
@@ -428,8 +469,8 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=23"></script>
-<script src="/static/addfolder.js?v=15"></script>
+<script src="/static/app.js?v=24"></script>
+<script src="/static/addfolder.js?v=16"></script>
 <script src="/static/cull.js?v=16"></script>
 <script src="/static/export.js?v=15"></script>
 <script src="/static/account.js?v=21"></script>

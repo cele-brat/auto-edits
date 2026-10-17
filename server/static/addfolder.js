@@ -124,49 +124,128 @@ function nameHash(text) {
 }
 
 // ---- the "Add photos" window -----------------------------------------------------
-const Add = { files: [], root: '', running: false, stop: false };
+// Like adding in Finder: a whole folder (its sub-folders become event folders), single photos,
+// or anything dragged in from Finder, into a new wedding or the one that is open.
+const Add = { files: [], root: '', running: false, stop: false, where: 'new' };
+const FOLDER_ICON = '<svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/></svg>';
+const LOOSE = '';                                   // single photos: they go in the event folder named below
 
-function describeChoice() {
-  const folders = new Set(Add.files.map((f) => f.folder));
-  $('add-summary').textContent = Add.files.length
-    ? `${Add.files.length} photos in ${folders.size} folder${folders.size === 1 ? '' : 's'}: ${[...folders].slice(0, 6).join(', ')}${folders.size > 6 ? '…' : ''}`
-    : 'No photos chosen yet.';
-  $('add-start').disabled = !Add.files.length || Add.running;
+function folderOf(path) {
+  const parts = path.split('/');
+  if (parts.length === 1) return LOOSE;
+  return parts.length > 2 ? parts[1] : parts[0];
 }
 
-$('add-photos').onclick = () => {
-  Add.files = []; Add.stop = false;
-  $('add-folder').value = '';
-  $('add-progress').textContent = '';
+// Adds files to the list: drops repeats, and a JPEG beside a raw file of the same shot.
+function takeFiles(items) {
+  const seen = new Set(Add.files.map((f) => f.path.toLowerCase()));
+  for (const { file, path } of items) {
+    if (!(RAW_TYPES.test(file.name) || JPEG_TYPES.test(file.name)) || seen.has(path.toLowerCase())) continue;
+    seen.add(path.toLowerCase());
+    Add.files.push({ file, path, folder: folderOf(path) });
+  }
+  const raws = new Set(Add.files.filter((f) => RAW_TYPES.test(f.file.name)).map((f) => f.path.replace(/\.[^.]+$/, '').toLowerCase()));
+  Add.files = Add.files.filter((f) => RAW_TYPES.test(f.file.name) || !raws.has(f.path.replace(/\.[^.]+$/, '').toLowerCase()))
+    .sort((x, y) => x.path.localeCompare(y.path, undefined, { numeric: true }));
+  const roots = Add.files.filter((f) => f.path.includes('/')).map((f) => f.path.split('/')[0]);
+  Add.root = roots[0] || '';
+  if (Add.where === 'new' && Add.root && !$('add-name').value) $('add-name').value = Add.root;
   describeChoice();
-  $('add').showModal();
-};
-$('add-close').onclick = () => { Add.stop = true; $('add').close(); };
+}
 
-$('add-folder').onchange = (e) => {
-  const picked = [...e.target.files].filter((f) => RAW_TYPES.test(f.name) || JPEG_TYPES.test(f.name));
-  // A raw file and a JPEG of the same shot: keep the raw's preview only.
-  const raws = new Set(picked.filter((f) => RAW_TYPES.test(f.name)).map((f) => f.webkitRelativePath.replace(/\.[^.]+$/, '').toLowerCase()));
-  Add.files = picked.filter((f) => RAW_TYPES.test(f.name) || !raws.has(f.webkitRelativePath.replace(/\.[^.]+$/, '').toLowerCase()))
-    .map((file) => {
-      const parts = file.webkitRelativePath.split('/');
-      return { file, path: file.webkitRelativePath, folder: parts.length > 2 ? parts[1] : parts[0] };
-    })
-    .sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
-  Add.root = Add.files.length ? Add.files[0].path.split('/')[0] : '';
-  if (Add.root && !$('add-name').value) $('add-name').value = Add.root;
+function describeChoice() {
+  const groups = new Map();
+  for (const f of Add.files) groups.set(f.folder, (groups.get(f.folder) || 0) + 1);
+  const loose = Add.files.some((f) => f.folder === LOOSE);
+  $('add-list').replaceChildren(...[...groups].map(([name, n]) => {
+    const li = document.createElement('li');
+    li.innerHTML = FOLDER_ICON;
+    li.append(name === LOOSE ? `Single photos → ${$('add-event').value.trim() || 'Photos'}` : name,
+      Object.assign(document.createElement('small'), { textContent: `${n} photo${n === 1 ? '' : 's'}` }));
+    const x = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Leave these out' });
+    x.onclick = () => { Add.files = Add.files.filter((f) => f.folder !== name); describeChoice(); };
+    li.append(x);
+    return li;
+  }));
+  $('add-summary').textContent = Add.files.length ? `${Add.files.length} photo${Add.files.length === 1 ? '' : 's'} chosen.` : 'Nothing chosen yet.';
+  $('add-event-row').hidden = !loose;
+  $('add-name-row').hidden = Add.where !== 'new';
+  for (const b of document.querySelectorAll('#add-where button')) b.setAttribute('aria-pressed', String(b.dataset.where === Add.where));
+  $('add-start').disabled = !Add.files.length || Add.running;
+  $('add-start').textContent = Add.where === 'this' && S.wedding ? `Add to “${S.wedding.name}”` : 'Add these photos';
+}
+
+function openAdd(where) {
+  Add.files = []; Add.stop = false;
+  Add.where = where || (S.wedding ? 'this' : 'new');
+  $('add-folder').value = ''; $('add-files').value = '';
+  $('add-progress').textContent = '';
+  $('add-where-this').disabled = !S.wedding;
+  $('add-where-this').textContent = S.wedding ? `This wedding (${S.wedding.name})` : 'This wedding';
+  if (Add.where === 'new') $('add-name').value = '';
+  $('add-events').replaceChildren(...(S.wedding ? S.wedding.folders : []).map((f) => Object.assign(document.createElement('option'), { value: f.name })));
+  $('add-event').value = Add.where === 'this' && folder() ? folder().name : 'Photos';
   describeChoice();
-};
+  if (!$('add').open) $('add').showModal();
+}
+$('add-photos').onclick = () => openAdd();
+$('add-close').onclick = () => { Add.stop = true; $('add').close(); };
+for (const b of document.querySelectorAll('#add-where button')) {
+  b.onclick = () => { if (b.disabled) return; Add.where = b.dataset.where; if (Add.where === 'new' && Add.root && !$('add-name').value) $('add-name').value = Add.root; describeChoice(); };
+}
+$('add-event').oninput = describeChoice;
+$('add-folder').onchange = (e) => { takeFiles([...e.target.files].map((file) => ({ file, path: file.webkitRelativePath || file.name }))); e.target.value = ''; };
+$('add-files').onchange = (e) => { takeFiles([...e.target.files].map((file) => ({ file, path: file.name }))); e.target.value = ''; };
+
+// ---- dragging in from Finder: folders are walked, sub-folders included ----------------------
+async function readDropped(dataTransfer) {
+  const out = [];
+  const entries = [...dataTransfer.items].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  const fileOf = (entry) => new Promise((ok) => entry.file(ok, () => ok(null)));
+  const listOf = (reader) => new Promise((ok) => reader.readEntries(ok, () => ok([])));
+  async function walk(entry, path) {
+    if (entry.isFile) {
+      const file = await fileOf(entry);
+      if (file) out.push({ file, path: path ? `${path}/${file.name}` : file.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      for (let batch = await listOf(reader); batch.length; batch = await listOf(reader)) {
+        for (const child of batch) await walk(child, path ? `${path}/${entry.name}` : entry.name);
+      }
+    }
+  }
+  if (entries.length) for (const e of entries) await walk(e, '');
+  else for (const file of dataTransfer.files) out.push({ file, path: file.name });
+  return out;
+}
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+let dragDepth = 0;
+window.addEventListener('dragenter', (e) => { if (!hasFiles(e) || $('app').hidden) return; dragDepth += 1; if (!$('add').open) $('drop-veil').hidden = false; });
+window.addEventListener('dragleave', (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('drop-veil').hidden = true; });
+window.addEventListener('dragover', (e) => { if (hasFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+window.addEventListener('drop', async (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth = 0; $('drop-veil').hidden = true; $('add-drop').classList.remove('over');
+  if ($('app').hidden || Add.running) return;
+  if (!$('add').open) openAdd();
+  $('add-summary').textContent = 'Reading what you dropped…';
+  takeFiles(await readDropped(e.dataTransfer));
+});
+$('add-drop').addEventListener('dragover', () => $('add-drop').classList.add('over'));
+$('add-drop').addEventListener('dragleave', () => $('add-drop').classList.remove('over'));
 
 $('add-start').onclick = async () => {
   const name = $('add-name').value.trim();
-  if (!name) { $('add-progress').textContent = 'Give the wedding a name first.'; return; }
+  const into = Add.where === 'this' && S.wedding ? S.wedding : null;
+  if (!into && !name) { $('add-progress').textContent = 'Give the wedding a name first.'; return; }
+  const looseFolder = $('add-event').value.trim() || 'Photos';
   const maxSide = Number($('add-size').value);
   Add.running = true; Add.stop = false;
   $('add-start').disabled = true;
   const say = (t) => { $('add-progress').textContent = t; };
   try {
-    const wedding = await api('/api/weddings', { method: 'POST', body: { name, catalog: 'this computer' } });
+    const wedding = into || await api('/api/weddings', { method: 'POST', body: { name, catalog: 'this computer' } });
     const have = new Set((await api(`/api/weddings/${wedding.id}/received`)).uuids);
     const todo = Add.files.map((f) => ({ ...f, uuid: `f-${nameHash(`${f.path}|${f.file.size}|${f.file.lastModified}`)}` }))
       .filter((f) => !have.has(f.uuid));
@@ -178,7 +257,7 @@ $('add-start').onclick = async () => {
         const item = todo.shift();
         try {
           const p = await previewOf(item.file, maxSide);
-          const meta = { uuid: item.uuid, fileName: item.file.name, folder: item.folder, path: item.path, taken: p.taken,
+          const meta = { uuid: item.uuid, fileName: item.file.name, folder: item.folder === LOOSE ? looseFolder : item.folder, path: item.path, taken: p.taken,
                          iso: p.iso, camera: p.camera, width: p.sourceWidth, height: p.sourceHeight, previewSize: Math.max(p.width, p.height),
                          source: 'folder', edited: [] };
           const form = new FormData();

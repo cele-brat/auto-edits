@@ -32,7 +32,7 @@ PANELS = [
             _s("Whites2012", "Whites", field="wh", toggle="whites"),
             _s("Blacks2012", "Blacks", field="bl", toggle="blacks")]},
         {"name": "Presence", "sliders": [
-            _s("Texture", "Texture"), _s("Clarity2012", "Clarity"), _s("Dehaze", "Dehaze", shown=False),
+            _s("Texture", "Texture"), _s("Clarity2012", "Clarity"), _s("Dehaze", "Dehaze"),
             _s("Vibrance", "Vibrance"), _s("Saturation", "Saturation")]},
     ]},
     {"name": "Tone Curve", "groups": [
@@ -62,8 +62,8 @@ PANELS = [
     ]},
     {"name": "Detail", "groups": [
         {"name": "Sharpening", "sliders": [
-            _s("Sharpness", "Amount", 0, 150, shown=False, neutral=40), _s("SharpenRadius", "Radius", 0.5, 3, 0.1, shown=False, neutral=1),
-            _s("SharpenDetail", "Detail", 0, 100, shown=False, neutral=25), _s("SharpenEdgeMasking", "Masking", 0, 100, shown=False)]},
+            _s("Sharpness", "Amount", 0, 150, neutral=40), _s("SharpenRadius", "Radius", 0.5, 3, 0.1, neutral=1),
+            _s("SharpenDetail", "Detail", 0, 100, neutral=25), _s("SharpenEdgeMasking", "Masking", 0, 100)]},
         {"name": "Noise reduction", "sliders": [
             _s("LuminanceSmoothing", "Luminance", 0, 100, shown=False, field="noise", toggle="noise"),
             _s("LuminanceNoiseReductionDetail", "Detail", 0, 100, shown=False, neutral=50),

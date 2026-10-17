@@ -30,7 +30,7 @@ from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
 from .culling import RATINGS, Culls
-from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit
+from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit, preset_from_look
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -913,6 +913,42 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             results.append({"file": name, "ok": True, "id": d["id"], "name": p.name, "replaced": replaced,
                             "masks": len(p.masks)})
         return {"results": results}
+
+    @app.post("/api/presets/new")
+    def create_preset(body: dict = Body(...), user: dict = Depends(signed_in)):
+        """Save what the sliders show now as a preset of your own (Lightroom's "Create Preset").
+        With "replace": the id of one of your presets, that preset is updated instead."""
+        name = " ".join(str(body.get("name") or "").split())[:80]
+        group = " ".join(str(body.get("group") or "").split())[:60]
+        if not name:
+            raise HTTPException(422, "Give the preset a name.")
+        replace = body.get("replace")
+        if replace and renderer.owner_of(replace) != user["id"]:
+            raise HTTPException(404, "Only presets you made or uploaded can be updated.")
+        if not replace:
+            mine = sum(1 for p in store.uploaded_presets() if p.get("owner") == user["id"])
+            if not user["admin"] and mine >= limits.PRESETS_PER_ACCOUNT:
+                raise HTTPException(403, f"You have {limits.PRESETS_PER_ACCOUNT:,} presets, the most one account can keep.")
+        look = clean_look(body.get("look"), allowed_presets(user))
+        preset, xmp = preset_from_look(renderer, look, name, group, user["id"], bool(user["admin"]),
+                                       with_masks=body.get("masks", True) is not False,
+                                       with_wb=body.get("white_balance", True) is not False)
+        if replace:
+            preset["id"] = replace
+        store.save_preset(preset, xmp, user["id"])
+        renderer.add_uploaded(preset)
+        return {"id": preset["id"], "name": name, "replaced": bool(replace)}
+
+    @app.get("/api/presets/{preset_id}/xmp")
+    def preset_xmp(preset_id: str, user: dict = Depends(signed_in)):
+        """One of your presets as a Lightroom file, to import in Lightroom Classic."""
+        text = store.preset_file(preset_id) if renderer.owner_of(preset_id) == user["id"] else None
+        if not text:
+            raise HTTPException(404, "Only presets you made or uploaded can be downloaded.")
+        name = renderer.presets[preset_id]["display_name"]
+        safe = "".join(c if c.isalnum() or c in " -_." else "_" for c in name).strip() or "preset"
+        return Response(text, media_type="application/octet-stream",
+                        headers={"Content-Disposition": f'attachment; filename="{safe}.xmp"'})
 
     @app.delete("/api/presets/{preset_id}")
     def delete_preset(preset_id: str, user: dict = Depends(signed_in)):

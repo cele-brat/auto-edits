@@ -44,8 +44,9 @@ const blankLook = () => ({ mode: 'preset', preset: null, amount: 1, toggles: [],
   hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, angle: 0, masks: {}, preset_masks: true, adj: {} });
 // Parts of the photo that can be changed on their own (Lightroom's own mask kinds).
 const MASKS = [
+  ['subject', 'Subject', 'the people (Select Subject)'], ['background', 'Background', 'everything but the people'],
   ['face_skin', 'Face skin'], ['body_skin', 'Body skin'], ['eyes', 'Eyes'], ['hair', 'Hair'], ['clothes', 'Clothes'],
-  ['subject', 'People', 'the whole person'], ['background', 'Background', 'everything but the people'], ['sky', 'Sky', 'rough'],
+  ['sky', 'Sky', 'rough'],
 ];
 const MASK_SLIDERS = [
   { key: 'ev', label: 'Exposure', min: -2, max: 2, step: 0.05, digits: 2 },
@@ -54,7 +55,7 @@ const MASK_SLIDERS = [
   { key: 'temp', label: 'Warmth' }, { key: 'tint', label: 'Tint' },
 ];
 // Names for the mask kinds and settings that can come inside a Lightroom preset.
-const KIND_NAMES = { subject: 'People', whole_person: 'Whole person', background: 'Background', face_skin: 'Face skin',
+const KIND_NAMES = { subject: 'Subject', whole_person: 'Whole person', background: 'Background', face_skin: 'Face skin',
   body_skin: 'Body skin', hair: 'Hair', clothes: 'Clothes', iris_pupil: 'Iris and pupil', eye_sclera: 'Eye whites',
   eyebrows: 'Eyebrows', lips: 'Lips', teeth: 'Teeth', facial_hair: 'Facial hair', sky: 'Sky',
   linear_gradient: 'Linear gradient', radial_gradient: 'Radial gradient', brush: 'Brush', range: 'Range' };
@@ -487,7 +488,9 @@ function drawLooks() {
     rows.push(head);
     if (!expanded) continue;
     for (const l of looks) {
-      const row = el('button', { type: 'button', className: 'look' }, [l.look]);
+      const single = l.variants.length === 1;
+      const row = el('button', { type: 'button', className: 'look' }, [single ? l.variants[0].variant : l.look]);
+      if (single && l.variants[0].variant !== l.look && l.pack === 'My presets') row.append(el('small', { textContent: l.look }));
       if (l.variants.some((v) => v.masks.length)) row.append(el('small', { className: 'has', textContent: 'masks' }));
       if (l.variants.length > 1) row.append(el('small', { textContent: String(l.variants.length) }));
       row.setAttribute('aria-expanded', String(l.key === open));
@@ -510,10 +513,15 @@ function drawLooks() {
   box.scrollTop = keep;
   $('preset-name').textContent = chosen ? chosen.name : 'No preset chosen';
   $('about').textContent = chosen ? chosen.about : '';
-  $('remove-preset').hidden = !(chosen && chosen.mine);
+  $('mine-tools').hidden = !(chosen && chosen.mine);
+  if (chosen && chosen.mine) $('download-preset').href = `/api/presets/${encodeURIComponent(chosen.id)}/xmp`;
   const maskBox = $('preset-masks');
-  maskBox.hidden = !(chosen && chosen.masks.length);
-  if (!maskBox.hidden) {
+  maskBox.hidden = !(chosen && (chosen.masks.length || (chosen.own_masks || []).length));
+  if (!maskBox.hidden && !chosen.masks.length) {           // a preset made here: only its own mask changes
+    $('use-preset-masks').checked = look.preset_masks;
+    $('preset-mask-list').replaceChildren(...chosen.own_masks.map((k) => el('li', {}, [el('b', { textContent: KIND_NAMES[k] || k }), ': your mask changes, saved in this preset'])));
+    $('preset-mask-note').textContent = 'Shown here and in exports; Lightroom gets the rest of the preset.';
+  } else if (!maskBox.hidden) {
     $('use-preset-masks').checked = look.preset_masks;
     let hiddenParts = 0;
     $('preset-mask-list').replaceChildren(...chosen.masks.map((m) => {
@@ -1091,4 +1099,80 @@ for (const d of document.querySelectorAll('dialog')) {
   d.addEventListener('mousedown', (e) => { if (e.target === d) x.click(); });
 }
 
+
+
+// ---- Create preset (Lightroom's "Create Preset…") ---------------------------------------------
+// The settings on screen become a preset of your own: the preset in use with your changes laid over it.
+// Afterwards the folder (or photo) uses the new preset with those changes cleared, so nothing on screen moves.
+function presetMenu(open) {
+  $('preset-menu').hidden = !open;
+  $('preset-plus').setAttribute('aria-expanded', String(open));
+}
+$('preset-plus').onclick = (e) => { e.preventDefault(); e.stopPropagation(); $('preset-box').open = true; presetMenu($('preset-menu').hidden); };
+document.addEventListener('click', (e) => { if (!e.target.closest('#preset-menu, #preset-plus')) presetMenu(false); });
+$('upload').addEventListener('click', () => presetMenu(false));
+
+function lookHasChanges(look) {
+  return ['ev', 'temp', 'tint', 'hl', 'sh', 'wh', 'bl', 'noise'].some((k) => look[k]) || Object.keys(look.adj || {}).length ||
+    Object.keys(look.masks || {}).length || look.amount !== 1;
+}
+let presetReplace = null;
+function openPresetDialog(replace) {
+  presetMenu(false);
+  if (!folder()) return;
+  const look = panelLook();
+  const chosen = S.byPreset.get(look.preset);
+  presetReplace = replace || null;
+  $('preset-dialog-title').textContent = replace ? 'Update preset' : 'Create preset';
+  $('preset-new-save').textContent = replace ? 'Update' : 'Create';
+  const groups = [...new Set(S.presets.filter((p) => p.mine && p.look && p.look !== p.name).map((p) => p.look))];
+  $('preset-groups').replaceChildren(...groups.map((g) => el('option', { value: g })));
+  if (replace) {
+    $('preset-new-name').value = replace.name;
+    $('preset-new-group').value = replace.look !== replace.name ? replace.look : '';
+  } else {
+    $('preset-new-name').value = chosen ? `${chosen.name} (mine)` : 'My preset';
+    $('preset-new-group').value = '';
+  }
+  const notes = [];
+  if (look.toggles.length) notes.push('Auto ticks are not saved in a preset: they are worked out for each photo, so keep them on the folder.');
+  if (look.amount !== 1) notes.push(`The strength (${Math.round(look.amount * 100)}%) is built into the slider values.`);
+  if (!chosen && !lookHasChanges(look)) notes.push('Nothing is changed yet, so this preset would do nothing.');
+  $('preset-new-note').textContent = notes.join(' ');
+  $('preset-new-masks').closest('label').hidden = !Object.keys(look.masks || {}).length && !(chosen && (chosen.own_masks || []).length);
+  $('preset-new-wb').closest('label').hidden = !look.temp && !look.tint && !(chosen && chosen.wb);
+  $('preset-new-error').textContent = '';
+  $('preset-dialog').showModal();
+  $('preset-new-name').select();
+}
+$('preset-create').onclick = () => openPresetDialog(null);
+$('update-preset').onclick = () => { const p = S.byPreset.get(panelLook().preset); if (p && p.mine) openPresetDialog(p); };
+$('preset-new-close').onclick = () => $('preset-dialog').close();
+$('preset-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const look = panelLook();
+  const masks = $('preset-new-masks').checked, wb = $('preset-new-wb').checked;
+  $('preset-new-save').disabled = true;
+  try {
+    const r = await api('/api/presets/new', { method: 'POST', body: {
+      name: $('preset-new-name').value, group: $('preset-new-group').value, look, masks, white_balance: wb,
+      replace: presetReplace ? presetReplace.id : undefined } });
+    $('preset-dialog').close();
+    await loadPresets();
+    const made = S.byPreset.get(r.id);
+    S.openPacks.add('My presets');
+    S.openLook = made ? lookKey(made) : null;
+    const patch = { preset: r.id, amount: 1, ev: 0, hl: 0, sh: 0, wh: 0, bl: 0, noise: 0, adj: {} };
+    if (masks) patch.masks = {};
+    if (wb) { patch.temp = 0; patch.tint = 0; }
+    if (look.mode === 'auto') patch.mode = 'preset';
+    change(patch);
+    $('upload-note').textContent = `${r.replaced ? 'Updated' : 'Saved'} “${r.name}” in My presets. It is now in use here.`;
+  } catch (err) {
+    if (err.message !== 'signed out') $('preset-new-error').textContent = err.message;
+  }
+  $('preset-new-save').disabled = false;
+};
+
 start().catch((e) => { if (e.message !== 'signed out') $('saved').textContent = e.message; });
+

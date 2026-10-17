@@ -160,6 +160,58 @@ def _detail(img: np.ndarray, texture: float, clarity: float, span: float | None 
     return np.clip(img + change[..., None], 0, 1)          # brightness only: colour stays where it was
 
 
+def _dehaze(img: np.ndarray, amount: float) -> np.ndarray:
+    """Dehaze (-100..100): plus takes away the grey veil of haze (darker, deeper colour where the
+    picture is washed out), minus adds a soft haze. Works on the darkest channel, smoothed, as an
+    estimate of how much haze lies over each area."""
+    if not amount:
+        return img
+    h, w = img.shape[:2]
+    k = 2 * max(3, int(0.02 * max(h, w))) + 1
+    dark = cv2.blur(cv2.erode(img.min(axis=2), np.ones((5, 5), np.uint8)), (k, k))
+    if amount > 0:
+        haze = np.clip(dark * (amount / 100.0) * 0.75, 0, 0.85)[..., None]
+        out = (img - haze * 0.95) / (1 - haze * 0.95)
+        grey = _r._luma(np.clip(out, 0, 1))[..., None]
+        out = grey + (out - grey) * (1 + 0.25 * amount / 100.0)         # a little colour back, as Lightroom does
+    else:
+        veil = (-amount / 100.0) * 0.55
+        out = img + (0.9 - img) * veil * (0.4 + 0.6 * dark[..., None])
+    return np.clip(out, 0, 1)
+
+
+def _sharpen(img: np.ndarray, settings: dict, amount_scale: float = 1.0) -> np.ndarray:
+    """Lightroom's Sharpening: Amount, Radius, Detail and Masking. The previews and exports start
+    from the camera's own JPEG, which is already sharpened about as much as Lightroom's default
+    (Amount 40), so only what is above or below that default is added."""
+    def num(key, default):
+        v = settings.get(key)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else default
+    extra = (num("Sharpness", 40.0) - 40.0) * amount_scale
+    if abs(extra) < 0.5:
+        return img
+    radius, detail, masking = num("SharpenRadius", 1.0), num("SharpenDetail", 25.0), num("SharpenEdgeMasking", 0.0)
+    y = np.ascontiguousarray(_r._luma(np.clip(img, 0, 1)), np.float32)
+    high = y - cv2.GaussianBlur(y, (0, 0), max(0.3, radius))
+    limit = 0.03 + 0.25 * detail / 100.0                 # low Detail keeps only the larger edges (fewer halos)
+    high = limit * np.tanh(high / limit)
+    gain = extra / 100.0 * 1.6
+    if extra > 0 and masking > 0:                        # Masking: sharpen edges only, leave smooth skin and sky
+        g = cv2.GaussianBlur(y, (0, 0), 1.5)
+        edge = np.hypot(cv2.Sobel(g, cv2.CV_32F, 1, 0, ksize=3), cv2.Sobel(g, cv2.CV_32F, 0, 1, ksize=3))
+        t = masking / 100.0 * 0.35
+        high *= np.clip((edge - t * 0.5) / max(1e-4, t * 0.5), 0, 1)
+    return np.clip(img + (gain * high)[..., None], 0, 1)
+
+
+def finish_detail(img: np.ndarray, settings: dict, amount: float = 1.0) -> np.ndarray:
+    """Dehaze and sharpening for previews and exports (the engine's render leaves them to Lightroom)."""
+    d = settings.get("Dehaze")
+    if isinstance(d, (int, float)) and not isinstance(d, bool) and d:
+        img = _dehaze(img, float(d) * amount)
+    return _sharpen(img, settings, amount)
+
+
 def _apply(img: np.ndarray, a: dict, curve=None, span: float | None = None) -> np.ndarray:
     """One set of local adjustments on the whole picture (the mask is laid over it afterwards)."""
     P = _r.DEFAULT_PARAMS
@@ -375,7 +427,8 @@ class Renderer:
             if mine and owner is not None and p.get("owner") != owner:
                 continue
             out.append({"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
-                        "pack": p["pack"], "about": p["description"], "mine": mine,
+                        "pack": p["pack"], "about": p["description"], "mine": mine, "made": bool(p.get("made")),
+                        "own_masks": sorted((p.get("app_masks") or {}).keys()), "wb": p.get("app_wb") or None,
                         "s": {k: v for k, v in p["settings"].items()
                               if k in adjustments.SLIDERS and isinstance(v, (int, float)) and not isinstance(v, bool)
                               and v != adjustments.neutral(k)},
@@ -485,11 +538,15 @@ class Renderer:
             if look[key]:
                 settings[name] = min(hi, max(lo, float(settings.get(name) or 0) + look[key]))
         adjustments.add(settings, look["adj"])
-        manual = {"temp": float(manual.get("temp", 0.0)) + look["temp"],
-                  "tint": float(manual.get("tint", 0.0)) + look["tint"], "exposure": look["ev"]}
+        own_wb = (preset or {}).get("app_wb") or {}             # presets made in the app (Create preset)
+        manual = {"temp": float(manual.get("temp", 0.0)) + float(own_wb.get("temp", 0)) + look["temp"],
+                  "tint": float(manual.get("tint", 0.0)) + float(own_wb.get("tint", 0)) + look["tint"], "exposure": look["ev"]}
+        masks = {k: dict(v) for k, v in ((preset or {}).get("app_masks") or {}).items()} if look["preset_masks"] else {}
+        for kind, values in look["masks"].items():              # your own changes on top of the preset's
+            masks[kind] = {**masks.get(kind, {}), **values}
         corrections = local_corrections(preset) if preset and look["preset_masks"] else []
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
-                "masks": look["masks"], "corrections": corrections, "angle": float(settings.get("CropAngle") or 0.0),
+                "masks": masks, "corrections": corrections, "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None,
                 "crop": look["crop"]}
 
@@ -533,6 +590,9 @@ class Renderer:
         texture = d["settings"].get("Texture")
         if isinstance(texture, (int, float)) and texture:
             out = (_detail(out.astype(np.float32) / 255, float(texture) * d["amount"], 0) * 255 + 0.5).astype(np.uint8)
+        s = d["settings"]
+        if s.get("Dehaze") or (isinstance(s.get("Sharpness"), (int, float)) and abs(float(s["Sharpness"]) - 40) >= 0.5):
+            out = (finish_detail(out.astype(np.float32) / 255, s, d["amount"]) * 255 + 0.5).astype(np.uint8)
         if d["masks"] or d["corrections"]:
             out = local_adjust8(out, self.masks(path), d["masks"], d["corrections"])
         if abs(d["angle"]) >= 0.05:
@@ -560,6 +620,7 @@ class Renderer:
         texture = d["settings"].get("Texture")
         if isinstance(texture, (int, float)) and texture:        # the engine's own texture is too weak to see
             out = _detail(out, float(texture) * d["amount"], 0)
+        out = finish_detail(out, d["settings"], d["amount"])
         if d["masks"] or d["corrections"] or show:
             masks = self.small_masks(path, out.shape) if size <= 400 and not show else self.masks(path)
             out = local_adjust(out, masks, d["masks"], d["corrections"])
@@ -605,7 +666,7 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
     if abs(float(settings.pop("CropAngle", 0) or 0)) >= 0.05 or "straighten" in look["toggles"]:
         not_yet.append("straighten")
     settings.pop("PerspectiveUpright", None), settings.pop("UprightVersion", None)
-    if look["masks"]:
+    if d["masks"]:
         not_yet.append("your own masks")
     crop = d["crop"]
     if crop and abs(d["angle"]) < 0.05:                  # Lightroom's own crop: non-destructive there too
@@ -621,7 +682,8 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
         wb = {"mired": round(-MIRED_PER_STOP * stops, 2), "tint": round(LR_TINT_PER_UNIT * tint, 2),
               "relative_temp": round(temp, 1), "relative_tint": round(tint, 1)}
 
-    by_lightroom = bool(preset and preset["id"] not in renderer.library and preset.get("masks") and look["preset_masks"])
+    by_lightroom = bool(preset and preset["id"] not in renderer.library and preset.get("masks") and look["preset_masks"]
+                        and preset.get("uuid") and not preset.get("made"))     # presets made in the app are sent as settings
     if by_lightroom:
         own = preset["settings"]
         settings = {k: v for k, v in settings.items() if own.get(k) != v}
@@ -635,3 +697,49 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
     return {"preset": preset["display_name"] if preset else None,
             "preset_uuid": preset.get("uuid") if by_lightroom else None,
             "from_no_edit": not by_lightroom, "settings": settings, "curves": curves, "wb": wb, "not_yet": not_yet}
+
+
+def preset_from_look(renderer: "Renderer", look: dict, name: str, group: str, owner_id: str, admin: bool,
+                     with_masks: bool = True, with_wb: bool = True) -> tuple[dict, str]:
+    """A new preset from what the sliders show now (Lightroom's "Create Preset"): the chosen preset's
+    settings and curves with your changes laid over them. Auto ticks are not part of it (they are
+    worked out per photo), and the preset strength is baked into the slider values.
+    Returns the preset as the app keeps it and its Lightroom .xmp file."""
+    import uuid as _uuid
+    from engine.presets import write_xmp
+    look = clean_look(look, renderer.presets)
+    base = renderer.presets.get(look["preset"]) if look["preset"] else None
+    plain = {**look, "mode": "preset", "toggles": [], "masks": {}, "crop": None}
+    d = renderer.develop(Path("/nonexistent"), plain)            # no auto values, so no photo is read
+    settings = {k: v for k, v in d["settings"].items() if k not in ("CropAngle",)}
+    amount = float(look["amount"])
+    if base and abs(amount - 1) > 1e-6:                          # strength: move each preset slider toward neutral
+        for k, v in list(settings.items()):
+            if k in adjustments.SLIDERS and isinstance(v, (int, float)) and not isinstance(v, bool) and k in base["settings"]:
+                n = adjustments.neutral(k)
+                settings[k] = round(n + (float(v) - n) * amount, 3)
+    if look["ev"]:
+        settings["Exposure2012"] = round(min(5, max(-5, float(settings.get("Exposure2012") or 0) + look["ev"])), 3)
+    uid = _uuid.uuid4().hex.upper()
+    pid = "my-" + uid if admin else f"my-{owner_id}-{uid}"
+    preset = {"id": pid, "uuid": "", "name": name, "display_name": name,
+              "look": group or name, "variant": name, "group": group, "pack": MY_PACK,
+              "description": f"Made in Auto Edits{' from ' + base['display_name'] if base else ''}.",
+              "process_version": "11.0", "camera_profile": (base or {}).get("camera_profile", ""),
+              "settings": settings, "curves": {k: [list(p) for p in v] for k, v in d["curves"].items()},
+              "has_masks": False, "masks": [], "source_file": "", "owner": owner_id, "made": True}
+    if base and look["preset_masks"] and base.get("masks"):      # the chosen preset's own masks come along
+        preset["masks"], preset["has_masks"] = base["masks"], True
+    if with_masks:
+        own = {k: dict(v) for k, v in ((base or {}).get("app_masks") or {}).items()} if look["preset_masks"] else {}
+        for kind, values in look["masks"].items():
+            own[kind] = {**own.get(kind, {}), **values}
+        if own:
+            preset["app_masks"] = own
+    if with_wb:
+        base_wb = (base or {}).get("app_wb") or {}
+        temp, tint = float(base_wb.get("temp", 0)) + look["temp"], float(base_wb.get("tint", 0)) + look["tint"]
+        if temp or tint:
+            preset["app_wb"] = {"temp": round(temp, 2), "tint": round(tint, 2)}
+    return preset, write_xmp(name, group, settings, preset["curves"], uid)
+

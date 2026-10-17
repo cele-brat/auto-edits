@@ -55,8 +55,8 @@ DEFAULT_PARAMS = {
     "vignette": 0.75,
     "grain": 0.10,
     # manual white balance
-    "wb_temp": 0.35,             # R/B gain (in stops) at manual temp slider 100
-    "wb_tint": 0.25,
+    "wb_temp": 1.0,              # R/B gain (in stops) at manual temp slider 100 (was 0.35: too weak to see)
+    "wb_tint": 0.6,
 }
 
 # Hue centres of the eight colour mixer bands, in degrees.
