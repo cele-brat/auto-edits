@@ -658,7 +658,9 @@ class Renderer:
 # Measured on Lightroom exports: one "stop" of the app's warmth equals this many mired in
 # Lightroom's Temperature, and Lightroom's Tint moves this much per unit of the app's tint.
 MIRED_PER_STOP = 156.0
-LR_TINT_PER_UNIT = 0.30
+# Measured when the preview's tint strength (wb_tint) was 0.25: Lightroom Tint 0.30 per unit. Scaled with
+# wb_tint, so a stronger preview tint sends a matching Lightroom Tint.
+LR_TINT_PER_UNIT = 0.30 / 0.25 * _r.DEFAULT_PARAMS["wb_tint"]
 _WB_KEYS = ("WhiteBalance", "Temperature", "Tint", "IncrementalTemperature", "IncrementalTint")
 
 
@@ -696,7 +698,7 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
     wb = None
     if temp or tint:
         stops = temp / 100.0 * _r.DEFAULT_PARAMS["wb_temp"]
-        wb = {"mired": round(-MIRED_PER_STOP * stops, 2), "tint": round(LR_TINT_PER_UNIT * tint, 2),
+        wb = {"mired": round(-MIRED_PER_STOP * stops, 2), "tint": round(max(-150.0, min(150.0, LR_TINT_PER_UNIT * tint)), 2),
               "relative_temp": round(temp, 1), "relative_tint": round(tint, 1)}
 
     by_lightroom = bool(preset and preset["id"] not in renderer.library and preset.get("masks") and look["preset_masks"]

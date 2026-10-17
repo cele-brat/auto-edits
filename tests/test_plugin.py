@@ -235,7 +235,8 @@ def test_bring_back_and_apply(rig):
     assert list(a.snapshots.values()) == ["Before Auto Edits"]
     assert list(a.steps.values()) == ["Auto Edits", "Auto Edits: per photo"]
     assert a.develop.WhiteBalance == "Custom" and a.develop.Temperature > 5200 and a.develop.Temperature % 50 == 0
-    assert a.develop.Tint == 8 + 3                                   # app tint 10 is 3 in Lightroom
+    from server.looks import LR_TINT_PER_UNIT
+    assert a.develop.Tint == 8 + round(10 * LR_TINT_PER_UNIT)        # app tint 10, in Lightroom's units
     assert a.develop.Vibrance is not None and a.develop.ParametricDarks is not None
     assert len(list(a.develop.ToneCurvePV2012.values())) >= 4
     # a JPEG has no Kelvin: its relative sliders move instead

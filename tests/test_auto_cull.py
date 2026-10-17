@@ -28,11 +28,13 @@ def test_auto_tone_ranges(photo):
 
 
 def test_auto_white_balance(photo):
-    warm = render(photo, {}, manual={"temp": 60})
-    cool = render(photo, {}, manual={"temp": -60})
+    from engine.render import DEFAULT_PARAMS
+    cast = 0.21 / DEFAULT_PARAMS["wb_temp"] * 100             # a 0.21-stop cast, in slider units at today's strength
+    warm = render(photo, {}, manual={"temp": cast})
+    cool = render(photo, {}, manual={"temp": -cast})
     w, c = auto_white_balance(warm), auto_white_balance(cool)
     assert w["temp"] < c["temp"]                               # a warm cast is cooled, a cool cast is warmed
-    assert c["temp"] - w["temp"] >= 60                         # and by most of the cast, not a token amount
+    assert c["temp"] - w["temp"] >= cast                       # and by most of the cast, not a token amount
     assert abs(w["temp"]) <= 100 and abs(w["tint"]) <= 60
     grey = np.full((200, 300, 3), 0.5, np.float32)
     assert auto_white_balance(grey)["temp"] == 0 and auto_white_balance(grey)["tint"] == 0
@@ -40,9 +42,10 @@ def test_auto_white_balance(photo):
     scene = np.empty((200, 300, 3), np.float32); scene[:] = (0.20, 0.55, 0.20)
     scene[50:150, 100:200] = (0.74, 0.64, 0.50)                # skin gone greenish
     skin = np.zeros((200, 300), np.float32); skin[50:150, 100:200] = 1
-    assert auto_white_balance(scene, skin=skin)["tint"] > 10
+    stops = lambda units: units / 100 * DEFAULT_PARAMS["wb_tint"]   # slider units as an amount of colour change
+    assert stops(auto_white_balance(scene, skin=skin)["tint"]) > 0.025
     scene[50:150, 100:200] = (0.80, 0.58, 0.48)                # healthy skin is left alone
-    assert abs(auto_white_balance(scene, skin=skin)["tint"]) <= 8
+    assert abs(stops(auto_white_balance(scene, skin=skin)["tint"])) <= 0.02
 
 
 def test_auto_noise(photo):

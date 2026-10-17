@@ -55,8 +55,8 @@ DEFAULT_PARAMS = {
     "vignette": 0.75,
     "grain": 0.10,
     # manual white balance
-    "wb_temp": 1.0,              # R/B gain (in stops) at manual temp slider 100 (was 0.35: too weak to see)
-    "wb_tint": 0.6,
+    "wb_temp": 2.0,              # R/B gain (in stops) at manual temp slider 100: about Lightroom's full range from daylight
+    "wb_tint": 1.5,              # (was 0.35 / 0.25 until 17 Oct 2026: too weak to see)
 }
 
 # Hue centres of the eight colour mixer bands, in degrees.
