@@ -65,6 +65,12 @@ class Store:
                 db.execute("ALTER TABLE photos ADD COLUMN applied TEXT NOT NULL DEFAULT ''")
             if "crop" not in columns:                # the photo's own crop (JSON), kept apart from its look
                 db.execute("ALTER TABLE photos ADD COLUMN crop TEXT NOT NULL DEFAULT ''")
+            if "paid_stamp" not in columns:          # stamp of the edit last paid for when handed to Lightroom
+                db.execute("ALTER TABLE photos ADD COLUMN paid_stamp TEXT NOT NULL DEFAULT ''")
+            if "autos" not in columns:               # automatic values worked out after upload (JSON); '' = still to do.
+                # Photos from before this column are not queued (DEFAULT '{}'): theirs are worked out when first needed.
+                db.execute("ALTER TABLE photos ADD COLUMN autos TEXT NOT NULL DEFAULT '{}'")
+            db.execute("CREATE INDEX IF NOT EXISTS photos_autos_due ON photos (id) WHERE autos=''")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
@@ -213,10 +219,11 @@ class Store:
                 missing += 1
         return {"folders": sorted(folders.values(), key=lambda f: f["name"].lower()), "missing": missing}
 
-    def preview_path(self, wedding_id: str, photo_id: str) -> Path:
-        """The preview as a file on this disk, fetched from storage first if the working copy is gone."""
+    def preview_path(self, wedding_id: str, photo_id: str, fetch: bool = True) -> Path:
+        """The preview as a file on this disk, fetched from storage first if the working copy is gone
+        (fetch=False: only where it would be, for work that may not need the picture itself)."""
         path = self._local(wedding_id, photo_id)
-        if not path.exists() and self.blobs.on:
+        if fetch and not path.exists() and self.blobs.on:
             path.parent.mkdir(parents=True, exist_ok=True)
             if self.blobs.fetch(self._key(wedding_id, photo_id), path):
                 with self._db() as db:
@@ -244,7 +251,9 @@ class Store:
 
     def trim_working_copies(self, keep_bytes: int) -> int:
         """Free this disk: remove the least recently used working copies of previews
-        that are safely in storage, until what is left fits in keep_bytes."""
+        that are safely in storage, until what is left fits in keep_bytes. Grid pictures not
+        looked at for CACHE_DAYS are removed too (they are made again when needed)."""
+        self.prune_cache()
         if not self.blobs.on:
             return 0
         with self._db() as db:
@@ -292,11 +301,11 @@ class Store:
             values = (folder_id, file_name, str(meta.get("taken") or ""), json.dumps(meta, ensure_ascii=False),
                       len(preview), now)
             if replaced:
-                db.execute("UPDATE photos SET folder_id=?, file_name=?, taken=?, meta=?, bytes=?, received=?, stored=0 "
+                db.execute("UPDATE photos SET folder_id=?, file_name=?, taken=?, meta=?, bytes=?, received=?, stored=0, autos='' "
                            "WHERE id=?", values + (photo_id,))
             else:
                 db.execute("INSERT INTO photos (folder_id, file_name, taken, meta, bytes, received, id, wedding_id, "
-                           "lr_uuid) VALUES (?,?,?,?,?,?,?,?,?)", values + (photo_id, wedding_id, lr_uuid))
+                           "lr_uuid, autos) VALUES (?,?,?,?,?,?,?,?,?,'')", values + (photo_id, wedding_id, lr_uuid))
         if self.blobs.on:                           # into storage straight away; this disk keeps a working copy
             try:
                 self.blobs.put(self._key(wedding_id, photo_id), path)
@@ -307,7 +316,8 @@ class Store:
         return {"id": photo_id, "folder": folder, "replaced": replaced}
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
-        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.cull, p.pick, p.crop, "
+        q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.paid_stamp, "
+             "p.cull, p.pick, p.crop, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -370,6 +380,11 @@ class Store:
             return [{**json.loads(r["data"]), "owner": r["owner"]}
                     for r in db.execute("SELECT data, owner FROM presets ORDER BY name")]
 
+    def preset_versions(self) -> dict[str, float]:
+        """Uploaded preset id -> when it was last saved, to notice changes without reading every preset."""
+        with self._db() as db:
+            return {r["id"]: r["added"] for r in db.execute("SELECT id, added FROM presets")}
+
     def preset_file(self, preset_id: str) -> str | None:
         with self._db() as db:
             r = db.execute("SELECT xmp FROM presets WHERE id=?", (preset_id,)).fetchone()
@@ -380,10 +395,11 @@ class Store:
             return bool(db.execute("DELETE FROM presets WHERE id=?", (preset_id,)).rowcount)
 
     def mark_applied(self, wedding_id: str, stamps: dict) -> int:
-        """Remember which edit Lightroom has applied to each photo (Lightroom id -> stamp)."""
+        """Remember which edit Lightroom has applied to each photo (Lightroom id -> stamp).
+        Only an edit that was handed out (and so paid for) can be marked."""
         with self._db() as db:
-            return sum(db.execute("UPDATE photos SET applied=? WHERE wedding_id=? AND lr_uuid=?",
-                                  (str(stamp), wedding_id, str(uuid))).rowcount for uuid, stamp in stamps.items())
+            return sum(db.execute("UPDATE photos SET applied=? WHERE wedding_id=? AND lr_uuid=? AND paid_stamp=?",
+                                  (str(stamp), wedding_id, str(uuid), str(stamp))).rowcount for uuid, stamp in stamps.items())
 
     def zip_previews(self, wedding_id: str, rows: list[dict]):
         """The uploaded previews as one zip, made piece by piece (from this disk or from storage)."""
@@ -422,6 +438,53 @@ class Store:
                             yield from out.take()
                 yield from out.take()
         yield from out.take()
+
+    def prune_cache(self, days: float = 30) -> int:
+        """Remove grid pictures not used (read or made) for this many days."""
+        old = time.time() - days * 86400
+        removed = 0
+        for f in (self.root / "weddings").glob("*/cache/*"):
+            try:
+                st = f.stat()
+                if max(st.st_atime, st.st_mtime) < old:
+                    f.unlink()
+                    removed += 1
+            except OSError:
+                pass
+        return removed
+
+    # ---- automatic values, worked out once per photo and kept ---------------------------
+    def autos_due(self, limit: int = 10) -> list[dict]:
+        """Photos received since their automatic values were last worked out."""
+        with self._db() as db:
+            rows = db.execute("SELECT id, wedding_id FROM photos WHERE autos='' LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_autos(self, photo_id: str) -> dict:
+        with self._db() as db:
+            r = db.execute("SELECT autos FROM photos WHERE id=?", (photo_id,)).fetchone()
+        try:
+            return json.loads(r["autos"]) if r and r["autos"] else {}
+        except ValueError:
+            return {}
+
+    def put_autos(self, photo_id: str, values: dict, received: float | None = None) -> None:
+        """values: {piece: result} merged into what is kept for the preview received at that time
+        (an empty dict just marks the photo as done)."""
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            r = db.execute("SELECT autos FROM photos WHERE id=?", (photo_id,)).fetchone()
+            if r is None:
+                return
+            try:
+                kept = json.loads(r["autos"]) if r["autos"] else {}
+            except ValueError:
+                kept = {}
+            if received is not None and abs(float(kept.get("_received") or 0) - received) >= 1:
+                kept = {"_received": received}          # worked out on an earlier copy of the photo: start again
+            kept.update(values)
+            db.execute("UPDATE photos SET autos=? WHERE id=?",
+                       (json.dumps(kept, default=lambda o: o.item() if hasattr(o, "item") else str(o)), photo_id))
 
     def cache_dir(self, wedding_id: str) -> Path:
         d = self.wedding_dir(wedding_id) / "cache"

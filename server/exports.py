@@ -23,6 +23,7 @@ from .looks import effective_look
 SIZES = (2560, 4000, 0)                 # long edge in pixels; 0 keeps the size that was uploaded
 WAITING, DONE, FAILED, WORKING, SKIPPED = 0, 1, 2, 3, 4      # skipped: the export was stopped first
 STALE_SECONDS = 15 * 60                 # a claimed photo not finished in this time goes back on the list
+MAX_ATTEMPTS = 3                        # a photo that failed or crashed the worker this often is given up (and refunded)
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS exports (
@@ -37,6 +38,8 @@ CREATE TABLE IF NOT EXISTS export_items (
     PRIMARY KEY (export_id, photo_id)
 );
 CREATE INDEX IF NOT EXISTS export_items_waiting ON export_items (status, claimed);
+CREATE INDEX IF NOT EXISTS exports_by_wedding ON exports (wedding_id, created);
+CREATE INDEX IF NOT EXISTS export_items_by_status ON export_items (export_id, status);
 """
 
 
@@ -64,6 +67,8 @@ class Exports:
         self.store = store
         with store._db() as db:
             db.executescript(ACCOUNTS + SCHEMA)
+            if "attempts" not in {r["name"] for r in db.execute("PRAGMA table_info(export_items)")}:
+                db.execute("ALTER TABLE export_items ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
 
     # ---- making and listing ------------------------------------------------
     def create(self, wedding_id: str, size: int, quality: int, watermark: str, folder_id: int | None,
@@ -127,29 +132,74 @@ class Exports:
                 _refund(db, export_id, left, "Export stopped")
             return bool(n)
 
+    def refund_wedding(self, wedding_id: str) -> int:
+        """Before a wedding is removed: give back the credits of its photos still waiting or being made
+        (the rows go with the wedding, so nothing would be made). Returns how many were given back."""
+        back = 0
+        with self.store._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            for e in db.execute("SELECT id FROM exports WHERE wedding_id=?", (wedding_id,)).fetchall():
+                n = db.execute("UPDATE export_items SET status=? WHERE export_id=? AND status IN (?,?)",
+                               (SKIPPED, e["id"], WAITING, WORKING)).rowcount
+                _refund(db, e["id"], n, "Wedding removed before its export finished")
+                back += n
+        return back
+
     def failures(self, export_id: str) -> list[dict]:
         with self.store._db() as db:
             return [dict(r) for r in db.execute("SELECT name, folder, error FROM export_items WHERE export_id=? AND status=? LIMIT 50",
                                                 (export_id, FAILED))]
 
     # ---- for workers ---------------------------------------------------------
+    def _give_up_crashed(self, db, now: float) -> None:
+        """Photos claimed MAX_ATTEMPTS times and never finished (the worker died on them): failed, refunded."""
+        for r in db.execute("SELECT export_id, photo_id FROM export_items WHERE status=? AND claimed<? AND attempts>=?",
+                            (WORKING, now - STALE_SECONDS, MAX_ATTEMPTS)).fetchall():
+            db.execute("UPDATE export_items SET status=?, error=? WHERE export_id=? AND photo_id=?",
+                       (FAILED, f"stopped the worker {MAX_ATTEMPTS} times; given up", r["export_id"], r["photo_id"]))
+            _refund(db, r["export_id"], 1, "Photo could not be exported")
+            self._finished_if_done(db, r["export_id"])
+
     def claim(self, n: int = 4) -> list[dict]:
-        """Take up to n waiting photos. Each comes with everything a worker needs to make it."""
+        """Take up to n waiting photos. Each comes with everything a worker needs to make it.
+
+        Take turns (Bharat, Oct 2026): the photographers with something waiting go round (whoever was
+        served longest ago first), each giving their oldest waiting photo, so one big export never holds
+        up someone else's small one. Done in two small steps (who is next, then their oldest photo) instead of
+        numbering every waiting photo, which was slow with a long list."""
         now = time.time()
+        stale = now - STALE_SECONDS
+        picked: list = []
         with self.store._db() as db:
             db.execute("BEGIN IMMEDIATE")                         # one worker at a time may choose
-            # Take turns (Bharat, Oct 2026): the first waiting photo of every photographer, then the second of
-            # every photographer, and so on, so one big export never holds up someone else's small one.
-            rows = db.execute(
-                "SELECT export_id, photo_id FROM (SELECT i.export_id, i.photo_id, e.created, i.rowid AS rid, "
-                "ROW_NUMBER() OVER (PARTITION BY w.owner ORDER BY e.created, i.rowid) AS turn "
-                "FROM export_items i JOIN exports e ON e.id=i.export_id JOIN weddings w ON w.id=e.wedding_id "
-                "WHERE e.stopped=0 AND (i.status=? OR (i.status=? AND i.claimed<?))) "
-                "ORDER BY turn, created, rid LIMIT ?",
-                (WAITING, WORKING, now - STALE_SECONDS, n)).fetchall()
-            for r in rows:
-                db.execute("UPDATE export_items SET status=?, claimed=? WHERE export_id=? AND photo_id=?",
+            self._give_up_crashed(db, now)
+            # who goes first: whoever was served longest ago (then whoever asked first)
+            owners = [r["owner"] for r in db.execute(
+                "SELECT w.owner, MIN(e.created) AS first, MAX(i.claimed) AS served FROM exports e "
+                "JOIN weddings w ON w.id=e.wedding_id JOIN export_items i ON i.export_id=e.id "
+                "WHERE e.stopped=0 AND e.finished IS NULL GROUP BY w.owner "
+                "HAVING SUM(i.status=? OR (i.status=? AND i.claimed<?)) > 0 ORDER BY served, first",
+                (WAITING, WORKING, stale))]
+            taken: set = set()
+            while owners and len(picked) < n:
+                for owner in list(owners):
+                    if len(picked) >= n:
+                        break
+                    r = db.execute(
+                        "SELECT i.rowid AS rid, i.export_id, i.photo_id FROM export_items i JOIN exports e ON e.id=i.export_id "
+                        "JOIN weddings w ON w.id=e.wedding_id WHERE w.owner=? AND e.stopped=0 AND e.finished IS NULL "
+                        "AND (i.status=? OR (i.status=? AND i.claimed<?)) "
+                        f"{'AND i.rowid NOT IN (' + ','.join(str(x) for x in taken) + ')' if taken else ''} "
+                        "ORDER BY e.created, i.rowid LIMIT 1", (owner, WAITING, WORKING, stale)).fetchone()
+                    if r is None:
+                        owners.remove(owner)
+                        continue
+                    taken.add(int(r["rid"]))
+                    picked.append(r)
+            for r in picked:
+                db.execute("UPDATE export_items SET status=?, claimed=?, attempts=attempts+1 WHERE export_id=? AND photo_id=?",
                            (WORKING, now, r["export_id"], r["photo_id"]))
+        rows = picked
         out = []
         for r in rows:
             with self.store._db() as db:
@@ -178,17 +228,32 @@ class Exports:
             self.store.blobs.put(self.key(item), path)
             path.unlink(missing_ok=True)
 
-    def finish(self, export_id: str, photo_id: str, ok: bool, size: int = 0, seconds: float = 0.0, error: str = "") -> None:
+    def finish(self, export_id: str, photo_id: str, ok: bool, size: int = 0, seconds: float = 0.0, error: str = "",
+               retry: bool = False) -> None:
+        """retry: a failure that may pass on another try (memory, storage); it goes back on the list
+        until MAX_ATTEMPTS, then counts as failed (and is refunded)."""
         with self.store._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            if not ok and retry:
+                n = db.execute("UPDATE export_items SET status=?, claimed=0, error=? WHERE export_id=? AND photo_id=? "
+                               "AND status=? AND attempts<?", (WAITING, error[:300], export_id, photo_id, WORKING,
+                                                               MAX_ATTEMPTS)).rowcount
+                if n:
+                    return
             n = db.execute("UPDATE export_items SET status=?, bytes=?, seconds=?, error=? WHERE export_id=? AND photo_id=? "
                            "AND status IN (?,?)", (DONE if ok else FAILED, size, seconds, error[:300], export_id, photo_id,
                                                    WAITING, WORKING)).rowcount
             if n and not ok:
                 _refund(db, export_id, 1, "Photo could not be exported")
-            left = db.execute("SELECT COUNT(*) FROM export_items WHERE export_id=? AND status IN (?,?)",
-                              (export_id, WAITING, WORKING)).fetchone()[0]
-            if not left:
-                db.execute("UPDATE exports SET finished=? WHERE id=? AND finished IS NULL", (time.time(), export_id))
+            self._finished_if_done(db, export_id)
+
+    @staticmethod
+    def _finished_if_done(db, export_id: str) -> None:
+        left = db.execute("SELECT COUNT(*) FROM export_items WHERE export_id=? AND status IN (?,?)",
+                          (export_id, WAITING, WORKING)).fetchone()[0]
+        if not left:
+            db.execute("UPDATE exports SET finished=? WHERE id=? AND finished IS NULL", (time.time(), export_id))
+
 
     # ---- handing the pictures over ---------------------------------------------
     def _read(self, wedding_id: str, export_id: str, folder: str, name: str):

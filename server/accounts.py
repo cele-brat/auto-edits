@@ -416,6 +416,31 @@ class Accounts:
             db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
                        (user["id"], -int(credits), kind, note[:200], ref, photos, time.time(), wedding))
 
+    def charge_edits(self, user: dict, wedding: dict, wanted: list[tuple[str, str]], again: bool = False) -> set:
+        """Lightroom edits are paid for when the plug-in is handed them (GET /apply).
+        wanted: (photo id, stamp of its edit), in order. A photo whose edit with this very stamp
+        was already paid for costs nothing again (a retry, a crash, a second listing), unless
+        again. Never below 0 credits: only as many as the balance covers are paid, the first
+        ones first. Returns the photo ids that may have their edit. One transaction, so two
+        listings at once cannot spend the same credits."""
+        if not wanted:
+            return set()
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            marks = ",".join("?" * len(wanted))
+            paid = {r["id"]: r["paid_stamp"] for r in db.execute(
+                f"SELECT id, paid_stamp FROM photos WHERE wedding_id=? AND id IN ({marks})", (wedding["id"], *[w[0] for w in wanted]))}
+            free = {pid for pid, stamp in wanted if not again and paid.get(pid) == stamp}
+            need = [(pid, stamp) for pid, stamp in wanted if pid in paid and pid not in free]
+            have = int(db.execute("SELECT COALESCE(SUM(delta),0) FROM ledger WHERE user_id=?", (user["id"],)).fetchone()[0])
+            take = need if user["admin"] else need[:max(0, min(len(need), have))]
+            if take:
+                db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
+                           (user["id"], -len(take), "lightroom", f"Edits sent to Lightroom for {len(take)} photos: {wedding['name']}"[:200],
+                            wedding["id"], len(take), time.time(), wedding["id"]))
+                db.executemany("UPDATE photos SET paid_stamp=? WHERE id=?", [(stamp, pid) for pid, stamp in take])
+        return free | {pid for pid, _ in take}
+
     def must_have(self, user: dict, credits: int) -> None:
         if user["admin"] or credits <= 0:
             return

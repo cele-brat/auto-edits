@@ -386,6 +386,47 @@ def show_mask(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     return img * (1 - m) + np.array([1.0, 0.1, 0.1], np.float32) * m
 
 
+_TONE = ("highlights", "shadows", "whites", "blacks")
+_TONE_KEYS = {"highlights": "Highlights2012", "shadows": "Shadows2012", "whites": "Whites2012", "blacks": "Blacks2012"}
+
+
+def auto_parts(toggles, iso=None) -> list[str]:
+    """The independent pieces of auto_correct, named so the same piece serves many looks:
+    "tone:<wb><ev>" (all four tone values, worked out with or without white balance and exposure;
+    each look then keeps the ones it switched on), "noise:<iso>", "straighten", "lens"."""
+    toggles = set(toggles)
+    parts = []
+    if toggles & {"exposure", "white_balance", *_TONE}:
+        parts.append(f"tone:{int('white_balance' in toggles)}{int('exposure' in toggles)}")
+    iso = int(iso) if isinstance(iso, (int, float)) and not isinstance(iso, bool) else None
+    if "noise" in toggles:
+        parts.append(f"noise:{iso or ''}")
+    for alone in ("straighten", "lens"):
+        if alone in toggles:
+            parts.append(alone)
+    return parts
+
+
+def _part_toggles(part: str) -> tuple[tuple, int | None]:
+    kind, _, arg = part.partition(":")
+    if kind == "tone":
+        return (*_TONE, *(("white_balance",) if arg[0] == "1" else ()), *(("exposure",) if arg[1] == "1" else ())), None
+    if kind == "noise":
+        return ("noise",), (int(arg) if arg else None)
+    return (kind,), None
+
+
+def _keep_asked(value: dict, toggles: set) -> dict:
+    """From a "tone" piece, only what this look switched on."""
+    settings = {k: v for k, v in value["settings"].items()
+                if not (k in _TONE_KEYS.values() and next(t for t, n in _TONE_KEYS.items() if n == k) not in toggles)}
+    return {"settings": settings, "manual": value["manual"], "info": value["info"]}
+
+
+def _plain(o):
+    return o.item() if hasattr(o, "item") else str(o)
+
+
 class _Cache:
     def __init__(self, size):
         self.size, self.items, self.lock = size, OrderedDict(), threading.Lock()
@@ -421,15 +462,33 @@ class Renderer:
         self._masks = _Cache(12)
         self._small_masks = _Cache(160)
         self._mask_lock = threading.Lock()
+        self.autos_store = None                          # where worked-out automatic values are kept (Store)
+        self._versions: dict[str, str] = {}              # uploaded preset id -> fingerprint of its content
 
     def add_uploaded(self, preset: dict):
         self.presets[preset["id"]] = preset
+        self._versions.pop(preset["id"], None)
 
     def remove_uploaded(self, preset_id: str) -> bool:
         if preset_id in self.library or preset_id not in self.presets:
             return False
         del self.presets[preset_id]
+        self._versions.pop(preset_id, None)
         return True
+
+    def preset_version(self, preset_id: str | None) -> str:
+        """A short fingerprint of a preset's content: changes whenever the preset is updated
+        (for cache names, so a grid picture never shows an older version of the preset)."""
+        if not preset_id or preset_id not in self.presets:
+            return ""
+        if preset_id in self.library:
+            return "lib"
+        v = self._versions.get(preset_id)
+        if v is None:
+            import hashlib
+            v = hashlib.sha1(json.dumps(self.presets[preset_id], sort_keys=True, default=str).encode()).hexdigest()[:12]
+            self._versions[preset_id] = v
+        return v
 
     def allowed(self, owner: str | None) -> set:
         """Preset ids this photographer may use: the built-in ones and their own uploads."""
@@ -533,20 +592,50 @@ class Renderer:
     # ---- looks ----------------------------------------------------------
     def auto_values(self, path: Path, toggles, iso=None) -> dict:
         """The automatic values for one photo. Measured on a fixed-size copy, so
-        the result does not depend on the size being viewed."""
+        the result does not depend on the size being viewed.
+
+        Worked out in independent pieces (auto_parts), each kept in memory and, with autos_store set
+        (the server's Store), in the database beside the photo. The worker works the usual pieces out
+        after upload, so the Lightroom list and the app do not wait for them."""
         toggles = tuple(t for t in TOGGLES if t in toggles)
         if not toggles:
             return {"settings": {}, "manual": {}, "info": {}}
-        key = (str(path), path.stat().st_mtime_ns, toggles, iso)
+        out = {"settings": {}, "manual": {}, "info": {}}
+        for part in auto_parts(toggles, iso):
+            r = self.auto_part(path, part)
+            if part.startswith("tone:"):
+                r = _keep_asked(r, set(toggles))
+            for k in out:
+                out[k].update(r.get(k) or {})
+        return out
+
+    def auto_part(self, path: Path, part: str) -> dict:
+        """One piece of the automatic values (see auto_parts), from memory, the database or worked out now."""
+        toggles, iso = _part_toggles(part)
+        if toggles == ("lens",):
+            return auto_correct(None, toggles)                # needs no picture
+        store = self.autos_store
+        if not path.exists() and store is not None:          # working copy trimmed from this disk: the kept values do
+            kept = store.get_autos(path.stem)
+            if part in kept:
+                return kept[part]
+        stamp = path.stat().st_mtime_ns
+
         def make():
+            kept = store.get_autos(path.stem) if store is not None else {}
+            if part in kept and abs(float(kept.get("_received") or 0) - stamp / 1e9) < 1:
+                return kept[part]
             skin = None
             if "white_balance" in toggles:                    # faces keep the white balance honest
                 try:
                     skin = self.masks(path)["face_skin"]
                 except Exception:
                     skin = None                               # no masks: neutral areas alone decide
-            return auto_correct(self._load(path, 800), toggles, None, iso, skin)
-        return self._autos.get(key, make)
+            value = json.loads(json.dumps(auto_correct(self._load(path, 800), toggles, None, iso, skin), default=_plain))
+            if self.autos_store is not None:
+                self.autos_store.put_autos(path.stem, {part: value}, stamp / 1e9)
+            return value
+        return self._autos.get((str(path), stamp, part), make)
 
     def develop(self, path: Path, look: dict, iso=None) -> dict:
         """Everything the look sets for this photo: Lightroom settings, point
@@ -695,7 +784,46 @@ LR_TINT_PER_UNIT = 0.30 / 0.25 * _r.DEFAULT_PARAMS["wb_tint"]
 _WB_KEYS = ("WhiteBalance", "Temperature", "Tint", "IncrementalTemperature", "IncrementalTint")
 
 
-def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> dict | None:
+def edit_stamp(edit: dict) -> str:
+    """The fingerprint of an edit, to know whether Lightroom already has it (and it was paid for).
+    The absolute white balance values follow from the photo's as-shot values and the shift, so
+    they are left out: adding them (Oct 2026) did not make every earlier edit look new."""
+    import hashlib
+    e = dict(edit)
+    if e.get("wb"):
+        e["wb"] = {k: v for k, v in e["wb"].items() if k in ("mired", "tint", "relative_temp", "relative_tint")}
+    return hashlib.sha1(json.dumps(e, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _number_or_none(v):
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def absolute_wb(wb: dict, settings: dict, as_shot: dict | None) -> dict:
+    """Where Lightroom's white balance should end up, so applying the edit twice gives the same photo.
+    The base is the preset's own white balance when it sets one, else the photo's as-shot values sent
+    by the plug-in. Without a Kelvin value (JPEG, or none was sent) only the relative sliders are given."""
+    as_shot = as_shot if isinstance(as_shot, dict) else {}
+    out = {}
+    own = settings.get("WhiteBalance") not in (None, "As Shot")
+    kelvin = (_number_or_none(settings.get("Temperature")) if own else None) or _number_or_none(as_shot.get("Temperature"))
+    tint = (_number_or_none(settings.get("Tint")) if own and "Tint" in settings else None)
+    if tint is None:
+        tint = _number_or_none(as_shot.get("Tint"))
+    if kelvin and kelvin > 1000:
+        mired = 1_000_000 / kelvin + wb["mired"]
+        k = min(50000.0, max(2000.0, 1_000_000 / max(20.0, mired)))
+        out["kelvin"] = int(round(k / 50) * 50)
+        out["abs_tint"] = int(max(-150, min(150, round((tint or 0) + wb["tint"]))))
+    else:
+        base_t = _number_or_none(settings.get("IncrementalTemperature")) or 0.0
+        base_n = _number_or_none(settings.get("IncrementalTint")) or 0.0
+        out["incremental_temp"] = int(max(-100, min(100, round(base_t + wb["relative_temp"]))))
+        out["incremental_tint"] = int(max(-100, min(100, round(base_n + wb["relative_tint"]))))
+    return out
+
+
+def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None, as_shot: dict | None = None) -> dict | None:
     """What Lightroom should do to one photo for this look, or None when the look changes nothing.
 
     Two ways to apply a preset:
@@ -703,8 +831,10 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
         ("preset_uuid"), so Lightroom makes its own masks; "settings" then holds only
         what differs from the preset (automatic values, your own changes);
       * otherwise "settings" is everything, laid over a no-edit starting point.
-    White balance changes travel as a shift ("wb"), because only Lightroom knows the
-    photo's as-shot Kelvin value.
+    White balance travels as a shift ("wb": mired, tint, relative_*; plug-ins up to 0.7 add it to the
+    photo's current value) and, from the as-shot values the plug-in sent (as_shot: meta["develop"]),
+    as where it should end up ("kelvin"/"abs_tint", or "incremental_*" for JPEGs), which plug-in 0.8
+    sets as they are, so applying again never shifts it twice.
     """
     look = clean_look(look, renderer.presets)
     d = renderer.develop(path, look, iso)
@@ -744,6 +874,10 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None) -> di
         settings = {k: v for k, v in settings.items() if own.get(k) != v}
         if "white_balance" in look["toggles"] and any(k in own for k in _WB_KEYS):
             settings["WhiteBalance"] = "As Shot"          # the toggle skips the preset's own white balance
+    if wb:
+        base = dict(preset["settings"]) if by_lightroom else {}
+        base.update({k: v for k, v in settings.items() if k in _WB_KEYS})
+        wb.update(absolute_wb(wb, base, as_shot))
     curves = {} if by_lightroom else {k: [v for point in pts for v in point] for k, pts in d["curves"].items()}
     if preset and preset.get("masks") and not by_lightroom:
         not_yet.append("the preset's masks")

@@ -4,6 +4,11 @@ A cull is a job in the database, done by the export worker. The measurements of 
 (sharpness, faces, eyes, exposure) are kept beside its preview, so running the cull again
 with another strictness takes seconds. A rating the photographer sets by hand ("pick")
 always wins over the automatic one and is never touched by a new cull.
+
+The photos of a job are fixed when it is started (and paid for): photos added to the folder
+later are not culled by it. A worker measures CHUNK photos per turn and then lets the job go
+back on the list, so a big cull never keeps exports waiting for long. A job that fails gives
+its credits back.
 """
 from __future__ import annotations
 
@@ -13,6 +18,7 @@ import time
 
 STRICTNESS = ("relaxed", "normal", "strict")
 RATINGS = ("keep", "maybe", "reject")
+CHUNK = 200                     # photos measured per turn before exports get theirs
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS cull_jobs (
@@ -30,19 +36,37 @@ class Culls:
         self.store = store
         with store._db() as db:
             db.executescript(SCHEMA)
+            cols = {r["name"] for r in db.execute("PRAGMA table_info(cull_jobs)")}
+            if "photo_ids" not in cols:          # the photos paid for (JSON list); '' = the whole folder (older jobs)
+                db.execute("ALTER TABLE cull_jobs ADD COLUMN photo_ids TEXT NOT NULL DEFAULT ''")
+            if "credits" not in cols:            # what this job cost, given back if it fails
+                db.execute("ALTER TABLE cull_jobs ADD COLUMN credits INTEGER NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE cull_jobs ADD COLUMN ref TEXT NOT NULL DEFAULT ''")
+            db.execute("CREATE INDEX IF NOT EXISTS cull_jobs_by_state ON cull_jobs (state, id)")
 
-    def start(self, wedding_id: str, folder_ids: list[int], strictness: str, best_only: bool) -> list[dict]:
+    def photo_ids(self, folder_ids: list[int]) -> dict[int, list[str]]:
+        """The photos in these folders now, to be fixed for a cull before it is paid for."""
+        with self.store._db() as db:
+            return {f: [r["id"] for r in db.execute("SELECT id FROM photos WHERE folder_id=? ORDER BY taken, file_name", (f,))]
+                    for f in folder_ids}
+
+    def start(self, wedding_id: str, folder_ids: list[int], strictness: str, best_only: bool,
+              photos: dict[int, list[str]] | None = None, credits: dict[int, int] | None = None, ref: str = "") -> list[dict]:
+        """photos: the photo ids per folder that were paid for (photo_ids() above); credits: the cost per folder."""
         if strictness not in STRICTNESS:
             raise ValueError("strictness must be relaxed, normal or strict")
+        photos = photos if photos is not None else self.photo_ids(folder_ids)
         now = time.time()
         with self.store._db() as db:
             for f in folder_ids:
-                total = db.execute("SELECT COUNT(*) FROM photos WHERE folder_id=?", (f,)).fetchone()[0]
-                if not total:
+                ids = photos.get(f) or []
+                if not ids:
                     continue
                 db.execute("DELETE FROM cull_jobs WHERE folder_id=?", (f,))          # one cull per folder: the newest
-                db.execute("INSERT INTO cull_jobs (wedding_id, folder_id, strictness, best_only, total, created) VALUES (?,?,?,?,?,?)",
-                           (wedding_id, f, strictness, int(best_only), total, now))
+                db.execute("INSERT INTO cull_jobs (wedding_id, folder_id, strictness, best_only, total, created, photo_ids, "
+                           "credits, ref) VALUES (?,?,?,?,?,?,?,?,?)",
+                           (wedding_id, f, strictness, int(best_only), len(ids), now, json.dumps(ids),
+                            int((credits or {}).get(f, 0)), ref))
         return self.for_wedding(wedding_id)
 
     def for_wedding(self, wedding_id: str) -> list[dict]:
@@ -64,21 +88,33 @@ class Culls:
                 (now - STALE_SECONDS, now - STALE_SECONDS)).fetchone()
             if r is None:
                 return None
-            db.execute("UPDATE cull_jobs SET state='working', claimed=?, done=0 WHERE id=?", (now, r["id"]))
+            db.execute("UPDATE cull_jobs SET state='working', claimed=? WHERE id=?", (now, r["id"]))
             return dict(r)
 
     def _progress(self, job_id: int, done: int) -> bool:
         """Note progress. False when the job was replaced or removed meanwhile."""
         with self.store._db() as db:
-            return bool(db.execute("UPDATE cull_jobs SET done=?, claimed=? WHERE id=?", (done, time.time(), job_id)).rowcount)
+            return bool(db.execute("UPDATE cull_jobs SET done=?, claimed=? WHERE id=? AND state='working'",
+                                   (done, time.time(), job_id)).rowcount)
 
-    def run(self, job: dict, renderer) -> int:
-        """Do one cull job. Returns how many photos were rated."""
+    def _photos(self, job: dict) -> list[dict]:
+        """The photos this job was paid for that are still there (all of the folder for older jobs)."""
+        photos = self.store.photos(job["wedding_id"], job["folder_id"])
+        if job.get("photo_ids"):
+            paid = set(json.loads(job["photo_ids"]))
+            photos = [p for p in photos if p["id"] in paid]
+        return photos
+
+    def run(self, job: dict, renderer, chunk: int | None = None) -> int:
+        """One turn of a cull job: measure up to chunk photos not measured yet, then put the job back
+        on the list; once every photo is measured, rate them all. Returns how many photos were rated
+        (0 while it is still measuring)."""
         from engine.cull import cull, measure_photo
         store = self.store
+        chunk = CHUNK if chunk is None else chunk          # read when run, so a test can make the turns smaller
         try:
-            photos = store.photos(job["wedding_id"], job["folder_id"])
-            items = []
+            photos = self._photos(job)
+            items, measured_now = [], 0
             for n, p in enumerate(photos, 1):
                 path = store.preview_path(job["wedding_id"], p["id"])
                 kept = path.with_suffix(".cull.pkl")
@@ -91,14 +127,22 @@ class Culls:
                     except Exception:
                         m = None
                 if m is None:
+                    if measured_now >= chunk:                    # this turn is over: let an export have one
+                        with store._db() as db:
+                            db.execute("UPDATE cull_jobs SET state='waiting', done=?, claimed=0 WHERE id=? AND state='working'",
+                                       (n - 1, job["id"]))
+                        return 0
                     m = measure_photo(renderer._load(path, 1600), {"taken": p["taken"], "iso": p["meta"].get("iso")})
                     kept.write_bytes(pickle.dumps((path.stat().st_mtime_ns, m)))
+                    measured_now += 1
                 items.append((p["id"], m))
                 if (n % 5 == 0 or n == len(photos)) and not self._progress(job["id"], n):
                     return 0
             names = {p["id"]: p["file_name"] for p in photos}
             results = cull(items, strictness=job["strictness"], similar_keeps_best_only=bool(job["best_only"]))
             with store._db() as db:
+                if db.execute("SELECT 1 FROM cull_jobs WHERE id=? AND state='working'", (job["id"],)).fetchone() is None:
+                    return 0                                     # replaced by a newer cull meanwhile
                 for r in results:
                     reasons = [_named(x, names) for x in r["reasons"]]
                     db.execute("UPDATE photos SET cull=? WHERE id=?", (json.dumps(
@@ -107,9 +151,23 @@ class Culls:
                 db.execute("UPDATE cull_jobs SET state='done', done=total WHERE id=?", (job["id"],))
             return len(results)
         except Exception as e:
-            with store._db() as db:
-                db.execute("UPDATE cull_jobs SET state='failed', error=? WHERE id=?", (f"{type(e).__name__}: {e}"[:300], job["id"]))
+            self.fail(job, f"{type(e).__name__}: {e}")
             raise
+
+    def fail(self, job: dict, error: str) -> None:
+        """Mark the job failed and give its credits back (once)."""
+        with self.store._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            n = db.execute("UPDATE cull_jobs SET state='failed', error=? WHERE id=? AND state<>'failed'",
+                           (error[:300], job["id"])).rowcount
+            if not n or not job.get("credits"):
+                return
+            w = db.execute("SELECT owner, name FROM weddings WHERE id=?", (job["wedding_id"],)).fetchone()
+            if w is None or not w["owner"]:
+                return
+            db.execute("INSERT INTO ledger (user_id, delta, kind, note, ref, photos, created, wedding) VALUES (?,?,?,?,?,?,?,?)",
+                       (w["owner"], int(job["credits"]), "refund", f"Cull could not finish: {w['name']}"[:200],
+                        job.get("ref") or job["wedding_id"], int(job.get("total") or 0), time.time(), job["wedding_id"]))
 
 
 def _named(reason: str, names: dict) -> str:

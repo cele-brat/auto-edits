@@ -49,7 +49,23 @@ local function straightCurve(c)
     return true
 end
 
+-- A develop snapshot with this name, made only if the photo has none yet: the first one keeps
+-- the photo as it was before Auto Edits ever touched it, however often the edits are applied.
+function Neutral.snapshotOnce(photo, name)
+    local ok, list = pcall(function() return photo:getDevelopSnapshots() end)
+    if ok and type(list) == 'table' then
+        for _, s in ipairs(list) do
+            if type(s) == 'table' and s.name == name then return false end
+        end
+        photo:createDevelopSnapshot(name, false)
+        return true
+    end
+    photo:createDevelopSnapshot(name, false)     -- this Lightroom cannot list snapshots: add one, never replace it
+    return true
+end
+
 -- The names of the settings on this photo that are not neutral (an empty list
+
 -- means the photo is unedited as far as presets go).
 function Neutral.editedKeys(develop)
     local edited = {}

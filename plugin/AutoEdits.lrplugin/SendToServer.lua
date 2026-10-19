@@ -27,7 +27,7 @@ local LrView = import 'LrView'
 local Neutral = require 'Neutral'
 local Server = require 'Server'
 
-local PLUGIN_VERSION = '0.6'
+local PLUGIN_VERSION = '0.8'
 local PREVIEW_SIZE = 2560
 local STOP_AFTER_FAILURES = 5          -- in a row: the server or the internet is down
 local SNAPSHOT_NAME = 'Before Auto Edits'
@@ -208,7 +208,7 @@ local function resetToNoEdit(catalog, photos, progress)
         progress:setCaption(string.format('Resetting edits: %d of %d', math.min(first + chunk - 1, #photos), #photos))
         catalog:withWriteAccessDo('Auto Edits: reset to no edit', function()
             for i = first, math.min(first + chunk - 1, #photos) do
-                photos[i]:createDevelopSnapshot(SNAPSHOT_NAME, true)
+                Neutral.snapshotOnce(photos[i], SNAPSHOT_NAME)
                 photos[i]:applyDevelopSettings(neutral, 'Auto Edits: no edit')
             end
         end, { timeout = 60 })

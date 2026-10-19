@@ -91,7 +91,25 @@ function M.photo(spec)
     local p = { spec = spec, broken = spec.broken, develop = spec.develop or {}, snapshots = {} }
     function p:getRawMetadata(k) return self.spec.raw[k] end
     function p:getDevelopSettings() return self.develop end
-    function p:createDevelopSnapshot(name) self.snapshots[#self.snapshots + 1] = name end
+    -- like Lightroom: update=true replaces a snapshot of the same name (losing what it held)
+    function p:createDevelopSnapshot(name, update)
+        for i, s in ipairs(self.snapshots) do
+            if s == name and update then self.snapshotDevelop[i] = self:copyDevelop(); return end
+        end
+        self.snapshots[#self.snapshots + 1] = name
+        self.snapshotDevelop[#self.snapshots] = self:copyDevelop()
+    end
+    function p:getDevelopSnapshots()
+        local out = {}
+        for i, s in ipairs(self.snapshots) do out[#out + 1] = { snapshotID = tostring(i), name = s } end
+        return out
+    end
+    function p:copyDevelop()
+        local c = {}
+        for k, v in pairs(self.develop) do c[k] = v end
+        return c
+    end
+    p.snapshotDevelop = {}
     p.steps = {}
     function p:applyDevelopSettings(s, name) self.steps[#self.steps + 1] = name or 'settings'; for k, v in pairs(s) do self.develop[k] = v end end
     function p:applyDevelopPreset(preset)

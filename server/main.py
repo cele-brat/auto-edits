@@ -10,13 +10,14 @@ and signs in as the admin account. The server refuses to start without it.
 from __future__ import annotations
 
 import hashlib
-from collections import OrderedDict
 import hmac
 import json
 import os
 import secrets
+import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Body, Cookie, Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
@@ -31,7 +32,8 @@ from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
 from .culling import RATINGS, Culls
-from .looks import MY_PACK, SIZES, Renderer, clean_look, effective_look, lightroom_edit, preset_from_look
+from .looks import MY_PACK, SIZES, Renderer, clean_look, edit_stamp, effective_look, lightroom_edit, preset_from_look
+from .state import State
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -42,6 +44,20 @@ LINK_SECONDS = 120                        # how long a "open in browser" link fr
 MAX_PREVIEW_BYTES = 30 * 1024 * 1024      # a 2560 px JPEG is 1 to 3 MB; a full-size camera preview up to about 20
 MAX_PRESET_BYTES = 4 * 1024 * 1024         # presets with tone tables can reach a megabyte or two
 MIN_FREE_BYTES = 2 * 1024 ** 3            # stop taking photos before the disk is full
+MAX_PIXELS = 100_000_000                  # larger than any camera's preview; refused before it is decoded
+LOOK_SECONDS = 2 * 86400                  # a long look handed over once ("lk=") is kept this long after last use
+TICKET_SECONDS = 300                      # password given, two-step code still to come
+RENDERS_AT_ONCE = 2                       # big previews drawn at the same time, so memory stays in bounds
+APPLY_PAGE = 50                           # Lightroom list: most photos per page
+APPLY_SECONDS = 12.0                      # ... and a page ends early once working it out took this long
+
+
+def attachment(filename: str) -> str:
+    """Content-Disposition for a download: a plain ASCII name for old browsers, and the real
+    name (Hindi, accents...) as UTF-8 for everyone else. Header values must be Latin-1, so
+    such a name sent as it is made the download fail."""
+    fallback = "".join(c if c.isascii() and (c.isalnum() or c in " -_.") else "_" for c in filename).strip() or "download"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 class NewWedding(BaseModel):
@@ -136,7 +152,6 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     culls = Culls(store)
 
     if store.blobs.on and os.environ.get("AUTOEDITS_WARM_UP") == "1":
-        import threading
 
         def tidy():                              # photos into storage, and this disk kept within its allowance
             keep = int(float(os.environ.get("AUTOEDITS_WORKING_GB", "8")) * 1024 ** 3)
@@ -151,14 +166,16 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         threading.Thread(target=tidy, daemon=True).start()
 
     renderer = Renderer()
+    renderer.autos_store = store                 # automatic values are kept in the database (worked out after upload)
+    state = State(store)
+    drawing = threading.BoundedSemaphore(RENDERS_AT_ONCE)
+    app.state.renderer = renderer
     for uploaded in store.uploaded_presets():
         renderer.add_uploaded(uploaded)
     if os.environ.get("AUTOEDITS_WARM_UP") == "1":
-        import threading
         threading.Thread(target=renderer.warm_up, daemon=True).start()
-    links: dict[str, tuple[float, str]] = {}   # one-time sign-in links -> (when they stop working, user)
-    tickets: dict[str, list] = {}              # password given, code still to come -> [until, user, tries]
-    tries: dict[str, list[float]] = {}         # recent attempts per address, to slow down guessing
+    # One-time sign-in links, two-step tickets, recent attempts and long looks live in SQLite (state.py),
+    # so a restart (a deploy) neither breaks a sign-in halfway nor resets the limits on guessing.
 
     def client_ip(request: Request) -> str:
         """The visitor's address. Traefik adds the address it was reached from as the last entry of
@@ -167,21 +184,11 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return forwarded[-1] if forwarded else (request.client.host if request.client else "")
 
     def too_many(what: str, request: Request, limit: int, seconds: int) -> bool:
-        who = f"{what}|{client_ip(request)}"
-        now = time.time()
-        recent = [t for t in tries.get(who, []) if t > now - seconds]
-        tries[who] = recent + [now]
-        if len(tries) > 5000:
-            tries.clear()
-        return len(recent) >= limit
+        return state.hit("try", f"{what}|{client_ip(request)}", seconds) >= limit
 
     def failed_logins(email: str, add: bool) -> int:
         """Wrong passwords for one email address in the last hour, from anywhere."""
-        who = f"login-email|{email.strip().lower()}"
-        now = time.time()
-        recent = [t for t in tries.get(who, []) if t > now - 3600] + ([now] if add else [])
-        tries[who] = recent
-        return len(recent)
+        return state.hit("try", f"login-email|{email.strip().lower()}", 3600, add) + (1 if add else 0)
 
     def key_ok(value: str) -> bool:
         """The old shared studio key. Stops working for good once the studio account is set up (security.py)."""
@@ -290,13 +297,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             if body.email and (u := accounts.by_email(body.email)) and u["admin"]:
                 accounts.log(u["id"], "admin login failed", detail="wrong password", ip=client_ip(request))
             raise HTTPException(401, "That email and password do not match.")
-        tries.pop(f"login|{client_ip(request)}", None)
+        state.delete("try", f"login|{client_ip(request)}")
         if user["totp_on"]:                  # second step: the code from the authenticator app
-            now = time.time()
-            for t in [t for t, v in tickets.items() if v[0] < now]:
-                del tickets[t]
             ticket = secrets.token_urlsafe(24)
-            tickets[ticket] = [now + 300, user["id"], 0]
+            state.put("ticket", ticket, {"until": time.time() + TICKET_SECONDS, "user": user["id"], "tries": 0}, TICKET_SECONDS)
             return {"need_code": True, "ticket": ticket}
         if user["admin"]:
             accounts.log(user["id"], "admin login", detail="studio key" if body.key.strip() else "password (no two-step yet)",
@@ -308,23 +312,25 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def login_code(body: Code, request: Request, response: Response):
         if too_many("code", request, 8, 900):
             raise HTTPException(429, "Too many tries. Please wait 15 minutes.")
-        t = tickets.get(body.ticket)
-        if not t or t[0] < time.time():
-            tickets.pop(body.ticket, None)
+        t = state.get("ticket", body.ticket) if body.ticket else None
+        if not t or t["until"] < time.time():
+            state.delete("ticket", body.ticket)
             raise HTTPException(410, "That took too long. Please log in again.")
-        how = accounts.check_second_step(t[1], body.code)
+        how = accounts.check_second_step(t["user"], body.code)
         if not how:
-            t[2] += 1
-            if t[2] >= 5:
-                tickets.pop(body.ticket, None)
+            t["tries"] += 1
+            if t["tries"] >= 5:
+                state.delete("ticket", body.ticket)
+            else:
+                state.put("ticket", body.ticket, t, max(1.0, t["until"] - time.time()))
             time.sleep(1)
-            u = accounts.user(t[1])
+            u = accounts.user(t["user"])
             if u and u["admin"]:
                 accounts.log(u["id"], "admin login failed", detail="wrong code", ip=client_ip(request))
             raise HTTPException(422, "That code is not right. Codes change every 30 seconds.")
-        tickets.pop(body.ticket, None)
-        tries.pop(f"code|{client_ip(request)}", None)
-        user = accounts.user(t[1])
+        state.delete("ticket", body.ticket)
+        state.delete("try", f"code|{client_ip(request)}")
+        user = accounts.user(t["user"])
         if user["admin"]:
             accounts.log(user["id"], "admin login", detail="password + backup code" if how == "backup" else "password + code",
                          ip=client_ip(request))
@@ -599,18 +605,15 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.post("/api/login-link")
     def login_link(request: Request, user: dict = Depends(signed_in)):
         """For the plug-in: a link that signs the browser in once, without typing a password."""
-        now = time.time()
-        for t in [t for t, (until, _) in links.items() if until < now]:
-            del links[t]
         token = secrets.token_urlsafe(32)
-        links[token] = (now + LINK_SECONDS, user["id"])
+        state.put("link", token, user["id"], LINK_SECONDS)
         return {"path": f"/enter/{token}", "seconds": LINK_SECONDS}
 
     @app.get("/enter/{token}")
     def enter(token: str, request: Request):
-        until, user_id = links.pop(token, (0, ""))
+        user_id = state.take("link", token)
         response = RedirectResponse("/", status_code=303)
-        if until >= time.time():
+        if user_id:
             give_cookie(response, request, user_id)
         return response
 
@@ -651,6 +654,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     @app.delete("/api/weddings/{wedding_id}")
     def delete_wedding(wedding_id: str, user: dict = Depends(signed_in)):
         wedding_or_404(wedding_id, user)
+        exports.refund_wedding(wedding_id)           # exports still to be made: their credits come back
         store.delete_wedding(wedding_id)
         return {"deleted": True}
 
@@ -661,8 +665,11 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return {"uuids": store.received_uuids(wedding_id)}
 
     @app.post("/api/weddings/{wedding_id}/photos")
-    async def add_photo(wedding_id: str, meta: str = Form(...), preview: UploadFile = File(...),
-                        user: dict = Depends(signed_in)):
+    def add_photo(wedding_id: str, meta: str = Form(...), preview: UploadFile = File(...),
+                  user: dict = Depends(signed_in)):
+        """Plain def: FastAPI runs it in its thread pool, so the database and storage work of one
+        upload never holds up everyone else's requests."""
+        from engine.images import jpeg_size
         wedding_or_404(wedding_id, user)
         try:
             info = json.loads(meta)
@@ -672,11 +679,17 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(422, "meta is not valid")
         if not info.get("edited"):               # the plug-in writes an empty list as {}
             info["edited"] = []
-        data = await preview.read(MAX_PREVIEW_BYTES + 1)
+        data = preview.file.read(MAX_PREVIEW_BYTES + 1)
         if len(data) > MAX_PREVIEW_BYTES:
             raise HTTPException(413, "preview is too large")
         if data[:3] != b"\xff\xd8\xff":
             raise HTTPException(415, "preview must be a JPEG")
+        dims = jpeg_size(data)
+        if dims is None:
+            raise HTTPException(415, "The preview could not be read as a JPEG.")
+        if dims[0] * dims[1] > MAX_PIXELS or not min(dims):
+            raise HTTPException(413, f"This picture is {dims[0]:,} × {dims[1]:,} pixels: the most is "
+                                     f"{MAX_PIXELS // 1_000_000} megapixels. Send it at 2560 pixels (the plug-in's setting).")
         if store.free_space() < MIN_FREE_BYTES:
             raise HTTPException(507, "the server disk is nearly full")
         try:
@@ -864,7 +877,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             accounts.log(a["id"], "downloaded uploaded photos", target=user["id"], detail=f"wedding: {w['name']} (in View as)")
         name = "".join(c if c.isalnum() or c in " -_" else "_" for c in w["name"]).strip() or "photos"
         return StreamingResponse(store.zip_previews(wedding_id, rows), media_type="application/zip",
-                                 headers={"Content-Disposition": f'attachment; filename="{name} - uploaded photos.zip"'})
+                                 headers={"Content-Disposition": attachment(f"{name} - uploaded photos.zip")})
 
     @app.get("/api/adjustments")
     def adjustment_panels(user: dict = Depends(signed_in)):
@@ -875,7 +888,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         return {"presets": renderer.catalogue(user["id"])}
 
     @app.post("/api/presets")
-    async def upload_presets(files: list[UploadFile] = File(...), user: dict = Depends(signed_in)):
+    def upload_presets(files: list[UploadFile] = File(...), user: dict = Depends(signed_in)):
         """Presets exported from Lightroom (.xmp), masks included. The original file is
         kept, so the very same preset can be applied when the edits go back to Lightroom."""
         results = []
@@ -886,7 +899,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                                 "why": f"You have {limits.PRESETS_PER_ACCOUNT:,} presets, the most one account can keep."})
                 continue
             name = f.filename or "preset.xmp"
-            raw = await f.read(MAX_PRESET_BYTES + 1)
+            raw = f.file.read(MAX_PRESET_BYTES + 1)
             if len(raw) > MAX_PRESET_BYTES:
                 results.append({"file": name, "ok": False, "why": "The file is too large to be a preset."})
                 continue
@@ -949,7 +962,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         name = renderer.presets[preset_id]["display_name"]
         safe = "".join(c if c.isalnum() or c in " -_." else "_" for c in name).strip() or "preset"
         return Response(text, media_type="application/octet-stream",
-                        headers={"Content-Disposition": f'attachment; filename="{safe}.xmp"'})
+                        headers={"Content-Disposition": attachment(f"{safe}.xmp")})
 
     @app.delete("/api/presets/{preset_id}")
     def delete_preset(preset_id: str, user: dict = Depends(signed_in)):
@@ -986,7 +999,6 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(422, "the look could not be read")
 
     # Looks too long for a picture's address (brush masks) are handed over once and named by a short key.
-    looks_kept: "OrderedDict[str, tuple[str, str]]" = OrderedDict()
 
     @app.post("/api/looks")
     def keep_look(look: dict = Body(...), user: dict = Depends(signed_in)):
@@ -994,16 +1006,15 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if len(text) > 400_000:
             raise HTTPException(413, "This look is too large.")
         key = hashlib.sha1((user["id"] + text).encode()).hexdigest()[:24]
-        looks_kept[key] = (user["id"], text)
-        looks_kept.move_to_end(key)
-        while len(looks_kept) > 3000:
-            looks_kept.popitem(last=False)
+        state.put("look", key, [user["id"], text], LOOK_SECONDS)
+        if secrets.randbelow(50) == 0:
+            state.keep_at_most("look", 3000)
         return {"key": key}
 
     def given_look(look: str, lk: str, user: dict) -> str:
         if not lk:
             return look
-        owner, text = looks_kept.get(lk, ("", ""))
+        owner, text = state.get("look", lk, ("", ""), touch=LOOK_SECONDS)
         if owner != user["id"]:
             raise HTTPException(410, "look not kept any more")         # the app hands it over again
         return text
@@ -1029,15 +1040,20 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             from engine.crop import rect, turn_of
             crop = None if uncropped else rect(chosen["crop"])
             angle = renderer.develop(path, chosen, iso)["angle"] if crop else 0.0
-            return Response(renderer.base(path, size, crop, angle, turn_of(chosen["crop"])), media_type="image/jpeg", headers=headers)
+            with drawing:
+                data = renderer.base(path, size, crop, angle, turn_of(chosen["crop"]))
+            return Response(data, media_type="image/jpeg", headers=headers)
         if size > 360:
-            return Response(renderer.render(path, chosen, size, iso, show, mark=not user["admin"], uncropped=uncropped),
-                            media_type="image/jpeg", headers=headers)
-        # small pictures for the grid are kept on disk, one per photo and look
-        tag = hashlib.sha1(json.dumps([photo_id, p["received"], size, chosen], sort_keys=True).encode()).hexdigest()[:20]
+            with drawing:                        # at most RENDERS_AT_ONCE big pictures in memory at a time
+                data = renderer.render(path, chosen, size, iso, show, mark=not user["admin"], uncropped=uncropped)
+            return Response(data, media_type="image/jpeg", headers=headers)
+        # small pictures for the grid are kept on disk, one per photo, look and version of its preset
+        tag = hashlib.sha1(json.dumps([photo_id, p["received"], size, chosen, renderer.preset_version(chosen.get("preset"))],
+                                      sort_keys=True).encode()).hexdigest()[:20]
         cached = store.cache_dir(wedding_id) / f"{tag}.jpg"
         if not cached.exists():
-            data = renderer.render(path, chosen, size, iso)
+            with drawing:
+                data = renderer.render(path, chosen, size, iso)
             part = cached.with_suffix(f".{secrets.token_hex(4)}.part")
             part.write_bytes(data)
             part.replace(cached)
@@ -1146,14 +1162,19 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(404, "no such folder")
         if body.strictness not in ("relaxed", "normal", "strict"):
             raise HTTPException(422, "strictness must be relaxed, normal or strict")
-        photos = sum(f["photos"] for f in chosen)
+        ids = culls.photo_ids([f["id"] for f in chosen])          # fixed now: exactly these are paid for and culled
+        photos = sum(len(v) for v in ids.values())
         where = w["name"] if body.folder is None else f"{w['name']} / {chosen[0]['name'] if chosen else ''}"
         try:
             accounts.charge(user, cull_cost(photos), "cull", f"Culling {photos} photos: {where}", wedding_id, photos,
                            wedding=wedding_id)
         except NotEnoughCredits as e:
             raise no_credits(e)
-        return {"culls": culls.start(wedding_id, [f["id"] for f in chosen], body.strictness, body.best_only),
+        share, before = {}, 0                                    # each folder's part of the charge, given back if it fails
+        for f, v in ids.items():
+            share[f] = cull_cost(before + len(v)) - cull_cost(before)
+            before += len(v)
+        return {"culls": culls.start(wedding_id, list(ids), body.strictness, body.best_only, ids, share, wedding_id),
                 "charged": cull_cost(photos)}
 
     @app.get("/api/weddings/{wedding_id}/cull")
@@ -1225,65 +1246,107 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             accounts.log(a["id"], "downloaded edited photos", target=user["id"], detail=f"export {export_id} (in View as)")
         name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_or_404(e["wedding_id"], user)["name"]).strip() or "export"
         return StreamingResponse(exports.zip_stream(export_id), media_type="application/zip",
-                                 headers={"Content-Disposition": f'attachment; filename="{name}.zip"'})
+                                 headers={"Content-Disposition": attachment(f"{name}.zip")})
 
-    # ---- back to Lightroom: 1 credit per photo applied ------------------------------
-    listing: dict[tuple, int] = {}                 # (photographer, wedding) -> credits promised so far in this listing
+    # ---- back to Lightroom: 1 credit per photo, paid when its edit is handed out ----------
+    def preview_for_edit(wedding_id: str, photo_id: str, look: dict, iso) -> Path:
+        """Where the preview is; fetched from storage only when its automatic values are not all kept yet."""
+        from .looks import auto_parts
+        path = store.preview_path(wedding_id, photo_id, fetch=False)
+        if path.exists():
+            return path
+        kept = store.get_autos(photo_id)
+        if all(part in kept or part == "lens" for part in auto_parts(clean_look(look)["toggles"], iso)):
+            return path
+        return store.preview_path(wedding_id, photo_id)
 
-    @app.get("/api/weddings/{wedding_id}/apply")
-    def apply_list(wedding_id: str, offset: int = 0, limit: int = 200, again: int = 0, user: dict = Depends(confirmed)):
-        """For the plug-in: what Lightroom should do to each photo, a page at a time.
-        "done" is true when Lightroom has already applied exactly this edit.
-        Never below 0 credits (Bharat, Oct 2026): only as many photos as the balance covers get their edit;
-        the rest come back with "no_credits" and no edit. again=1: done photos will be applied (and paid) again."""
-        wedding_or_404(wedding_id, user)
-        rows = store.photos(wedding_id)
-        page = rows[max(0, offset):max(0, offset) + max(1, min(500, limit))]
-        folders = {f["id"]: f["settings"] for f in store.wedding(wedding_id)["folders"]}
-        key = (user["id"], wedding_id)
-        if offset <= 0:
-            listing.pop(key, None)
-            if len(listing) > 2000:
-                listing.clear()
-        promised = listing.get(key, 0)
-        left = None if user["admin"] else accounts.balance(user["id"]) - promised
-        out, short = [], 0
-        for r in page:
+    def edits_for(w: dict, rows: list[dict], again: bool, seconds: float | None = None) -> tuple[list, list]:
+        """The Lightroom edit of each photo (stops early once this many seconds have gone). Returns every
+        item, and (photo id, item) for those due: not yet applied with exactly this edit, or all with again."""
+        folders = {f["id"]: f["settings"] for f in w["folders"]}
+        began = time.monotonic()
+        out, wanted = [], []
+        for r in rows:
+            if seconds is not None and out and time.monotonic() - began > seconds:
+                break                                      # the rest come on the next page
             look = effective_look(r["settings"], folders.get(r["folder_id"]), r["crop"])
             iso = r["meta"].get("iso") if isinstance(r["meta"].get("iso"), (int, float)) else None
-            edit = lightroom_edit(renderer, store.preview_path(wedding_id, r["id"]), look, iso)
+            edit = lightroom_edit(renderer, preview_for_edit(w["id"], r["id"], look, iso), look, iso, r["meta"].get("develop"))
             item = {"uuid": r["lr_uuid"], "name": r["file_name"], "folder": r["folder"], "edit": edit}
             if edit:
-                item["stamp"] = hashlib.sha1(json.dumps(edit, sort_keys=True).encode()).hexdigest()[:16]
+                item["stamp"] = edit_stamp(edit)
                 item["done"] = r["applied"] == item["stamp"]
-                if left is not None and (again or not item["done"]):
-                    if left <= 0:
-                        item.update(edit=None, no_credits=True)
-                        item.pop("stamp")
-                        short += 1
-                    else:
-                        left -= 1
-                        promised += 1
+                if again or not item["done"]:
+                    item["cost"] = 1 if again or r["paid_stamp"] != item["stamp"] else 0
+                    wanted.append((r["id"], item))
             out.append(item)
-        listing[key] = promised
-        if offset <= 0 and short and promised == 0:        # nothing at all can be paid for (older plug-ins show this)
+        return out, wanted
+
+    @app.get("/api/weddings/{wedding_id}/apply")
+    def apply_list(wedding_id: str, offset: int = 0, limit: int = 200, again: int = 0, dry: int = 0, paged: int = 0,
+                   user: dict = Depends(confirmed)):
+        """For the plug-in: what Lightroom should do to each photo, a page at a time.
+        "done" is true when Lightroom has already applied exactly this edit.
+
+        Paid when handed out (Bharat, Oct 2026): an edit costs 1 credit the moment this list gives it.
+        The same edit handed out again (a retry, a crash, listing again) costs nothing; again=1 or a
+        changed edit costs again. Never below 0 credits: only as many photos as the balance covers get
+        their edit; the rest come back with "no_credits" and no edit. The studio account is never charged.
+
+        dry=1: only what it would cost: due photos are marked "due" with their "cost", nothing is handed
+        out or paid (plug-in 0.8 asks this first, for its "This uses N credits" question).
+        paged=1 (plug-in 0.8): a page may hold fewer photos than asked, ending after APPLY_SECONDS so it
+        stays well within the plug-in's 30 s; carry on from "next". Plug-in 0.7 steps by its own 200 and
+        gets every photo it asked for."""
+        w = wedding_or_404(wedding_id, user)
+        rows = store.photos(wedding_id)
+        start = max(0, offset)
+        page = rows[start:start + max(1, min(APPLY_PAGE if paged else 500, limit))]
+        out, wanted = edits_for(w, page, bool(again), APPLY_SECONDS if paged else None)
+        base = {"total": len(rows), "offset": offset, "next": start + len(out), "photos": out}
+        if dry:
+            for _, item in wanted:
+                item.update(edit=None, due=True)
+                item.pop("stamp")
+            return {**base, "no_credits": 0, "balance": None if user["admin"] else accounts.balance(user["id"])}
+        given = accounts.charge_edits(user, w, [(pid, item["stamp"]) for pid, item in wanted], bool(again))
+        short = 0
+        for pid, item in wanted:
+            if pid not in given:
+                item.update(edit=None, no_credits=True, cost=0)
+                item.pop("stamp")
+                short += 1
+        if offset <= 0 and short and not given:            # nothing at all can be paid for (older plug-ins show this)
             raise no_credits(NotEnoughCredits(short, accounts.balance(user["id"])))
-        return {"total": len(rows), "offset": offset, "photos": out, "no_credits": short}
+        return {**base, "no_credits": short}
+
+    @app.post("/api/weddings/{wedding_id}/apply")
+    def apply_some(wedding_id: str, body: dict = Body(...), user: dict = Depends(confirmed)):
+        """Plug-in 0.8: the edits of just these photos ({"uuids": [...], "again": 0/1}, at most 100), handed
+        out and paid for now as above, a chunk at a time just before Lightroom applies them. So photos
+        not in this catalogue, and a run cancelled halfway, cost nothing for what was not fetched."""
+        w = wedding_or_404(wedding_id, user)
+        uuids = body.get("uuids")
+        if not isinstance(uuids, list) or len(uuids) > 100:
+            raise HTTPException(422, "uuids must be a list of at most 100 Lightroom ids")
+        asked = {str(u) for u in uuids}
+        again = bool(body.get("again"))
+        out, wanted = edits_for(w, [r for r in store.photos(wedding_id) if r["lr_uuid"] in asked], again)
+        given = accounts.charge_edits(user, w, [(pid, item["stamp"]) for pid, item in wanted], again)
+        short = 0
+        for pid, item in wanted:
+            if pid not in given:
+                item.update(edit=None, no_credits=True, cost=0)
+                item.pop("stamp")
+                short += 1
+        return {"photos": out, "no_credits": short}
 
     @app.post("/api/weddings/{wedding_id}/applied")
     def applied(wedding_id: str, stamps: dict = Body(...), user: dict = Depends(confirmed)):
-        """Lightroom has applied these edits: each photo costs 1 credit. The list above only offers what the
-        balance covers; if the balance was spent elsewhere meanwhile, the charge stops at 0 rather than going below."""
-        w = wedding_or_404(wedding_id, user)
-        marked = store.mark_applied(wedding_id, stamps)
-        if marked:
-            charge = marked if user["admin"] else max(0, min(marked, accounts.balance(user["id"])))
-            note = f"Edits applied in Lightroom to {marked} photos: {w['name']}"
-            if charge < marked:
-                note += f" ({marked - charge} not charged: the balance ran out)"
-            if charge:
-                accounts.add(user["id"], -charge, "lightroom", note, wedding_id, marked, wedding=wedding_id)
-        return {"marked": marked}
+        """Lightroom has applied these edits. They were paid for when the list handed them out,
+        so this only remembers them (and an edit never handed out cannot be marked)."""
+        wedding_or_404(wedding_id, user)
+        return {"marked": store.mark_applied(wedding_id, stamps)}
 
     # ---- for search engines and AI assistants ------------------------------------
     SITE = os.environ.get("AUTOEDITS_SITE", "https://edits.cele-brat.solutions").rstrip("/")
