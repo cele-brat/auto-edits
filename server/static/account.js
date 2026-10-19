@@ -59,13 +59,14 @@ function showAccount(session) {
   if (session.viewing_as) {
     /* the admin is looking: no messages meant for the photographer */
   } else if (asked.get('verified') === '1') {
-    notice('Your email is confirmed. Your free credits are in your account.');
+    notice('Your email is confirmed. Your 50 free credits are in your account: use them within 15 days.');
   } else if (asked.get('verified') === '0') {
     notice('Your email is confirmed. Free credits were already given to an account from this internet connection, so this one starts at 0. Buy credits to begin.');
   } else if (Acc.user && !Acc.user.verified) {
-    notice(asked.has('welcome') ? `Welcome. We sent a link to ${Acc.user.email}: open it to confirm your email and get 50 free credits.`
+    notice(asked.has('welcome') ? `Welcome. We sent a link to ${Acc.user.email}: open it to confirm your email and get 50 free credits (they last 15 days).`
       : `Confirm your email (${Acc.user.email}) to start culling and exporting.`, 'Send the link again', sendAgain);
   }
+  if (asked.get('verified') === 'again' && !session.viewing_as) notice('Your email is already confirmed, and you are signed in.');
   if (asked.has('verified') || asked.has('welcome')) history.replaceState(null, '', '/');
 }
 
@@ -98,7 +99,8 @@ async function openAccount(tab) {
   await refreshCredits();
   $('account-who').textContent = `${Acc.user.name ? Acc.user.name + ' · ' : ''}${Acc.user.email}` + (Acc.user.verified ? '' : ' · email not confirmed yet');
   $('account-balance').textContent = Acc.unlimited ? 'Unlimited' : Acc.credits.toLocaleString('en-IN');
-  $('account-free').hidden = !Acc.free;
+  $('account-free').hidden = !Acc.free && Acc.unlimited;
+  if (!Acc.free && !Acc.unlimited) $('account-free').textContent = 'Free trial credits last 15 days from confirming your email. Bought credits never end.';
   if (Acc.free) $('account-free').textContent = `${Acc.free.left} of these are free trial credits. They end on ` +
     new Date(Acc.free.ends * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) + '. Bought credits never end.';
   const st = Acc.storage;

@@ -392,6 +392,7 @@ async function drawStage() {
   $('loupe').hidden = empty || S.view !== 'loupe';
   $('view-grid').setAttribute('aria-pressed', String(S.view === 'grid'));
   $('view-loupe').setAttribute('aria-pressed', String(S.view === 'loupe'));
+  $('app').classList.toggle('loupe-on', S.view === 'loupe' && !empty);
   $('view-loupe').disabled = !photo();
   $('toolbar').dataset.view = S.view;
   const p = photo();
@@ -700,7 +701,7 @@ function drawSliders(look) {
         if (Number(sl.input.value) !== value) sl.input.value = value;
         paint(sl.input, base === null ? 0 : base);
         const d = digitsOf(sl);
-        sl.out.textContent = base === null ? (sl.relative ? signed(value, d) : `auto ${signed(value, d)}`)
+        sl.out.textContent = base === null ? signed(value, d)
           : (sl.min < 0 ? signed(value, d) : value.toFixed(d));
         sl.out.classList.toggle('moved', !!delta);
       }
@@ -948,6 +949,7 @@ function setDevelopScope(scope) {
   S.developScope = scope;
   try { localStorage.setItem('ae-scope', scope); } catch (e) { /* fine without */ }
   drawPanel();
+  if (window.drawCropBar) drawCropBar();          // "AI crop this photo" / "every photo in this folder" follows Apply to
 }
 $('scope-folder').onclick = () => setDevelopScope('folder');
 $('scope-photo').onclick = () => setDevelopScope('photo');

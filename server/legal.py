@@ -18,8 +18,8 @@ GSTIN = "08ARTPK7888A1Z5"
 SUPPORT_PHONE = "+91 96022 12620"
 GRIEVANCE_OFFICER = "Bharat"
 COURTS = "Ajmer, Rajasthan"
-UPDATED = "14 October 2026"
-TERMS_VERSION = "2026-10-14"
+UPDATED = "19 October 2026"
+TERMS_VERSION = "2026-10-19"
 REFUND_DAYS = 7
 
 
@@ -79,9 +79,10 @@ back automatically.</li>
 to you in order to run the service.</li>
 <li>Only upload work you have the right to use. You are responsible for having your clients' consent where it is
 needed.</li>
-<li>To give support, keep the service safe and check quality, the Auto Edits team can view your weddings and download
-your uploaded and exported photos. Every such access is recorded. We never sell your photos, never show them to other
-photographers and never use them in our own marketing without your written permission.</li>
+<li>The Auto Edits team can view your weddings and download your uploaded and exported photos only to help when you
+ask for support, to fix a problem with your account or the service, or to keep the service safe. Every such access is
+recorded. We never sell your photos, never share them or show them to other photographers or anyone else, and never use
+them in our own marketing without your written permission.</li>
 <li>Keep your own copies. Auto Edits is a working tool, not an archive: we may set a period after which old uploads
 and exports are removed, and we will email you at least 14 days before anything of yours is removed under such a rule.</li>
 </ol>
@@ -136,8 +137,9 @@ advertising.</p>
 <h2>3. Who can see your photos</h2>
 <ol>
 <li>Each photographer sees only their own weddings.</li>
-<li>The Auto Edits team can view your account read-only and download your uploaded and exported photos, to give
-support, keep the service safe and check quality. Every view and download is recorded in an access log.</li>
+<li>The Auto Edits team can view your account read-only and download your uploaded and exported photos only to help
+when you ask for support, to fix a problem, or to keep the service safe. Every view and download is recorded in an
+access log. Your photos are never shared, never shown to anyone else and never used for marketing.</li>
 </ol>
 
 <h2>4. Where it is kept and who helps us</h2>

@@ -76,7 +76,6 @@ class Guard:
             (b"x-content-type-options", b"nosniff"),
             (b"x-frame-options", b"DENY"),
             (b"referrer-policy", b"strict-origin-when-cross-origin"),
-            (b"permissions-policy", b"camera=(), microphone=(), geolocation=(), payment=(self \"https://checkout.razorpay.com\")"),
             (b"content-security-policy", policy(static).encode()),
         ]
 

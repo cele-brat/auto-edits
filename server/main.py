@@ -269,16 +269,17 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         try:
             user = accounts.sign_up(body.email, body.password, body.name, client_ip(request), legal.TERMS_VERSION)
         except AlreadyThere:
-            # The same answer as a new sign-up, so nobody can find out who has an account;
-            # the owner of the address gets a short note instead.
+            # The owner of the address gets a short note instead of a second account.
             subject, text, html = mail.signup_again(link_base(request))
             mailer.send(body.email.strip().lower(), subject, text, html)
-            return {"user": None, "check_email": True}
+            return {"ok": True, "check_email": True}
         except ValueError as e:
             raise HTTPException(422, str(e))
+        # The same answer either way. (A new account is also signed in straight away, so the app opens;
+        # sign-ups are limited to 8 an hour from one address, which keeps that from being used to test emails.)
         send_verify(request, user)
         give_cookie(response, request, user["id"])
-        return {"user": public(user), "check_email": True}
+        return {"ok": True, "check_email": True}
 
     @app.post("/api/login")
     def login(body: Login, request: Request, response: Response):

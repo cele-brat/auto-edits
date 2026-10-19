@@ -102,7 +102,7 @@ def test_sign_up_never_says_an_email_has_an_account(app, box):
     first = browser(app).post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True})
     again = browser(app).post("/api/signup", json={"email": "A@B.co", "password": "another password", "agree": True})
     assert first.status_code == again.status_code == 200
-    assert first.json()["check_email"] and again.json()["check_email"] and again.json()["user"] is None
+    assert first.json() == again.json() == {"ok": True, "check_email": True}
     assert "already" not in again.text.lower()
     assert "autoedits" not in again.cookies                          # the stranger is not signed in
     to, subject, text = box.sent[-1]
@@ -270,12 +270,17 @@ def test_edited_previews_carry_a_mark_until_exported(app, box):
            files={"preview": ("a.jpg", jpeg((60, 60, 60), (1600, 1067)), "image/jpeg")})
     photo = c.get(f"/api/weddings/{w['id']}/photos").json()["photos"][0]["id"]
 
-    def mean(r):
-        return np.asarray(Image.open(io.BytesIO(r.content))).astype(float).mean()
+    def pic(r):
+        return np.asarray(Image.open(io.BytesIO(r.content))).astype(float)
 
-    marked = mean(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600"))
-    base = mean(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600&base=1"))
-    assert marked > base + 2                                                   # light lettering over the picture
+    def mean(r):
+        return pic(r).mean()
+
+    marked = pic(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600"))
+    plain = pic(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600&base=1"))
+    base = plain.mean()
+    lifted = (marked - plain).max(axis=-1) > 6                                 # faint lettering over the picture
+    assert 0.003 < lifted.mean() < 0.15 and marked.mean() < base + 2           # there, but light and sparse
     H = {"X-Auto-Edits-Key": KEY}
     ws = c.post("/api/weddings", headers=H, json={"name": "Studio"}).json()
     c.post(f"/api/weddings/{ws['id']}/photos", headers=H, data={"meta": json.dumps(meta)},
