@@ -10,6 +10,8 @@ main() {
     echo "== commit"; git -C /opt/auto-edits log -1 --oneline
     echo "== containers"; docker compose ps --format 'table {{.Service}}\t{{.Status}}'
     echo "== payments"; docker compose exec -T server python -m server.payments 2>/dev/null | tail -1 || echo "(server not answering)"
+    # OK, or the problems in plain words and numbers (backup age, disk %, failed exports, worker heartbeat); nothing private
+    echo "== health"; docker compose exec -T worker python -m server.health 2>/dev/null | grep -E '^health: ' | tail -1 || echo "health: (worker not answering)"
   }
 
   case "${1:-}" in
