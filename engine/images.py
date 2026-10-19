@@ -37,7 +37,7 @@ def resize_max(img: np.ndarray, max_side: int) -> np.ndarray:
     s = max_side / max(h, w)
     if s >= 1:
         return img
-    return cv2.resize(img, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA)
+    return cv2.resize(img, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA)
 
 
 def save_jpeg(img: np.ndarray, path: str | Path, quality: int = 92) -> None:
@@ -77,3 +77,32 @@ def load_embedded_preview(path: str | Path, max_side: int | None = None):
         im.thumbnail((max_side, max_side), Image.LANCZOS)
     img = np.asarray(im, np.float32) / 255.0
     return np.ascontiguousarray(img), info
+
+
+def jpeg_size(data: bytes) -> tuple[int, int] | None:
+    """(width, height) from a JPEG's frame header, without decoding the picture.
+    None when no frame header is found (not a readable JPEG)."""
+    i, n = 2, len(data)
+    while i + 4 <= n:
+        if data[i] != 0xFF:
+            return None
+        marker = data[i + 1]
+        if marker == 0xFF:                       # padding
+            i += 1
+            continue
+        if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:   # markers without a length
+            i += 2
+            continue
+        if marker == 0xD9:
+            return None
+        length = int.from_bytes(data[i + 2:i + 4], "big")
+        if length < 2:
+            return None
+        if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+            if i + 9 > n:
+                return None
+            h = int.from_bytes(data[i + 5:i + 7], "big")
+            w = int.from_bytes(data[i + 7:i + 9], "big")
+            return w, h
+        i += 2 + length
+    return None

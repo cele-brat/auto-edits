@@ -32,7 +32,7 @@ AUTO_PARAMS = {
 def _small(img, side=512):
     h, w = img.shape[:2]
     s = side / max(h, w)
-    return img if s >= 1 else cv2.resize(img, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA)
+    return img if s >= 1 else cv2.resize(img, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA)
 
 
 def measure(img) -> dict:

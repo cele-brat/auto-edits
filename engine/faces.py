@@ -54,7 +54,7 @@ def _detect_boxes(img8, score=0.6, max_side=2560):
     """Face boxes in pixels: (x0, y0, x1, y1, score), largest first."""
     h, w = img8.shape[:2]
     s = min(1.0, max_side / max(h, w))
-    small = cv2.resize(img8, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA) if s < 1 else img8
+    small = cv2.resize(img8, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA) if s < 1 else img8
     det = cv2.FaceDetectorYN.create(str(DETECTOR), "", (small.shape[1], small.shape[0]), score, 0.3, 200)
     _, res = det.detect(cv2.cvtColor(small, cv2.COLOR_RGB2BGR))
     boxes = []

@@ -165,12 +165,26 @@ def judge(m: dict, checks=CHECKS, strictness: str = "normal") -> dict:
 
 
 def _seconds(taken: str):
-    try:
-        d, t = taken.split(" ")
-        hh, mm, ss = t.split(":")
-        return int(d.replace(":", "")) * 86400 + int(hh) * 3600 + int(mm) * 60 + float(ss)
-    except Exception:
+    """Seconds since 1970 for a capture time, or None. Reads the camera's "2026:01:01 10:00:00" and the
+    ISO form the browser and the plug-in send ("2026-01-01T10:00:00", with fractions of a second and a
+    time zone such as "Z" or "+05:30" or none). Without a zone the clock time is taken as it is, so
+    frames from the same camera compare correctly either way."""
+    import datetime as _dt
+    if not isinstance(taken, str) or not taken.strip():
         return None
+    s = taken.strip()
+    if len(s) >= 10 and s[4] == ":" and s[7] == ":":                 # camera (EXIF) date
+        s = s[:4] + "-" + s[5:7] + "-" + s[8:]
+    s = s.replace(" ", "T", 1)
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        d = _dt.datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=_dt.timezone.utc)
+    return d.timestamp()
 
 
 def group_similar(measures: list[dict], max_gap: float = 4.0, max_dist: int = 44) -> list[int]:

@@ -168,7 +168,7 @@ def compute(img: np.ndarray) -> dict[str, np.ndarray]:
     """Every mask for one photo (float32 sRGB 0..1 in), each float32 0..1 at WORK_SIDE."""
     h, w = img.shape[:2]
     s = min(1.0, WORK_SIDE / max(h, w))
-    small = cv2.resize(img, (round(w * s), round(h * s)), interpolation=cv2.INTER_AREA) if s < 1 else img
+    small = cv2.resize(img, (max(1, round(w * s)), max(1, round(h * s))), interpolation=cv2.INTER_AREA) if s < 1 else img
     img8 = (np.clip(small, 0, 1) * 255).astype(np.uint8)
     full8 = (np.clip(img, 0, 1) * 255).astype(np.uint8)
     boxes = [(x0 * s, y0 * s, x1 * s, y1 * s, sc) for (x0, y0, x1, y1, sc) in _faces._detect_boxes(full8)]
