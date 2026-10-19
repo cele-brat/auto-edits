@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=32">
+<link rel="stylesheet" href="/static/app.css?v=33">
 </head>
 <body>
 <div id="app" hidden>
@@ -31,12 +31,13 @@
         </div>
         <p class="group">Your account</p>
         <button id="account-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg><span><b>Account and credits</b><small>Balance, buy credits, invoices, password</small></span></button>
-        <button id="plugin-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18H6.5v2.5H4V18l6.03-6.03A4 4 0 0 0 14 10Zm1-2h.01"/></svg><span><b>Lightroom plug-in</b><small>Get the key that connects Lightroom</small></span></button>
+        <button id="plugin-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18H6.5v2.5H4V18l6.03-6.03A4 4 0 0 0 14 10Zm1-2h.01"/></svg><span><b>Lightroom plug-in</b><small>Download it, install it, get your key</small></span></button>
         <a id="admin-link" href="/admin" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/></svg><span><b>Admin dashboard</b><small>Photographers, purchases, backups</small></span></a>
         <p class="group" id="menu-wedding-title">This wedding</p>
         <button id="originals" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span><b>Download original photos</b><small>The photos you uploaded, as one zip</small></span></button>
         <button id="delete-wedding" type="button" role="menuitem" class="danger"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13"/></svg><span><b>Delete this wedding</b><small>Removes it from Auto Edits only, not from your computer</small></span></button>
         <p class="group">Help</p>
+        <a href="/download/lightroom-plugin" download role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span><b>Download the Lightroom plug-in</b><small>Unzip, then in Lightroom Classic: File › Plug-in Manager › Add</small></span></a>
         <a href="/contact" target="_blank" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm-2.5-11.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.7M12 17h.01"/></svg><span><b>Help and support</b><small>Email, phone and WhatsApp</small></span></a>
         <a href="/terms" target="_blank" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l4 4v14H7V3Zm7 0v4h4M10 12h5M10 16h5"/></svg><span><b>Terms and privacy</b><small>How credits, refunds and your photos are handled</small></span></a>
         <button id="signout" type="button" role="menuitem" class="out"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/></svg><span><b>Log out</b></span></button>
@@ -129,6 +130,7 @@
     </span>
   </div>
 
+  <p id="phone-note" role="note">Editing works best on a laptop. On a phone you can view, rate and export; the edit sliders and presets are further down this page.</p>
   <aside id="panel" aria-label="Edit settings" data-tool="adjust">
     <div id="histo-box">
       <canvas id="histo" width="512" height="160" aria-label="Histogram of the photo on screen"></canvas>
@@ -237,7 +239,7 @@
 
 <dialog id="add">
   <h2 class="title">Add photos from this computer</h2>
-  <p>Raw files stay on this computer: only the preview stored inside each one is uploaded. JPEGs are used as they are.</p>
+  <p>Raw files stay on this computer: only the JPEG preview stored inside each one is uploaded (JPEGs are used as they are). Edits and exports here are made from that preview: right for proofs, social and quick delivery. For the sharpest finals, use the <a href="/download/lightroom-plugin" download>Lightroom plug-in</a>: Lightroom applies the same edit to the RAW file.</p>
   <div id="add-drop" tabindex="0">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M12 10v6m-3-3 3-3 3 3"/></svg>
     <b>Drag folders or photos here from Finder</b>
@@ -260,7 +262,7 @@
     <select id="add-size">
       <option value="2560">Proof size, 2560 px (fast)</option>
       <option value="4000">Medium, 4000 px</option>
-      <option value="12000">Full size (largest exports, slower)</option>
+      <option value="12000">Full size: the whole camera preview (largest exports, slower)</option>
     </select>
   </label>
   <p id="add-progress" aria-live="polite"></p>
@@ -291,12 +293,16 @@
     <button id="cull-close" type="button" class="quiet">Close</button>
     <button id="cull-start" type="button" class="primary">Start culling</button>
   </div>
+  <div class="spend" id="cull-spend" role="alertdialog" aria-labelledby="cull-spend-text" hidden>
+    <p id="cull-spend-text"></p><button id="cull-spend-no" type="button" class="quiet">Not now</button><button id="cull-spend-yes" type="button" class="primary"></button>
+  </div>
   <p class="keys">Change a rating yourself: select a photo and press <b>3</b> Keep, <b>2</b> Maybe, <b>1</b> Reject, <b>0</b> back to automatic.</p>
 </dialog>
 
 <dialog id="export">
   <h2 class="title">Export finished photos</h2>
   <p>The server makes the JPEGs with each photo's look. You can close this window or the browser: it carries on.</p>
+  <p class="dim small">Made from the uploaded preview, so never larger than it (the camera's embedded preview is often 1600 to 6000 px). For finals from the RAW file, send the edits back to Lightroom with the plug-in.</p>
   <label class="field">Which photos
     <select id="export-scope"></select>
   </label>
@@ -311,7 +317,7 @@
     <select id="export-size">
       <option value="2560">Proofs and social, 2560 px</option>
       <option value="4000">Medium, 4000 px</option>
-      <option value="0">Full size (as large as was uploaded)</option>
+      <option value="0">Full size (as large as the uploaded preview)</option>
     </select>
   </label>
   <label class="field">JPEG quality
@@ -327,6 +333,9 @@
   <div class="row end">
     <button id="export-close" type="button" class="quiet">Close</button>
     <button id="export-start" type="button" class="primary">Start export</button>
+  </div>
+  <div class="spend" id="export-spend" role="alertdialog" aria-labelledby="export-spend-text" hidden>
+    <p id="export-spend-text"></p><button id="export-spend-no" type="button" class="quiet">Not now</button><button id="export-spend-yes" type="button" class="primary"></button>
   </div>
   <h3 class="sub">Exports of this wedding</h3>
   <ul id="export-list"></ul>
@@ -352,7 +361,7 @@
       <button type="button" id="buy-storage" disabled>Add storage</button>
     </section>
   </div>
-  <p class="acc-prices">Export or send to Lightroom: <b>1 credit a photo</b> · Culling: <b>1 credit for 10 photos</b> · charged every time it runs</p>
+  <p class="acc-prices">Export or send to Lightroom: <b>1 credit a photo</b> · Culling: <b>1 credit for 10 photos</b> · charged every time it runs · Free trial credits last 15 days; bought credits never end.</p>
 
   <nav class="acc-tabs" role="tablist" aria-label="Account sections">
     <button type="button" role="tab" data-acc="credits" aria-selected="true">Credit history</button>
@@ -375,12 +384,13 @@
   </section>
 
   <section class="acc-pane" data-pane="lightroom" hidden>
-    <div class="acc-pane-head"><h3>Lightroom plug-in key</h3></div>
+    <div class="acc-pane-head"><h3>Lightroom Classic plug-in</h3><a class="button primary-link" href="/download/lightroom-plugin" download>Download the Lightroom plug-in</a></div>
     <ol class="acc-steps">
-      <li>Click <b>Make a new key</b> and copy it.</li>
-      <li>In Lightroom: <b>Library › Plug-in Extras › Auto Edits: server settings</b>.</li>
-      <li>Paste the key, click <b>Test connection</b>, then <b>OK</b>.</li>
+      <li><b>Download the plug-in</b> and unzip it. Keep the <b>AutoEdits.lrplugin</b> folder somewhere it can stay (for example Documents).</li>
+      <li>In Lightroom Classic: <b>File › Plug-in Manager › Add</b>, choose <b>AutoEdits.lrplugin</b>, then <b>Done</b>.</li>
+      <li>Click <b>Make a new key</b> below and copy it. In Lightroom: <b>Library › Plug-in Extras › Auto Edits: server settings</b>, paste the key, <b>Test connection</b>, then <b>OK</b>.</li>
     </ol>
+    <p class="dim">With the plug-in, Lightroom applies your edit to the RAW file in your catalogue: the sharpest finals. Works with Lightroom Classic on Mac and Windows.</p>
     <div class="row"><button type="button" id="key-new" class="primary">Make a new key</button></div>
     <p class="dim">Making a new key stops the old one.</p>
     <div id="key-shown" hidden>
@@ -441,6 +451,7 @@
         <input id="buy-credits" type="number" min="500" step="100" value="500" inputmode="numeric">
         <button type="button" class="step" data-step="100" aria-label="100 more">+</button></div>
       <p class="dim" id="buy-credits-note"></p>
+      <p id="buy-min" class="warn" hidden></p>
     </div>
     <div data-for="storage" hidden>
       <label for="buy-blocks">Extra space</label>
@@ -494,13 +505,13 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=28"></script>
-<script src="/static/addfolder.js?v=17"></script>
-<script src="/static/cull.js?v=16"></script>
-<script src="/static/export.js?v=15"></script>
-<script src="/static/account.js?v=21"></script>
-<script src="/static/buy.js?v=5"></script>
-<script src="/static/crop.js?v=4"></script>
+<script src="/static/app.js?v=29"></script>
+<script src="/static/addfolder.js?v=18"></script>
+<script src="/static/cull.js?v=17"></script>
+<script src="/static/export.js?v=16"></script>
+<script src="/static/account.js?v=22"></script>
+<script src="/static/buy.js?v=6"></script>
+<script src="/static/crop.js?v=5"></script>
 <script src="/static/drawn.js?v=2"></script>
 </body>
 </html>

@@ -78,14 +78,24 @@ $('cull-open').onclick = () => {
   $('cull').showModal();
   refreshCull();
 };
-function cullCost() {
+function cullPhotos() {
   const scope = $('cull-scope').value;
-  const n = scope === '' ? S.wedding.photos : ((S.wedding.folders.find((x) => x.id === +scope) || {}).photos || 0);
-  $('cull-cost').textContent = window.costLine ? costLine(Math.ceil(n / 10), `${n} photos at 1 credit per 10`) : '';
+  return scope === '' ? S.wedding.photos : ((S.wedding.folders.find((x) => x.id === +scope) || {}).photos || 0);
+}
+function cullCost() {
+  const n = cullPhotos(), credits = Math.ceil(n / 10);
+  $('cull-cost').textContent = window.costLine ? costLine(credits, `${n} photos at 1 credit per 10`) : '';
+  if (window.hideSpend) hideSpend('cull');
+  $('cull-start').textContent = `Cull ${n} photo${n === 1 ? '' : 's'}` + (window.Acc && Acc.unlimited ? '' : ` · ${credits} credit${credits === 1 ? '' : 's'}`);
 }
 $('cull-scope').onchange = cullCost;
 $('cull-close').onclick = () => $('cull').close();
-$('cull-start').onclick = async () => {
+$('cull-start').onclick = () => {
+  const n = cullPhotos();
+  if (!n) return;
+  askSpend('cull', Math.ceil(n / 10), startCull);
+};
+async function startCull() {
   const scope = $('cull-scope').value;
   $('cull-start').disabled = true;
   try {
@@ -96,4 +106,4 @@ $('cull-start').onclick = async () => {
   $('cull-start').disabled = false;
   if (window.refreshCredits) refreshCredits().then(cullCost);
   refreshCull();
-};
+}

@@ -27,7 +27,8 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import legal, limits, payments as pay, security
+from . import legal, limits, payments as pay, security, webguard
+from .accounts import AlreadyThere
 from engine.presets import parse_xmp
 
 from .exports import SIZES as EXPORT_SIZES, Exports
@@ -37,6 +38,7 @@ from .state import State
 from .store import Store
 
 STATIC = Path(__file__).resolve().parent / "static"
+PLUGIN = Path(__file__).resolve().parent.parent / "plugin" / "AutoEdits.lrplugin"
 COOKIE = "autoedits"
 VIEW_AS = "autoedits_as"                  # the admin is looking at a photographer's account (read-only)
 LINK_SECONDS = 120                        # how long a "open in browser" link from the plug-in works
@@ -46,10 +48,17 @@ MAX_PRESET_BYTES = 4 * 1024 * 1024         # presets with tone tables can reach 
 MIN_FREE_BYTES = 2 * 1024 ** 3            # stop taking photos before the disk is full
 MAX_PIXELS = 100_000_000                  # larger than any camera's preview; refused before it is decoded
 LOOK_SECONDS = 2 * 86400                  # a long look handed over once ("lk=") is kept this long after last use
+PREVIEW_CAP = 1600                        # largest on-screen preview for photographers (the studio gets 2560)
 TICKET_SECONDS = 300                      # password given, two-step code still to come
 RENDERS_AT_ONCE = 2                       # big previews drawn at the same time, so memory stays in bounds
 APPLY_PAGE = 50                           # Lightroom list: most photos per page
 APPLY_SECONDS = 12.0                      # ... and a page ends early once working it out took this long
+
+
+def clean_name(text: str, default: str) -> str:
+    """A tidy download name: odd characters become spaces, runs of spaces become one
+    ("Ananya & Rohan, Jaipur" -> "Ananya Rohan Jaipur", not "Ananya _ Rohan_ Jaipur")."""
+    return " ".join("".join(c if c.isalnum() or c in "-." else " " for c in text).split()) or default
 
 
 def attachment(filename: str) -> str:
@@ -145,6 +154,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     mailer = mailer or mail.Mailer()
     base_url = os.environ.get("AUTOEDITS_BASE_URL", "").rstrip("/")
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+    app.add_middleware(webguard.Guard, static=STATIC)       # security headers, and no forms sent from other sites
     app.state.store = store
     app.state.accounts = accounts
     exports = Exports(store)
@@ -271,11 +281,18 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(422, "Please tick the box to agree to the Terms of use and Privacy policy.")
         try:
             user = accounts.sign_up(body.email, body.password, body.name, client_ip(request), legal.TERMS_VERSION)
+        except AlreadyThere:
+            # The owner of the address gets a short note instead of a second account.
+            subject, text, html = mail.signup_again(link_base(request))
+            mailer.send(body.email.strip().lower(), subject, text, html)
+            return {"ok": True, "check_email": True}
         except ValueError as e:
             raise HTTPException(422, str(e))
+        # The same answer either way. (A new account is also signed in straight away, so the app opens;
+        # sign-ups are limited to 8 an hour from one address, which keeps that from being used to test emails.)
         send_verify(request, user)
         give_cookie(response, request, user["id"])
-        return {"user": public(user)}
+        return {"ok": True, "check_email": True}
 
     @app.post("/api/login")
     def login(body: Login, request: Request, response: Response):
@@ -387,7 +404,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def verify(token: str, request: Request):
         user_id = accounts.use_email_token(token, "verify")
         if not user_id:
-            return RedirectResponse("/?link=expired", status_code=303)
+            # a link opened twice: say so kindly when this browser is already signed in to a confirmed account
+            me = accounts.session_user(request.cookies.get(COOKIE, ""))
+            return RedirectResponse("/?verified=again" if me and me["verified"] else "/?link=used", status_code=303)
         accounts.verify(user_id)
         response = RedirectResponse("/?verified=1" if accounts.got_free(user_id) else "/?verified=0", status_code=303)
         give_cookie(response, request, user_id)
@@ -875,7 +894,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(404, "no photos")
         if user.get("viewing_as") and (a := accounts.by_email(user["viewing_as"])):
             accounts.log(a["id"], "downloaded uploaded photos", target=user["id"], detail=f"wedding: {w['name']} (in View as)")
-        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in w["name"]).strip() or "photos"
+        name = clean_name(w["name"], "photos")
         return StreamingResponse(store.zip_previews(wedding_id, rows), media_type="application/zip",
                                  headers={"Content-Disposition": attachment(f"{name} - uploaded photos.zip")})
 
@@ -1027,6 +1046,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         carry a light preview mark until they are exported (not on the studio account)."""
         if size not in SIZES:
             raise HTTPException(422, f"size must be one of {SIZES}")
+        if not user["admin"]:
+            size = min(size, PREVIEW_CAP)          # marked previews stay proof-sized; full quality comes from export
         if show and not show.replace("_", "").isalnum():
             raise HTTPException(422, "show must name a mask")
         look = given_look(look, lk, user)
@@ -1244,7 +1265,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             raise HTTPException(409, "no pictures are finished yet")
         if user.get("viewing_as") and (a := accounts.by_email(user["viewing_as"])):
             accounts.log(a["id"], "downloaded edited photos", target=user["id"], detail=f"export {export_id} (in View as)")
-        name = "".join(c if c.isalnum() or c in " -_" else "_" for c in wedding_or_404(e["wedding_id"], user)["name"]).strip() or "export"
+        name = clean_name(wedding_or_404(e["wedding_id"], user)["name"], "export")
         return StreamingResponse(exports.zip_stream(export_id), media_type="application/zip",
                                  headers={"Content-Disposition": attachment(f"{name}.zip")})
 
@@ -1347,6 +1368,23 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         so this only remembers them (and an edit never handed out cannot be marked)."""
         wedding_or_404(wedding_id, user)
         return {"marked": store.mark_applied(wedding_id, stamps)}
+
+    # ---- the Lightroom plug-in, zipped on the fly ---------------------------------
+    @app.api_route("/download/lightroom-plugin", methods=["GET", "HEAD"])
+    def plugin_zip():
+        """AutoEdits.lrplugin as one zip. Public: it holds no secrets (each photographer pastes their own key)."""
+        import io
+        import zipfile
+        if not (PLUGIN / "Info.lua").exists():
+            raise HTTPException(404, "The plug-in is not on this server.")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for f in sorted(PLUGIN.rglob("*")):
+                if f.is_file() and not f.name.startswith("."):
+                    z.write(f, f"AutoEdits.lrplugin/{f.relative_to(PLUGIN).as_posix()}")
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": 'attachment; filename="AutoEdits-Lightroom-plugin.zip"',
+                                 "Cache-Control": "no-cache"})
 
     # ---- for search engines and AI assistants ------------------------------------
     SITE = os.environ.get("AUTOEDITS_SITE", "https://edits.cele-brat.solutions").rstrip("/")

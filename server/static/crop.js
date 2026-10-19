@@ -169,7 +169,9 @@ $('crop-ai').onclick = async () => {
       $('crop-ratio').value = r.crop.ratio;
       $('crop-note').textContent = `AI crop: ${r.why}. Drag to adjust, then Done.`;
     } else {
-      $('crop-note').textContent = r.why === 'no people found' ? 'No people found, so nothing to frame. Crop it by hand.' : 'This photo is already well framed.';
+      $('crop-note').textContent = r.why === 'no people found' ? 'No people found, so nothing to frame. Crop it by hand.'
+        : 'AI crop: this photo is already well framed, so the crop stays as it is. Drag the corners to crop by hand.';
+      $('crop-note').classList.remove('flash'); void $('crop-note').offsetWidth; $('crop-note').classList.add('flash');
     }
     placeCrop();
   } catch (e) { if (e.message !== 'signed out') $('crop-note').textContent = e.message; }
@@ -191,6 +193,7 @@ $('crop-folder').onclick = async () => {
       const r = await api(`${base(p)}/auto-crop?save=1${list.length > 1 ? '&keep_own=1' : ''}`, { method: 'POST' });
       p.crop = r.crop;
       if (!r.changed) kept += 1; else if (r.crop) framed += 1; else none += 1;
+      if (list.length === 1 && r.changed && !r.crop) $('crop-progress').dataset.why = r.why;
     } catch (e) { if (e.message === 'signed out') return; }
     done += 1;
     $('crop-progress').textContent = `AI crop: ${done} of ${list.length}…`;
@@ -198,6 +201,8 @@ $('crop-folder').onclick = async () => {
   }
   cropRun = 0;
   drawCropBar();
+  const why = $('crop-progress').dataset.why; delete $('crop-progress').dataset.why;
+  if (list.length === 1 && why) { $('crop-progress').textContent = why === 'no people found' ? 'AI crop: no people found in this photo, so it stays whole.' : 'AI crop: this photo is already well framed, so it stays as it is.'; refreshThumbs(); drawCaption(); drawStage(); return; }
   $('crop-progress').textContent = `AI cropped ${framed} photo${framed === 1 ? '' : 's'}` +
     (none ? `; ${none} left whole (no people, or already well framed)` : '') +
     (kept ? `; ${kept} kept your own crop` : '') + (done < list.length ? ` (stopped at ${done} of ${list.length})` : '') + '.';

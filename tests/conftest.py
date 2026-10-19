@@ -30,3 +30,16 @@ def chart():
 def library():
     from engine.presets import load_folder
     return load_folder(ROOT / "presets" / "library")
+
+
+@pytest.fixture(autouse=True)
+def like_the_app(monkeypatch):
+    """Test clients send X-Requested-With, as the app's own pages do (server/webguard.py).
+    Tests of the cross-site check pass headers={"X-Requested-With": ""} to leave it out."""
+    from starlette.testclient import TestClient
+    original = TestClient.__init__
+
+    def init(self, *a, **k):
+        original(self, *a, **k)
+        self.headers.setdefault("X-Requested-With", "AutoEdits")
+    monkeypatch.setattr(TestClient, "__init__", init)

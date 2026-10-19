@@ -232,7 +232,7 @@ def local_corrections(preset: Preset | dict) -> list[dict]:
 
 
 def parse_xmp(text: str, source_file: str = "", pack: str = "") -> Preset:
-    import xml.etree.ElementTree as ET
+    from defusedxml import ElementTree as ET        # refuses entity tricks in uploaded .xmp files
     m = re.search(r"<x:xmpmeta.*</x:xmpmeta>", text, re.S)
     if not m:
         raise ValueError(f"not a preset file: {source_file}")

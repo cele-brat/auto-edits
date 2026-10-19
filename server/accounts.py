@@ -58,6 +58,10 @@ MIN_PASSWORD = 8
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
+class AlreadyThere(ValueError):
+    """Sign-up with an email that already has an account (never shown as such: see /api/signup)."""
+
+
 class NotEnoughCredits(Exception):
     def __init__(self, needed: int, balance: int):
         self.needed, self.balance = needed, balance
@@ -173,7 +177,7 @@ class Accounts:
         if len(password) > 200:
             raise ValueError("The password is too long.")
         if self.by_email(email):
-            raise ValueError("There is already an account with this email. Log in, or use \"Forgot password\".")
+            raise AlreadyThere("There is already an account with this email. Log in, or use \"Forgot password\".")
         uid = uuid.uuid4().hex[:12]
         with self._db() as db:
             now = time.time()

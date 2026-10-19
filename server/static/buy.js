@@ -56,8 +56,9 @@ async function openBuy(kind) {
     for (const m of p.months) $('buy-months').append(new Option(`${m} month${m > 1 ? 's' : ''}`, m));
     $('buy-credits').min = p.min_credits; $('buy-credits').step = p.credit_step; $('buy-credits').value = p.min_credits;
   }
+  const each = p.credit_paise * (100 + p.gst) / 100, least = p.min_credits * each;
   $('buy-credits-note').textContent = `${inr(p.credit_paise)} a credit` + (p.credit_paise === 100 ? ` until ${p.launch_ends}` : '') +
-    `, plus ${p.gst}% GST. From ${p.min_credits} credits, in steps of ${p.credit_step}.`;
+    ` + ${p.gst}% GST (${inr(each)} with GST). From ${p.min_credits} credits (${inr(least)} incl. GST), in steps of ${p.credit_step}.`;
   $('buy-grants').textContent = `${p.block_gb} GB for ${inr(p.block_paise_month)} a month, plus ${p.gst}% GST. ` +
     (p.grants.length ? 'Running now: ' + p.grants.map((g) => `${g.gb} GB until ${new Date(g.until * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`).join(', ') + '.' : 'Starts as soon as you pay.');
   $('buy-error').textContent = '';
@@ -77,13 +78,19 @@ function quoteBuy() {
   quoteTimer = setTimeout(async () => {
     $('buy-error').textContent = '';
     const body = buyBody();
-    if (!body.state && !body.gstin) { $('buy-sum').replaceChildren(); $('buy-go').disabled = true; return; }
+    const p = Buy.prices || { min_credits: 500, credit_step: 100 };
+    const short = body.kind === 'credits' && (!body.credits || body.credits < p.min_credits);
+    const odd = body.kind === 'credits' && !short && body.credits % p.credit_step;
+    $('buy-min').hidden = !(short || odd);
+    $('buy-min').textContent = short ? `Minimum ${p.min_credits} credits.` : odd ? `Credits come in steps of ${p.credit_step} (${body.credits - (body.credits % p.credit_step)} or ${body.credits - (body.credits % p.credit_step) + p.credit_step}).` : '';
+    if (short || odd) { $('buy-sum').replaceChildren(); $('buy-go').disabled = true; $('buy-go').textContent = 'Pay'; return; }
+    if (!body.state && !body.gstin) { $('buy-sum').replaceChildren(); $('buy-go').disabled = true; $('buy-min').hidden = false; $('buy-min').textContent = 'Choose your state to see the total with GST.'; return; }
     try {
       const q = await api('/api/buy/quote', { method: 'POST', body });
       const row = (a, b, cls) => { const tr = document.createElement('tr'); if (cls) tr.className = cls; for (const t of [a, b]) { const td = document.createElement('td'); td.textContent = t; tr.append(td); } return tr; };
       const rows = [row(q.kind === 'credits' ? `${q.credits.toLocaleString('en-IN')} credits × ${inr(q.unit)}` : `${q.blocks * 50} GB × ${q.months} month${q.months > 1 ? 's' : ''}`, inr(q.taxable))];
       if (q.cgst) rows.push(row('CGST 9%', inr(q.cgst)), row('SGST 9%', inr(q.sgst))); else rows.push(row('IGST 18%', inr(q.igst)));
-      rows.push(row('Total', inr(q.total), 'total'));
+      rows.push(row('Total, incl. 18% GST', inr(q.total), 'total'));
       $('buy-sum').replaceChildren(...rows);
       $('buy-go').disabled = false;
       $('buy-go').textContent = `Pay ${inr(q.total)}`;

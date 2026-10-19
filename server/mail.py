@@ -77,6 +77,16 @@ def verify_email(base: str, token: str) -> tuple[str, str, str]:
     return "Confirm your Auto Edits email", text, html
 
 
+def signup_again(base: str) -> tuple[str, str, str]:
+    """Someone signed up with an address that already has an account. The sign-up page says the same
+    as for a new account, so this note is the only place the account is mentioned."""
+    text, html = _page("You already have an account", "Someone just tried to sign up for Auto Edits with this email "
+                       "address, which already has an account. If it was you, log in, or use \"Forgot password\" "
+                       "on the log-in window to set a new password.", "Log in", f"{base}/?login=1",
+                       "If it was not you, ignore this email: nothing has changed and your account is safe.")
+    return "You already have an Auto Edits account", text, html
+
+
 def reset_password(base: str, token: str) -> tuple[str, str, str]:
     text, html = _page("Set a new password", "Someone asked to set a new password for your Auto Edits account.",
                        "Set a new password", f"{base}/reset/{token}",

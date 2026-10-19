@@ -66,3 +66,25 @@ def test_ai_mask_preset():
     # the noise toggle skips the preset's own noise values, nothing else
     cut, _ = effective_settings(p, {"noise"})
     assert "LuminanceSmoothing" not in cut and "ColorNoiseReduction" not in cut and cut["Contrast2012"] == 7
+
+
+def test_xmp_with_entities_is_refused():
+    """defusedxml: an uploaded preset cannot use XML entity tricks."""
+    import pytest
+    bomb = ('<x:xmpmeta xmlns:x="adobe:ns:meta/"><!DOCTYPE a [<!ENTITY e "xxxxxxxxxx">'
+            '<!ENTITY f "&e;&e;&e;&e;&e;">]><r>&f;</r></x:xmpmeta>')
+    with pytest.raises(Exception):
+        parse_xmp(bomb, "bomb.xmp")
+
+
+def test_built_in_presets_have_plain_words_and_a_plain_line():
+    import json
+    from server.looks import PRESETS_FILE, plain_about, preset_tags
+    presets = json.loads(PRESETS_FILE.read_text())["presets"]
+    tags = [set(preset_tags(p)) for p in presets]
+    for word in ("warm", "cool", "moody", "bright", "dark", "matte", "film", "vibrant", "soft", "haldi", "sangeet"):
+        assert any(word in t for t in tags), word
+    for p in presets:
+        line = plain_about(p)
+        assert line and "median" not in line and "p1 ~" not in line and len(line) < 260
+    assert all(not ({"bright", "dark"} <= t) for t in tags)          # never both

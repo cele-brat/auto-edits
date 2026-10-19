@@ -23,7 +23,7 @@ const S = {
 
 // ---- talking to the server ------------------------------------------------
 async function api(path, options = {}) {
-  const init = { method: options.method || 'GET', headers: {}, credentials: 'same-origin' };
+  const init = { method: options.method || 'GET', headers: { 'X-Requested-With': 'AutoEdits' }, credentials: 'same-origin' };
   if ('body' in options) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(options.body);
@@ -392,6 +392,7 @@ async function drawStage() {
   $('loupe').hidden = empty || S.view !== 'loupe';
   $('view-grid').setAttribute('aria-pressed', String(S.view === 'grid'));
   $('view-loupe').setAttribute('aria-pressed', String(S.view === 'loupe'));
+  $('app').classList.toggle('loupe-on', S.view === 'loupe' && !empty);
   $('view-loupe').disabled = !photo();
   $('toolbar').dataset.view = S.view;
   const p = photo();
@@ -496,7 +497,11 @@ function buildLooks() {
 
 function shownLooks() {
   const q = S.query.trim().toLowerCase();
-  return S.looks.filter((l) => (!q || l.pack.toLowerCase().includes(q) || l.look.toLowerCase().includes(q) || l.variants.some((v) => v.variant.toLowerCase().includes(q))));
+  if (!q) return S.looks;
+  // every word must match the name, pack, variant, the plain mood words (warm, moody, haldi…) or the description
+  const words = q.split(/\s+/);
+  const text = (l) => l.text || (l.text = [l.pack, l.look, ...l.variants.flatMap((v) => [v.variant, (v.tags || []).join(' '), v.about || ''])].join(' ').toLowerCase());
+  return S.looks.filter((l) => words.every((w) => text(l).includes(w)));
 }
 
 // The Presets panel, as in Lightroom: one folding group per pack, its looks inside; a look with
@@ -696,7 +701,7 @@ function drawSliders(look) {
         if (Number(sl.input.value) !== value) sl.input.value = value;
         paint(sl.input, base === null ? 0 : base);
         const d = digitsOf(sl);
-        sl.out.textContent = base === null ? (sl.relative ? signed(value, d) : `auto ${signed(value, d)}`)
+        sl.out.textContent = base === null ? signed(value, d)
           : (sl.min < 0 ? signed(value, d) : value.toFixed(d));
         sl.out.classList.toggle('moved', !!delta);
       }
@@ -944,6 +949,7 @@ function setDevelopScope(scope) {
   S.developScope = scope;
   try { localStorage.setItem('ae-scope', scope); } catch (e) { /* fine without */ }
   drawPanel();
+  if (window.drawCropBar) drawCropBar();          // "AI crop this photo" / "every photo in this folder" follows Apply to
 }
 $('scope-folder').onclick = () => setDevelopScope('folder');
 $('scope-photo').onclick = () => setDevelopScope('photo');
@@ -967,7 +973,7 @@ $('upload').onchange = async (e) => {
   const form = new FormData();
   for (const f of files) form.append('files', f);
   try {
-    const r = await fetch('/api/presets', { method: 'POST', body: form, credentials: 'same-origin' });
+    const r = await fetch('/api/presets', { method: 'POST', body: form, credentials: 'same-origin', headers: { 'X-Requested-With': 'AutoEdits' } });
     if (r.status === 401) return showSignIn();
     const data = await r.json();
     if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);

@@ -4,7 +4,8 @@ data/out
 data/server
 tests
 presets
-plugin
+plugin/*
+!plugin/AutoEdits.lrplugin
 tools
 **/__pycache__
 deploy/.env

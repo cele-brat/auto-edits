@@ -263,7 +263,7 @@ $('add-start').onclick = async () => {
           const form = new FormData();
           form.append('meta', JSON.stringify(meta));
           form.append('preview', p.blob, 'preview.jpg');
-          const r = await fetch(`/api/weddings/${wedding.id}/photos`, { method: 'POST', body: form, credentials: 'same-origin' });
+          const r = await fetch(`/api/weddings/${wedding.id}/photos`, { method: 'POST', body: form, credentials: 'same-origin', headers: { 'X-Requested-With': 'AutoEdits' } });
           if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `server answered ${r.status}`);
           done += 1;
         } catch (e) {

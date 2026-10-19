@@ -85,7 +85,9 @@ def test_sign_up_confirm_email_and_get_free_credits(app, box):
     assert r.headers["location"] == "/?verified=1"
     me = c.get("/api/me").json()
     assert me["user"]["verified"] and me["credits"] == 50
-    assert c.get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?link=expired"   # once only
+    assert c.get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?verified=again"  # once only: said kindly
+    assert browser(app).get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?link=used"  # elsewhere: log in
+    assert browser(app).get("/verify/made-up", follow_redirects=False).headers["location"] == "/?link=used"
     assert c.get("/api/me").json()["credits"] == 50                                   # free credits only once
 
 
@@ -94,7 +96,19 @@ def test_sign_up_rules(app, box):
     assert c.post("/api/signup", json={"email": "not-an-email", "password": "a good password"}).status_code == 422
     assert c.post("/api/signup", json={"email": "a@b.co", "password": "short"}).status_code == 422
     assert c.post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True}).status_code == 200
-    assert c.post("/api/signup", json={"email": "A@B.co", "password": "a good password", "agree": True}).status_code == 422
+
+
+def test_sign_up_never_says_an_email_has_an_account(app, box):
+    first = browser(app).post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True})
+    again = browser(app).post("/api/signup", json={"email": "A@B.co", "password": "another password", "agree": True})
+    assert first.status_code == again.status_code == 200
+    assert first.json() == again.json() == {"ok": True, "check_email": True}
+    assert "already" not in again.text.lower()
+    assert "autoedits" not in again.cookies                          # the stranger is not signed in
+    to, subject, text = box.sent[-1]
+    assert to == "a@b.co" and "already have" in subject and "Forgot password" in text
+    assert len([m for m in box.sent if m[0] == "a@b.co"]) == 2      # the confirm email, then the note
+    assert browser(app).post("/api/login", json={"email": "a@b.co", "password": "another password"}).status_code == 401
 
 
 def test_log_in_and_out(app, box):
@@ -256,12 +270,17 @@ def test_edited_previews_carry_a_mark_until_exported(app, box):
            files={"preview": ("a.jpg", jpeg((60, 60, 60), (1600, 1067)), "image/jpeg")})
     photo = c.get(f"/api/weddings/{w['id']}/photos").json()["photos"][0]["id"]
 
-    def mean(r):
-        return np.asarray(Image.open(io.BytesIO(r.content))).astype(float).mean()
+    def pic(r):
+        return np.asarray(Image.open(io.BytesIO(r.content))).astype(float)
 
-    marked = mean(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600"))
-    base = mean(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600&base=1"))
-    assert marked > base + 2                                                   # light lettering over the picture
+    def mean(r):
+        return pic(r).mean()
+
+    marked = pic(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600"))
+    plain = pic(c.get(f"/api/weddings/{w['id']}/photos/{photo}/image?size=1600&base=1"))
+    base = plain.mean()
+    lifted = (marked - plain).max(axis=-1) > 6                                 # faint lettering over the picture
+    assert 0.003 < lifted.mean() < 0.15 and marked.mean() < base + 2           # there, but light and sparse
     H = {"X-Auto-Edits-Key": KEY}
     ws = c.post("/api/weddings", headers=H, json={"name": "Studio"}).json()
     c.post(f"/api/weddings/{ws['id']}/photos", headers=H, data={"meta": json.dumps(meta)},
