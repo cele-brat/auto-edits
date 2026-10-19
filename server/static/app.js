@@ -23,7 +23,7 @@ const S = {
 
 // ---- talking to the server ------------------------------------------------
 async function api(path, options = {}) {
-  const init = { method: options.method || 'GET', headers: {}, credentials: 'same-origin' };
+  const init = { method: options.method || 'GET', headers: { 'X-Requested-With': 'AutoEdits' }, credentials: 'same-origin' };
   if ('body' in options) {
     init.headers['Content-Type'] = 'application/json';
     init.body = JSON.stringify(options.body);
@@ -967,7 +967,7 @@ $('upload').onchange = async (e) => {
   const form = new FormData();
   for (const f of files) form.append('files', f);
   try {
-    const r = await fetch('/api/presets', { method: 'POST', body: form, credentials: 'same-origin' });
+    const r = await fetch('/api/presets', { method: 'POST', body: form, credentials: 'same-origin', headers: { 'X-Requested-With': 'AutoEdits' } });
     if (r.status === 401) return showSignIn();
     const data = await r.json();
     if (!r.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);

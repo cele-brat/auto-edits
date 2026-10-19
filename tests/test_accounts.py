@@ -85,7 +85,9 @@ def test_sign_up_confirm_email_and_get_free_credits(app, box):
     assert r.headers["location"] == "/?verified=1"
     me = c.get("/api/me").json()
     assert me["user"]["verified"] and me["credits"] == 50
-    assert c.get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?link=expired"   # once only
+    assert c.get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?verified=again"  # once only: said kindly
+    assert browser(app).get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?link=used"  # elsewhere: log in
+    assert browser(app).get("/verify/made-up", follow_redirects=False).headers["location"] == "/?link=used"
     assert c.get("/api/me").json()["credits"] == 50                                   # free credits only once
 
 
@@ -94,7 +96,19 @@ def test_sign_up_rules(app, box):
     assert c.post("/api/signup", json={"email": "not-an-email", "password": "a good password"}).status_code == 422
     assert c.post("/api/signup", json={"email": "a@b.co", "password": "short"}).status_code == 422
     assert c.post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True}).status_code == 200
-    assert c.post("/api/signup", json={"email": "A@B.co", "password": "a good password", "agree": True}).status_code == 422
+
+
+def test_sign_up_never_says_an_email_has_an_account(app, box):
+    first = browser(app).post("/api/signup", json={"email": "a@b.co", "password": "a good password", "agree": True})
+    again = browser(app).post("/api/signup", json={"email": "A@B.co", "password": "another password", "agree": True})
+    assert first.status_code == again.status_code == 200
+    assert first.json()["check_email"] and again.json()["check_email"] and again.json()["user"] is None
+    assert "already" not in again.text.lower()
+    assert "autoedits" not in again.cookies                          # the stranger is not signed in
+    to, subject, text = box.sent[-1]
+    assert to == "a@b.co" and "already have" in subject and "Forgot password" in text
+    assert len([m for m in box.sent if m[0] == "a@b.co"]) == 2      # the confirm email, then the note
+    assert browser(app).post("/api/login", json={"email": "a@b.co", "password": "another password"}).status_code == 401
 
 
 def test_log_in_and_out(app, box):

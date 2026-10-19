@@ -152,7 +152,7 @@ const when = (t) => (t ? new Date(t * 1000).toLocaleString('en-IN', { day: 'nume
 function el(tag, props = {}, ...kids) { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; }
 
 async function api(path, options = {}) {
-  const init = { method: options.method || 'GET', headers: {}, credentials: 'same-origin' };
+  const init = { method: options.method || 'GET', headers: { 'X-Requested-With': 'AutoEdits' }, credentials: 'same-origin' };
   if ('body' in options) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(options.body); }
   const r = await fetch(path, init);
   if (r.status === 401 || r.status === 404 && path === '/api/admin/users') { location.href = '/?login=1'; throw new Error('signed out'); }

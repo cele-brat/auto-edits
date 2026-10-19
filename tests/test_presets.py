@@ -66,3 +66,12 @@ def test_ai_mask_preset():
     # the noise toggle skips the preset's own noise values, nothing else
     cut, _ = effective_settings(p, {"noise"})
     assert "LuminanceSmoothing" not in cut and "ColorNoiseReduction" not in cut and cut["Contrast2012"] == 7
+
+
+def test_xmp_with_entities_is_refused():
+    """defusedxml: an uploaded preset cannot use XML entity tricks."""
+    import pytest
+    bomb = ('<x:xmpmeta xmlns:x="adobe:ns:meta/"><!DOCTYPE a [<!ENTITY e "xxxxxxxxxx">'
+            '<!ENTITY f "&e;&e;&e;&e;&e;">]><r>&f;</r></x:xmpmeta>')
+    with pytest.raises(Exception):
+        parse_xmp(bomb, "bomb.xmp")

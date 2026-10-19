@@ -639,7 +639,7 @@ auth.addEventListener('mousedown', (e) => { if (e.target === auth) auth.close();
 document.addEventListener('keydown', (e) => { if (e.code === 'KeyK' && e.altKey && e.shiftKey) openAuth('key'); });
 
 async function post(path, body) {
-  const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AutoEdits' }, body: JSON.stringify(body) });
   let data = {};
   try { data = await r.json(); } catch (x) { /* no body */ }
   return { ok: r.ok, status: r.status, detail: typeof data.detail === 'string' ? data.detail : '', data };
