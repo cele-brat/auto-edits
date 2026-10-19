@@ -2,7 +2,7 @@
      Each entry holds the develop settings of one preset, so the plug-in can apply
      them directly without needing the preset installed in Lightroom. ]]
 return {
-    { folder = "Dan Winters 01 Signature", id = "CBV-PT-DWN-01-P-FE9DC419", settings = {
+    { folder = "Oil Shadow 01 Signature", id = "CBV-PT-DWN-01-P-FE9DC419", settings = {
         Blacks2012 = -14,
         BlueHue = -6,
         BlueSaturation = 0,
@@ -81,7 +81,7 @@ return {
         ToneCurvePV2012Green = { 0, 0, 255, 255 },
         ToneCurvePV2012Blue = { 0, 0, 255, 255 },
     } },
-    { folder = "Alexi Lubomirski 03 Reception Night", id = "CBV-GL-AL-03-P-5DCF7631", settings = {
+    { folder = "Velvet Court 03 Reception Night", id = "CBV-GL-AL-03-P-5DCF7631", settings = {
         Blacks2012 = 6,
         BlueHue = -4,
         BlueSaturation = 6,
@@ -161,7 +161,7 @@ return {
         ToneCurvePV2012Green = { 0, 0, 255, 255 },
         ToneCurvePV2012Blue = { 0, 0, 255, 255 },
     } },
-    { folder = "Alexi Lubomirski 02 Daylight Bright", id = "CBV-GL-AL-02-P-51AF3FFF", settings = {
+    { folder = "Velvet Court 02 Daylight Bright", id = "CBV-GL-AL-02-P-51AF3FFF", settings = {
         Blacks2012 = -6,
         BlueHue = -4,
         BlueSaturation = 6,
@@ -241,7 +241,7 @@ return {
         ToneCurvePV2012Green = { 0, 0, 255, 255 },
         ToneCurvePV2012Blue = { 0, 0, 255, 255 },
     } },
-    { folder = "Corbin Gurkin 04 Soft Matte", id = "CBV-WL-CG-04-P-3776BBCD", settings = {
+    { folder = "Veil White 04 Soft Matte", id = "CBV-WL-CG-04-P-3776BBCD", settings = {
         Blacks2012 = 12,
         BlueHue = 0,
         BlueSaturation = -10,
@@ -316,7 +316,7 @@ return {
         ToneCurvePV2012Green = { 0, 0, 255, 255 },
         ToneCurvePV2012Blue = { 0, 0, 255, 255 },
     } },
-    { folder = "Thomas Heaton 02 Golden Hour", id = "CBV-LL-TH-02-P-67415C24", settings = {
+    { folder = "Honest Hills 02 Golden Hour", id = "CBV-LL-TH-02-P-67415C24", settings = {
         Blacks2012 = -6,
         BlueHue = 0,
         BlueSaturation = 4,

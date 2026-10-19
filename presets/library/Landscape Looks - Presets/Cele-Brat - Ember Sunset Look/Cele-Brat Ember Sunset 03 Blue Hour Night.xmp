@@ -1,0 +1,166 @@
+<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<!--
+  Cele-Brat Ember Sunset 03 Blue Hour Night
+  Group: Cele-Brat - Ember Sunset Look
+  A Cele-Brat original look, designed and built from scratch by CeleBrat Ventures.
+  Built for Nikon NEF raw files in Lightroom Classic / Lightroom / Camera Raw (Adobe Color profile). White balance is NOT changed by this preset.
+  Product ID: CBV-LL-RD-03-P-6F9EA35E   Version: 1.0   Owner: CeleBrat Ventures   Contact: info@cele-brat.com
+  (c) 2026 CeleBrat Ventures (www.cele-brta.com). All rights reserved. Version 1.0. This preset/LUT is licensed to the original purchaser for use on their own photographs and films only. It may not be resold, lent, shared, uploaded, bundled, copied or otherwise distributed, in whole or in part, without the prior written permission of CeleBrat Ventures. Licensing and permissions: info@cele-brat.com
+-->
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:xmpRights="http://ns.adobe.com/xap/1.0/rights/"
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+   crs:Version="17.0"
+   crs:ProcessVersion="15.4"
+   crs:Contrast2012="+12"
+   crs:Highlights2012="-8"
+   crs:Shadows2012="+14"
+   crs:Whites2012="+6"
+   crs:Blacks2012="+6"
+   crs:Texture="+4"
+   crs:Clarity2012="+2"
+   crs:Dehaze="0"
+   crs:Vibrance="+6"
+   crs:Saturation="-2"
+   crs:ParametricShadows="0"
+   crs:ParametricDarks="0"
+   crs:ParametricLights="0"
+   crs:ParametricHighlights="0"
+   crs:ParametricShadowSplit="25"
+   crs:ParametricMidtoneSplit="50"
+   crs:ParametricHighlightSplit="75"
+   crs:HueAdjustmentRed="0"
+   crs:HueAdjustmentOrange="0"
+   crs:HueAdjustmentYellow="-4"
+   crs:HueAdjustmentGreen="-6"
+   crs:HueAdjustmentAqua="0"
+   crs:HueAdjustmentBlue="+2"
+   crs:HueAdjustmentPurple="0"
+   crs:HueAdjustmentMagenta="0"
+   crs:SaturationAdjustmentRed="+4"
+   crs:SaturationAdjustmentOrange="-4"
+   crs:SaturationAdjustmentYellow="-8"
+   crs:SaturationAdjustmentGreen="+4"
+   crs:SaturationAdjustmentAqua="-6"
+   crs:SaturationAdjustmentBlue="+6"
+   crs:SaturationAdjustmentPurple="+4"
+   crs:SaturationAdjustmentMagenta="0"
+   crs:LuminanceAdjustmentRed="0"
+   crs:LuminanceAdjustmentOrange="+6"
+   crs:LuminanceAdjustmentYellow="+4"
+   crs:LuminanceAdjustmentGreen="0"
+   crs:LuminanceAdjustmentAqua="0"
+   crs:LuminanceAdjustmentBlue="-2"
+   crs:LuminanceAdjustmentPurple="0"
+   crs:LuminanceAdjustmentMagenta="0"
+   crs:SplitToningShadowHue="30"
+   crs:SplitToningShadowSaturation="14"
+   crs:SplitToningHighlightHue="45"
+   crs:SplitToningHighlightSaturation="16"
+   crs:SplitToningBalance="+5"
+   crs:ColorGradeMidtoneHue="40"
+   crs:ColorGradeMidtoneSat="10"
+   crs:ColorGradeMidtoneLum="0"
+   crs:ColorGradeShadowLum="-2"
+   crs:ColorGradeHighlightLum="+4"
+   crs:ColorGradeGlobalHue="0"
+   crs:ColorGradeGlobalSat="0"
+   crs:ColorGradeGlobalLum="0"
+   crs:ColorGradeBlending="50"
+   crs:ShadowTint="0"
+   crs:RedHue="+2"
+   crs:RedSaturation="+8"
+   crs:GreenHue="-6"
+   crs:GreenSaturation="+2"
+   crs:BlueHue="-4"
+   crs:BlueSaturation="+4"
+   crs:GrainAmount="0"
+   crs:GrainSize="25"
+   crs:GrainFrequency="50"
+   crs:PostCropVignetteAmount="-6"
+   crs:PostCropVignetteMidpoint="50"
+   crs:PostCropVignetteFeather="60"
+   crs:PostCropVignetteRoundness="0"
+   crs:PostCropVignetteStyle="1"
+   crs:PostCropVignetteHighlightContrast="0"
+   crs:ConvertToGrayscale="False"
+   crs:ToneCurveName2012="Custom"
+   crs:CameraProfile="Adobe Color"
+   crs:LookTable="E1095149FDB39D7A057BAB208837E2E1"
+   crs:HasSettings="True"
+   crs:PresetType="Normal"
+   crs:Cluster=""
+   crs:UUID="8315E096805E46E682F297F1F943362E"
+   crs:SupportsAmount="True"
+   crs:SupportsColor="True"
+   crs:SupportsMonochrome="True"
+   crs:SupportsHighDynamicRange="True"
+   crs:SupportsNormalDynamicRange="True"
+   crs:SupportsSceneReferred="True"
+   crs:SupportsOutputReferred="True"
+   xmpRights:Marked="True"
+   xmpRights:WebStatement="https://www.cele-brta.com"
+   xmpRights:Owner="CeleBrat Ventures"
+   dc:identifier="CBV-LL-RD-03-P-6F9EA35E"
+   xmp:Identifier="CBV-LL-RD-03-P-6F9EA35E"
+   xmp:Label="CeleBrat Ventures v1.0">
+   <crs:Name>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Cele-Brat Ember Sunset 03 Blue Hour Night</rdf:li>
+    </rdf:Alt>
+   </crs:Name>
+   <crs:Group>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Cele-Brat - Ember Sunset Look</rdf:li>
+    </rdf:Alt>
+   </crs:Group>
+   <dc:creator>
+    <rdf:Seq>
+     <rdf:li>Cele-Brat Premium Weddings (www.cele-brta.com)</rdf:li>
+    </rdf:Seq>
+   </dc:creator>
+   <dc:rights>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">(c) 2026 CeleBrat Ventures (www.cele-brta.com). All rights reserved. Version 1.0. This preset/LUT is licensed to the original purchaser for use on their own photographs and films only. It may not be resold, lent, shared, uploaded, bundled, copied or otherwise distributed, in whole or in part, without the prior written permission of CeleBrat Ventures. Licensing and permissions: info@cele-brat.com Product ID: CBV-LL-RD-03-P-6F9EA35E</rdf:li>
+    </rdf:Alt>
+   </dc:rights>
+   <dc:description>
+    <rdf:Alt>
+     <rdf:li xml:lang="x-default">Golden glow: median ~76, warm brown shadows (48,37,30), very warm highlights (238,200,140), red+orange 59% of colour mass, saturation 0.39, foliage vivid (0.59), little blue sky. Best for: Sunset and sunrise frames, backlit forests, golden-hour couples in fields, desert and dune scenes, warm autumn. Not for midday blue-sky frames (it warms everything).</rdf:li>
+    </rdf:Alt>
+   </dc:description>
+   <crs:ToneCurvePV2012>
+    <rdf:Seq>
+      <rdf:li>0, 0</rdf:li>
+      <rdf:li>28, 22</rdf:li>
+      <rdf:li>128, 132</rdf:li>
+      <rdf:li>208, 214</rdf:li>
+      <rdf:li>255, 252</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012>
+   <crs:ToneCurvePV2012Red>
+    <rdf:Seq>
+      <rdf:li>0, 0</rdf:li>
+      <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012Red>
+   <crs:ToneCurvePV2012Green>
+    <rdf:Seq>
+      <rdf:li>0, 0</rdf:li>
+      <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012Green>
+   <crs:ToneCurvePV2012Blue>
+    <rdf:Seq>
+      <rdf:li>0, 0</rdf:li>
+      <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012Blue>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>

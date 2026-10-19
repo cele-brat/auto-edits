@@ -2,7 +2,7 @@
 
 ## 1. The 3-step workflow (every image)
 1. Set White Balance first (As-Shot, a grey-card value, or your own eyedropper). The presets never touch WB, so this stays yours.
-2. Apply the preset. Pick the look (studio/photographer), then the variation that matches the light (see section 2).
+2. Apply the preset. Pick the look, then the variation that matches the light (see section 2).
 3. Fix Exposure only if needed (+/- 0.3 to 0.7 is normal). Done. Do not stack two looks on one image.
 
 Sync the same preset across the whole event with Sync / Auto Sync, then fix exposure per frame.
@@ -19,38 +19,38 @@ Sync the same preset across the whole event with Sync / Auto Sync, then fix expo
 Rule of thumb: one look per wedding, 01 for most frames, 02 for bright outdoor, 03 for receptions, 04 for soft portraits, 05 for hero frames.
 
 ## 3. Which look for which wedding
-Studio Looks (Indian studios)
+Studio Looks (Indian weddings)
 
-- Full-day mixed coverage, client-safe colours: KnotsbyAMP, Shutterink.
-- Bright destination / lawn / beach / pastel decor: The Wedding Story (day), KnotsbyAMP.
-- Bold, saturated, magazine-style hero frames: Joseph Radhik, Gautam Khullar.
-- Night receptions, fairy lights, low-key drama: Fourfold Pictures, Gautam Khullar (03 at night).
-- South-Indian silk / temple / gold: Studio A, WeddingNama.
-- Soft romantic couple portraits and pre-weddings: Vivek Krishnan, Ramit Batra (04).
-- Palace / heritage / golden hour editorial: Ramit Batra, Fourfold Pictures.
+- Full-day mixed coverage, client-safe colours: True Colour, Ritual Story.
+- Bright destination / lawn / beach / pastel decor: Lawn Pastel (day), True Colour.
+- Bold, saturated, magazine-style hero frames: Lehenga Red, Phera Fire.
+- Night receptions, fairy lights, low-key drama: Candlelight Reception, Phera Fire (03 at night).
+- South-Indian silk / temple / gold: Temple Silk, Mehendi Pop.
+- Soft romantic couple portraits and pre-weddings: Soft Sangeet, Palace Matte (04).
+- Palace / heritage / golden hour editorial: Palace Matte, Candlelight Reception.
 
-World Looks (fine-art photographers)
+World Looks (fine-art weddings)
 
-- Safe all-day "house" looks: Pablo Laguia, John Dolan, David Bastianoni, Abby Jiu.
-- Bright, airy destination / pastel: KT Merry, Joel Serrato, Corbin Gurkin (strongest), James x Schulze (gardens).
-- Golden warm outdoor and sunset: Jose Villa, Cinzia Bruschini, Norman and Blake, Bottega53.
-- Moody, dramatic, low light and night: Erich McVey, Nirav Patel, Mili Ghosh (03 at receptions).
-- Documentary / candid: Samm Blake, John Dolan, Heather Waraksa.
-- Editorial and fashion-led: Kristen Marie Parker, Anni Graham, Greg Finck.
-- Reds, maroons, sindoor outfits: Nirav Patel, Mili Ghosh, Jose Villa (05).
+- Safe all-day "house" looks: Easy Classic, Pure Reportage, Black Tie, Quiet Luxe.
+- Bright, airy destination / pastel: Sea Breeze, Ivory Morning, Veil White (strongest), Spring Estate (gardens).
+- Golden warm outdoor and sunset: Golden Mandap, Tuscan Sun, Backlit Bliss, Villa Stone.
+- Moody, dramatic, low light and night: Forest Vows, Lantern Night, Sindoor (03 at receptions).
+- Documentary / candid: Baraat Energy, Pure Reportage, Timeless Window.
+- Editorial and fashion-led: Poolside Edit, Desert Film, Olive Grove.
+- Reds, maroons, sindoor outfits: Lantern Night, Sindoor, Golden Mandap (05).
 
-Glamour Looks (cover photographers) - for portraits and hero frames, not full documentary coverage
+Glamour Looks (cover-style portraits) - for portraits and hero frames, not full documentary coverage
 
-- Safest glamour on Indian skin: Alexi Lubomirski, Zoey Grossman, Greg Williams.
-- Sunny / golden-hour cover portraits: Mario Testino, Zoey Grossman.
-- Studio-style and flash-lit portraits, black-tie: Inez and Vinoodh, Luigi and Iango.
-- Stylised colour (pink, lilac, neon, bold decor): Nick Knight, Txema Yeste, Emma Summerton (use Amount 50-70%).
-- Moody cinematic night / grooms: Norman Jean Roy (03 at receptions).
-- Rose / blush weddings, bridal makeup close-ups: Luigi and Iango, Nick Knight.
+- Safest glamour on Indian skin: Velvet Court, Haldi Sun, Backstage Gold.
+- Sunny / golden-hour cover portraits: Sunlit Cover, Haldi Sun.
+- Studio-style and flash-lit portraits, black-tie: Ink and Ivory, Rosewater.
+- Stylised colour (pink, lilac, neon, bold decor): Candy Chrome, Colour Riot, Pop Bloom (use Amount 50-70%).
+- Moody cinematic night / grooms: Midnight Teal (03 at receptions).
+- Rose / blush weddings, bridal makeup close-ups: Rosewater, Candy Chrome.
 
 ## 4. The Amount slider
-Lightroom Classic 11+ shows an Amount slider above the preset list. 100% = as designed. 60-80% softens a strong look (Glamour, Joseph Radhik,
-Gautam Khullar, Txema Yeste, Emma Summerton); 120-150% pushes a gentle look (KT Merry, Pablo Laguia) harder.
+Lightroom Classic 11+ shows an Amount slider above the preset list. 100% = as designed. 60-80% softens a strong look (Glamour, Lehenga Red,
+Phera Fire, Colour Riot, Pop Bloom); 120-150% pushes a gentle look (Sea Breeze, Easy Classic) harder.
 
 ## 5. Skin tone
 
@@ -76,29 +76,29 @@ within +/-2 RGB of each other on the same scene, so photos and video from one we
 Support and licensing: info@cele-brat.com
 
 ## Landscape Looks (LL) - which look for which scene
-- Safe all-round outdoor looks: Daniel Kordan, Thomas Heaton, Charlie Waite, Albert Dros.
-- Mountains, snow, Ladakh / Spiti / Himalaya: Colin Prior, Marc Adamus, Max Rive, Erin Babnik (blue hour).
-- Golden hour, deserts, dunes, Rajasthan sunsets: Ryan Dyar, Art Wolfe, Sean Bagshaw.
-- Forests, waterfalls, monsoon green, mist: Enrico Fossati, Sean Bagshaw, Ted Gore, Alex Noriega (soft matte).
-- Coast, sea, night sky: Michael Shainblum, Joe Cornish, Hans Strand (muted).
-- Travel / cityscape / forts against blue sky: Elia Locardi, Peter Lik (hero prints), Albert Dros.
-- Bright natural daylight: Nigel Danson, Thomas Heaton, Joe Cornish.
+- Safe all-round outdoor looks: Clear Lake, Honest Hills, Quiet Meadow, Mustard Fields.
+- Mountains, snow, Ladakh / Spiti / Himalaya: Glacier Air, Thunder Ridge, Storm Peak, Twilight Pastel (blue hour).
+- Golden hour, deserts, dunes, Rajasthan sunsets: Ember Sunset, Wild Earth, Fern Gorge.
+- Forests, waterfalls, monsoon green, mist: Monsoon Castle, Fern Gorge, Dark Cascade, Blue Mist (soft matte).
+- Coast, sea, night sky: Night Tide, Heather Coast, Nordic Frost (muted).
+- Travel / cityscape / forts against blue sky: Fort Skyline, Gallery Canyon (hero prints), Mustard Fields.
+- Bright natural daylight: Autumn Moor, Honest Hills, Heather Coast.
 Landscape variations: 01 Signature, 02 Golden Hour, 03 Blue Hour Night, 04 Overcast Mist, 05 Dramatic.
 These looks never change Exposure, Temperature or Tint - set exposure and WB first, then apply.
 
 ## Street Looks (ST) - which look for which frame
-- Safe all-day documentary: Nick Turpin, Pau Buscato, Nils Jorgensen, Joel Meyerowitz (soft).
-- Colourful Indian street, markets, processions, Holi: Steve McCurry, Maciej Dakowicz, Alex Webb, Harry Gruyaert.
-- Bright daylight, sun, beaches, crowds: Martin Parr, Matt Stuart, Melissa O'Shaughnessy, Jesse Marlow.
-- Night, neon, rain, blue hour: Joshua K Jackson, Craig Whitehead, Rammy Narula, Gueorgui Pinkhassov.
-- Hard light and graphic frames: Siegfried Hansen, Mark Fearnley, Jesse Marlow. Flash candids / parties: Dougie Wallace, Martin Parr, Constantine Manos.
+- Safe all-day documentary: Bus Window, Street Wit, Small Moments, Seventies Walk (soft).
+- Colourful Indian street, markets, processions, Holi: Pushkar Colour, Market Night, Layer Bazaar, Evening Block.
+- Bright daylight, sun, beaches, crowds: Pool Flash, Sunny Side, Pastel Avenue, Noon Graphic.
+- Night, neon, rain, blue hour: Rain Neon, Red Umbrella, Platform Glow, Prism Street.
+- Hard light and graphic frames: Hard Lines, Light Shaft, Noon Graphic. Flash candids / parties: Flash Riot, Pool Flash, Fair Day.
 Street variations: 01 Signature, 02 Harsh Sun, 03 Night Neon, 04 Overcast Flat, 05 Punchy. These looks never change Exposure, Temperature or Tint.
 
 ## Portrait Looks (PT) - which look for which portrait
-- Safe all-round: Mark Seliger, Art Streiber, Lara Jade, Rohan Shrestha.
-- Bridal beauty / window light: Sue Bryce, Jingna Zhang, Brandon Woelfel (night glow), Prasad Naik (clean).
-- Studio / white background / headshots: Peter Hurley, Rankin, Prasad Naik, Lindsay Adler (black background).
-- Dramatic, cinematic grooms and couples: Dan Winters, Marco Grob, Gregory Heisler, Joey L.
-- Outdoor environmental / golden hour: Miller Mobley, Joey L, Jimmy Nelson, Nadav Kander (muted).
-- Character faces: Martin Schoeller, Jimmy Nelson. Coloured light / LED stages: Jake Hicks, Gregory Heisler.
+- Safe all-round: Grand Room, Grand Ensemble, Cream Couture, Filmi Glam.
+- Bridal beauty / window light: Window Glow, Silk Canvas, Fairy Lights (night glow), Cover Story (clean).
+- Studio / white background / headshots: Clean Frame, Seamless Gloss, Cover Story, Red Lip Noir (black background).
+- Dramatic, cinematic grooms and couples: Oil Shadow, Blue Hour Power, Sculpted Light, Rembrandt Dust.
+- Outdoor environmental / golden hour: Ranch Gold, Rembrandt Dust, Heritage Plate, Still Matte (muted).
+- Character faces: Close Focus, Heritage Plate. Coloured light / LED stages: Neon Gel, Sculpted Light.
 Portrait variations: 01 Signature, 02 Window Light, 03 Studio Flash, 04 Soft Beauty, 05 Editorial Punch. Never change Exposure, Temperature or Tint.

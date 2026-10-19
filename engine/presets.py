@@ -50,9 +50,9 @@ TOGGLE_KEYS = {
 class Preset:
     id: str
     uuid: str
-    name: str            # name stored in the file, e.g. "Cele-Brat MG 01 Signature"
-    display_name: str    # full name shown in the app, e.g. "Marco Grob 01 Signature"
-    look: str            # "Marco Grob"
+    name: str            # name stored in the file, e.g. "Cele-Brat Blue Hour Power 01 Signature"
+    display_name: str    # full name shown in the app, e.g. "Blue Hour Power 01 Signature"
+    look: str            # "Blue Hour Power"
     variant: str         # "01 Signature"
     group: str
     pack: str
@@ -83,8 +83,8 @@ def _num(value: str):
 def split_name(name: str, group: str) -> tuple[str, str, str]:
     """Full look name and variant from the stored name and group.
 
-    "Cele-Brat MG 01 Signature" in group "Cele-Brat - Marco Grob Look"
-    -> ("Marco Grob", "01 Signature", "Marco Grob 01 Signature")
+    "Cele-Brat MG 01 Signature" in group "Cele-Brat - Blue Hour Power Look"
+    -> ("Blue Hour Power", "01 Signature", "Blue Hour Power 01 Signature")
     """
     g = re.match(r"^Cele-Brat\s*-\s*(.+?)\s+Look$", group.strip())
     look = g.group(1) if g else ""             # only the "Cele-Brat - <Look> Look" packs carry a look name

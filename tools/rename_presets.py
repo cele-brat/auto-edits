@@ -1,6 +1,6 @@
 """Write a copy of a preset pack in which every preset carries its full look name.
 
-"Cele-Brat MG 01 Signature" becomes "Cele-Brat Marco Grob 01 Signature" in the
+"Cele-Brat MG 01 Signature" becomes "Cele-Brat Blue Hour Power 01 Signature" in the
 file name, in the name Lightroom shows, and in the header comment. Settings,
 Product IDs and UUIDs are untouched, so importing the copy into Lightroom
 replaces the short-named presets instead of duplicating them.
