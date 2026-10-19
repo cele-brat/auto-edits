@@ -653,3 +653,8 @@ input[type=range].fine-drag { cursor: col-resize; }
 #turn-panel p { margin: 6px 0 0; }
 #toolbar .turns { display: inline-flex; gap: 1px; }
 #toolbar .turns button { padding: 3px 6px; }
+
+/* "Spend 13 credits?" under a dialog's Start button */
+.spend { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--marigold); border-radius: 8px; background: var(--marigold-wash); }
+.spend[hidden] { display: none; }
+.spend p { margin: 0 auto 0 0 !important; color: var(--text) !important; font-weight: 600; }

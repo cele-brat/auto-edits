@@ -291,6 +291,9 @@
     <button id="cull-close" type="button" class="quiet">Close</button>
     <button id="cull-start" type="button" class="primary">Start culling</button>
   </div>
+  <div class="spend" id="cull-spend" role="alertdialog" aria-labelledby="cull-spend-text" hidden>
+    <p id="cull-spend-text"></p><button id="cull-spend-no" type="button" class="quiet">Not now</button><button id="cull-spend-yes" type="button" class="primary"></button>
+  </div>
   <p class="keys">Change a rating yourself: select a photo and press <b>3</b> Keep, <b>2</b> Maybe, <b>1</b> Reject, <b>0</b> back to automatic.</p>
 </dialog>
 
@@ -327,6 +330,9 @@
   <div class="row end">
     <button id="export-close" type="button" class="quiet">Close</button>
     <button id="export-start" type="button" class="primary">Start export</button>
+  </div>
+  <div class="spend" id="export-spend" role="alertdialog" aria-labelledby="export-spend-text" hidden>
+    <p id="export-spend-text"></p><button id="export-spend-no" type="button" class="quiet">Not now</button><button id="export-spend-yes" type="button" class="primary"></button>
   </div>
   <h3 class="sub">Exports of this wedding</h3>
   <ul id="export-list"></ul>

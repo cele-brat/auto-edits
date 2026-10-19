@@ -25,6 +25,7 @@ uses no preset and switches every toggle on.
 from __future__ import annotations
 
 import json
+import re
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -352,32 +353,36 @@ _MARKS: dict = {}
 
 
 def preview_mark(img: np.ndarray, text: str = "AUTO EDITS  ·  PREVIEW") -> np.ndarray:
-    """Light but thick lettering across the whole picture, for previews before export:
-    easy to see through, hard to crop or paint out. Works on a 0..1 float image."""
+    """A faint, small mark for previews before export: a few short lines across the picture, light
+    enough to judge skin and colour through, still there if the picture is copied. Works on a 0..1
+    float image. (Previews for photographers are also capped at 1600 px: server/main.py.)"""
     h, w = img.shape[:2]
     key = (h, w, text)
     m = _MARKS.get(key)
     if m is None:
         from PIL import Image, ImageDraw, ImageFont
-        size = max(18, round(0.065 * max(h, w)))
+        size = max(12, round(0.026 * max(h, w)))
         font = ImageFont.load_default(size)
         side = int((h * h + w * w) ** 0.5) + 2 * size
         layer = Image.new("L", (side, side), 0)
         draw = ImageDraw.Draw(layer)
-        box = draw.textbbox((0, 0), text, font=font, stroke_width=max(2, size // 9))
+        box = draw.textbbox((0, 0), text, font=font)
         tw, th = box[2] - box[0], box[3] - box[1]
-        step_y = int(th * 3.2)
-        for row, y in enumerate(range(0, side, step_y)):
-            x0 = -(row % 2) * (tw // 2)
-            for x in range(x0, side, int(tw * 1.25)):
-                draw.text((x, y), text, font=font, fill=255, stroke_width=max(2, size // 9), stroke_fill=255)
+        step_y = max(th * 4, side // 5)                 # about four or five lines down the picture
+        for row, y in enumerate(range(step_y // 2, side, step_y)):
+            x0 = (row % 2) * int(tw * 1.4)
+            for x in range(x0, side, int(tw * 2.8)):
+                draw.text((x, y), text, font=font, fill=255)
         layer = layer.rotate(28, resample=Image.BILINEAR)
         left, top = (side - w) // 2, (side - h) // 2
         m = np.asarray(layer.crop((left, top, left + w, top + h))).astype(np.float32)[..., None] / 255.0
         if len(_MARKS) > 16:
             _MARKS.clear()
         _MARKS[key] = m
-    return img + (1.0 - img) * (0.16 * m)
+    return img + (1.0 - img) * (MARK_STRENGTH * m)
+
+
+MARK_STRENGTH = 0.07
 
 
 def show_mask(img: np.ndarray, mask: np.ndarray) -> np.ndarray:
@@ -406,6 +411,90 @@ class _Cache:
         """The kept value, or None, without making it or changing what is kept."""
         with self.lock:
             return self.items.get(key)
+
+
+# ---- plain words for the preset picker (search and the one-line description) ----------------------
+_WORDS = ["haldi", "mehendi", "mehndi", "sangeet", "reception", "baraat", "mandap", "pheras", "wedding", "pre-wedding",
+          "bride", "groom", "couple", "portrait", "candid", "night", "evening", "daylight", "sunset", "golden hour",
+          "indoor", "outdoor", "street", "landscape", "beach", "temple", "palace", "heritage", "festival", "party",
+          "flash", "window light", "studio", "fashion", "travel", "teal", "pastel", "matte", "film", "moody", "dramatic",
+          "cinematic", "soft", "muted", "natural", "clean", "rich", "glow", "romantic", "elegant", "vintage"]
+
+
+def _median(text: str):
+    m = re.search(r"median\D{0,4}(\d{2,3})", text)
+    return int(m.group(1)) if m else None
+
+
+def preset_tags(p: dict) -> list[str]:
+    """Plain search words for a built-in preset, worked out from its settings and its notes:
+    warm, cool, bright, dark, moody, matte, film, vibrant, soft, pastel, black and white, and the
+    wedding events and light it suits."""
+    s, text = p.get("settings") or {}, (p.get("description") or "").lower()
+    look, _, best = text.partition("best for:")             # how it looks / what it suits
+    best = re.split(r"\. (?:avoid|not for|use |strong|dark look|very safe)", best)[0]
+    num = lambda k: float(s[k]) if isinstance(s.get(k), (int, float)) and not isinstance(s.get(k), bool) else 0.0
+    head = look.split(":", 1)[0]
+    tags = set()
+    sat_m = re.search(r"saturation \(?(0\.\d+)", look)
+    sat = float(sat_m.group(1)) if sat_m else None
+    if s.get("ConvertToGrayscale") is True or "monochrome" in head or (sat is not None and sat <= 0.1):
+        tags |= {"black and white", "monochrome", "bw"}
+    warm = look.count("warm") + (1 if 0 < num("ColorGradeMidtoneHue") < 70 and num("ColorGradeMidtoneSat") >= 4 else 0)
+    cool = look.count("cool") + look.count("blue") + look.count("teal") + (1 if 160 < num("ColorGradeMidtoneHue") < 260 else 0)
+    if warm > cool + 1:
+        tags.add("warm")
+    elif cool > warm:
+        tags.add("cool")
+    median = _median(look)
+    if median is not None:
+        if median >= 115:
+            tags |= {"bright", "airy"}
+        elif median <= 80:
+            tags.add("dark")
+    elif "bright" in head or "high-key" in head:
+        tags |= {"bright", "airy"}
+    elif "dark" in head or "low-key" in head:
+        tags.add("dark")
+    if any(w in head for w in ("moody", "dramatic", "cinematic", "dark", "noir")) or (median is not None and median <= 60):
+        tags.add("moody")
+    curve = (p.get("curves") or {}).get("ToneCurvePV2012") or []
+    if (curve and curve[0][1] >= 15) or any(w in head for w in ("matte", "faded", "lifted")):
+        tags |= {"matte", "faded"}
+    if num("GrainAmount") > 0 or any(w in head for w in ("film", "kodachrome", "kodak", "analog")):
+        tags.add("film")
+    if (sat is not None and sat >= 0.4) or any(w in head for w in ("vivid", "bold", "pop", "saturat", "punch")):
+        tags |= {"vibrant", "colourful", "colorful", "punchy"}
+    if (sat is not None and sat <= 0.26) or any(w in head for w in ("muted", "restrained", "soft", "pastel")):
+        tags |= {"muted", "soft"}
+    if "pastel" in look:
+        tags |= {"pastel", "soft"}
+    for w in _WORDS:
+        if w in best or w in head:
+            tags.add(w)
+    if "mehendi" in tags:
+        tags.add("mehndi")
+    return sorted(tags)
+
+
+def plain_about(p: dict) -> str:
+    """One plain line instead of the technical notes ("median ~75, p1 ~7..."): the look's own name for
+    itself and what it is best for. The full notes stay in the data."""
+    text = (p.get("description") or "").strip()
+    if not text:
+        return ""
+    head = text.split(":", 1)[0].strip() if ":" in text.split(".", 1)[0] else ""
+    best = ""
+    m = re.search(r"Best for:\s*(.+?)(?:\.\s|\.$|$)", text, re.S)
+    if m:
+        parts = [x.strip() for x in m.group(1).split(",") if x.strip()]
+        best = ", ".join(parts[:3])
+        best = best[0].lower() + best[1:] if best[:2] != best[:2].upper() else best
+    if head and best:
+        return f"{head}. Best for {best}."
+    if best:
+        return f"Best for {best}."
+    return head or text.split(".")[0][:140]
 
 
 class Renderer:
@@ -447,7 +536,8 @@ class Renderer:
             if mine and owner is not None and p.get("owner") != owner:
                 continue
             out.append({"id": p["id"], "name": p["display_name"], "look": p["look"], "variant": p["variant"],
-                        "pack": p["pack"], "about": p["description"], "mine": mine, "made": bool(p.get("made")),
+                        "pack": p["pack"], "about": p["description"] if mine else plain_about(p),
+                        "tags": [] if mine else preset_tags(p), "mine": mine, "made": bool(p.get("made")),
                         "own_masks": sorted((p.get("app_masks") or {}).keys()), "wb": p.get("app_wb") or None,
                         "s": {k: v for k, v in p["settings"].items()
                               if k in adjustments.SLIDERS and isinstance(v, (int, float)) and not isinstance(v, bool)

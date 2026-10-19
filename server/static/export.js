@@ -46,25 +46,44 @@ async function refreshExports() {
   } catch (err) { $('export-error').textContent = err.message; }
 }
 
+// Ratings start at "Keep only" once any photo in the chosen part is rated (culled or by hand), else "Every photo".
+function defaultRatings(photos, scope) {
+  const inScope = photos.filter((p) => scope === '' || p.folder === +scope);
+  return inScope.some((p) => p.pick || (p.cull && p.cull.r)) ? 'keep' : '';
+}
 $('export-open').onclick = () => {
   if (!S.wedding) return;
   const whole = new Option(`Whole wedding (${S.wedding.photos} photos)`, '');
   $('export-scope').replaceChildren(whole, ...S.wedding.folders.map((f) => new Option(`Only “${f.name}”`, f.id)));
   $('export-error').textContent = '';
+  Ex.ratingsTouched = false;
+  $('export-ratings').value = defaultRatings(S.photos, $('export-scope').value);
   exportCost();
   $('export').showModal();
   refreshExports();
 };
-function exportCost() {
+function exportCount() {
   const scope = $('export-scope').value, ratings = $('export-ratings').value ? $('export-ratings').value.split(',') : [];
-  const n = S.photos.filter((p) => (scope === '' || p.folder === +scope) &&
+  return S.photos.filter((p) => (scope === '' || p.folder === +scope) &&
     (!ratings.length || ratings.includes(p.pick || (p.cull || {}).r))).length;
-  $('export-cost').textContent = window.costLine ? costLine(n, `${n} photo${n === 1 ? '' : 's'} at 1 credit each`) : '';
 }
-$('export-scope').onchange = exportCost;
-$('export-ratings').onchange = exportCost;
+function exportCost() {
+  const n = exportCount();
+  $('export-cost').textContent = window.costLine ? costLine(n, `${n} photo${n === 1 ? '' : 's'} at 1 credit each`) : '';
+  if (window.hideSpend) hideSpend('export');
+  $('export-start').textContent = n ? `Export ${n} photo${n === 1 ? '' : 's'}` + (window.Acc && Acc.unlimited ? '' : ` · ${n} credit${n === 1 ? '' : 's'}`) : 'Nothing to export';
+  $('export-start').disabled = !n;
+}
+$('export-scope').onchange = () => { if (!Ex.ratingsTouched) $('export-ratings').value = defaultRatings(S.photos, $('export-scope').value); exportCost(); };
+$('export-ratings').onchange = () => { Ex.ratingsTouched = true; exportCost(); };
+for (const id of ['export-size', 'export-quality', 'export-watermark']) $(id).addEventListener('input', () => { if (window.hideSpend) hideSpend('export'); });
 $('export-close').onclick = () => { $('export').close(); clearTimeout(Ex.timer); };
-$('export-start').onclick = async () => {
+$('export-start').onclick = () => {
+  const n = exportCount();
+  if (!n) return;
+  askSpend('export', n, startExport);
+};
+async function startExport() {
   $('export-error').textContent = '';
   $('export-start').disabled = true;
   try {
@@ -77,4 +96,4 @@ $('export-start').onclick = async () => {
   $('export-start').disabled = false;
   if (window.refreshCredits) refreshCredits().then(exportCost);
   refreshExports();
-};
+}

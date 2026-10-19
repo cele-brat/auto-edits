@@ -14,6 +14,26 @@ function costLine(credits, what) {
   return `${what}: ${credits} credit${credits === 1 ? '' : 's'}. You have ${Acc.credits}.` + (short ? ' That is not enough yet.' : '');
 }
 
+// "Spend 13 credits?" before culling or exporting (not on the studio account, which is never charged).
+// The question shows inside the dialog, next to its Start button; Esc or a change to the settings hides it.
+function askSpend(which, credits, go) {
+  if (Acc.unlimited) return go();
+  const box = $(`${which}-spend`);
+  $(`${which}-spend-text`).textContent = `Spend ${credits} credit${credits === 1 ? '' : 's'}? You have ${Acc.credits.toLocaleString('en-IN')}.`;
+  $(`${which}-spend-yes`).textContent = `Yes, spend ${credits}`;
+  $(`${which}-spend-yes`).onclick = () => { hideSpend(which); go(); };
+  $(`${which}-spend-no`).onclick = () => hideSpend(which);
+  box.hidden = false;
+  $(`${which}-start`).hidden = true;
+  $(`${which}-spend-yes`).focus();
+}
+function hideSpend(which) {
+  const box = $(`${which}-spend`);
+  if (!box || box.hidden) return;
+  box.hidden = true;
+  $(`${which}-start`).hidden = false;
+}
+
 function notice(text, action, run) {
   $('notice-text').textContent = text;
   $('notice-action').hidden = !action;

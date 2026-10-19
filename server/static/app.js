@@ -496,7 +496,11 @@ function buildLooks() {
 
 function shownLooks() {
   const q = S.query.trim().toLowerCase();
-  return S.looks.filter((l) => (!q || l.pack.toLowerCase().includes(q) || l.look.toLowerCase().includes(q) || l.variants.some((v) => v.variant.toLowerCase().includes(q))));
+  if (!q) return S.looks;
+  // every word must match the name, pack, variant, the plain mood words (warm, moody, haldi…) or the description
+  const words = q.split(/\s+/);
+  const text = (l) => l.text || (l.text = [l.pack, l.look, ...l.variants.flatMap((v) => [v.variant, (v.tags || []).join(' '), v.about || ''])].join(' ').toLowerCase());
+  return S.looks.filter((l) => words.every((w) => text(l).includes(w)));
 }
 
 // The Presets panel, as in Lightroom: one folding group per pack, its looks inside; a look with
