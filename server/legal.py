@@ -100,8 +100,10 @@ needed.</li>
 ask for support, to fix a problem with your account or the service, or to keep the service safe. Every such access is
 recorded. We never sell your photos, never share them or show them to other photographers or anyone else, and never use
 them in our own marketing without your written permission.</li>
-<li>Keep your own copies. Auto Edits is a working tool, not an archive: we may set a period after which old uploads
-and exports are removed, and we will email you at least 14 days before anything of yours is removed under such a rule.</li>
+<li>Keep your own copies. Auto Edits is a working tool, not an archive. A wedding that has not been opened, edited or
+exported for 180 days has its uploaded photos and exports removed from our servers. We email you 14 days before and
+again the day before; opening the wedding, or clicking "Keep for 180 more days" in the Account window, keeps it for
+another 180 days. The wedding's name and your credit history are kept.</li>
 </ol>
 
 <h2>5. Fair use</h2>
@@ -117,7 +119,8 @@ our total liability to you is limited to the amount you paid us in the 3 months 
 </ol>
 
 <h2>7. Closing your account</h2>
-<p>You can stop using Auto Edits at any time. To close your account and remove your photos, {_reach()}. We may close
+<p>You can stop using Auto Edits at any time. To close your account and remove your photos, use Account window ›
+Security › Delete my account (we email you a link to confirm), or {_reach()}. We may close
 accounts that break these terms. Unused bought credits are handled as in the <a href="/refunds">Refund policy</a>.</p>
 
 <h2>8. Changes and law</h2>
@@ -169,10 +172,11 @@ receives what it needs for that job.</li>
 
 <h2>5. How long we keep it</h2>
 <ol>
-<li>Photos and account data: while your account is open. When you ask us to close your account, we remove your photos
-and personal data within 30 days. Daily backups of account data are kept for 30 days and then deleted.</li>
+<li>Photos and account data: while your account is open. You can delete your account yourself from the Account window
+(Security › Delete my account). We email you a link; when you open it your photos, exports, presets, name and email are
+removed at once. Daily backups of account data are kept for 30 days and then deleted.</li>
 <li>Credit, payment and invoice records: as long as tax law requires (currently 8 years), even after an account is
-closed.</li>
+closed, without your name or email.</li>
 </ol>
 
 <h2>6. Your rights</h2>
