@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Your photos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600&family=Playfair+Display:ital,wght@0,500;1,500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/features.css?v=1">
+</head>
+<body class="gallery-page">
+<header id="g-head">
+  <h1 id="g-name">…</h1>
+  <p id="g-sub"></p>
+  <div id="g-bar" hidden>
+    <span id="g-count"></span>
+    <button id="g-only-hearts" type="button" aria-pressed="false">Show my favourites</button>
+    <button id="g-send" type="button" class="primary">Send my selection</button>
+  </div>
+</header>
+
+<form id="g-lock" hidden>
+  <p>This gallery is private. Enter the password you were given.</p>
+  <input id="g-password" type="password" autocomplete="current-password" placeholder="Password" aria-label="Password">
+  <button type="submit" class="primary">Open</button>
+  <p id="g-lock-error" role="alert"></p>
+</form>
+
+<main id="g-grid" hidden></main>
+<p id="g-empty" hidden>Nothing to show.</p>
+<footer id="g-foot"><span>Powered by Auto Edits</span></footer>
+
+<div id="g-light" hidden role="dialog" aria-label="Photo">
+  <button id="g-close" type="button" aria-label="Close">×</button>
+  <button id="g-prev" type="button" aria-label="Previous">‹</button>
+  <img id="g-big" alt="">
+  <button id="g-next" type="button" aria-label="Next">›</button>
+  <div id="g-tools">
+    <button id="g-heart" type="button" aria-pressed="false">♥ <span>Favourite</span></button>
+    <a id="g-download" href="#" download hidden>Download</a>
+    <input id="g-comment" type="text" maxlength="500" placeholder="Add a comment for the photographer" aria-label="Comment">
+    <span id="g-saved"></span>
+  </div>
+</div>
+
+<dialog id="g-send-dialog">
+  <h2>Send your selection</h2>
+  <p id="g-send-text"></p>
+  <label>Your email (optional, so the photographer can reply)<input id="g-email" type="email" autocomplete="email" placeholder="you@example.com"></label>
+  <label>A note (optional)<textarea id="g-note" maxlength="500" rows="3"></textarea></label>
+  <p id="g-send-error" role="alert"></p>
+  <div class="row end"><button id="g-send-cancel" type="button" class="quiet">Cancel</button><button id="g-send-go" type="button" class="primary">Send</button></div>
+</dialog>
+<script src="/static/gallery.js?v=1"></script>
+</body>
+</html>

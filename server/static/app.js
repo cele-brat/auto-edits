@@ -201,7 +201,7 @@ function drawFolders() {
 // A photo's rating: the photographer's own if set, else the automatic one, else none.
 const ratingOf = (p) => p.pick || (p.cull ? p.cull.r : null);
 const wholeFolder = () => S.photos.filter((p) => p.folder === S.folderId);
-const inFolder = () => wholeFolder().filter((p) => !S.rating || ratingOf(p) === S.rating);
+const inFolder = () => wholeFolder().filter((p) => (!S.rating || ratingOf(p) === S.rating) && (!S.clientPicks || p.client_pick));
 const RATING_NAMES = { keep: 'Keep', maybe: 'Maybe', reject: 'Reject' };
 
 function thumb(p, withName, idx) {
@@ -517,7 +517,7 @@ function drawLooks() {
   const none = el('button', { type: 'button', className: 'look none', textContent: 'No preset' });
   none.setAttribute('aria-pressed', String(!chosen));
   none.onclick = () => { S.openLook = null; change({ preset: null }); };
-  const rows = [none];
+  const rows = [none, ...(window.favouriteRows ? favouriteRows(look) : [])];
   const shown = shownLooks();
   for (const pack of S.packs || []) {
     const looks = shown.filter((l) => l.pack === pack);
@@ -534,6 +534,7 @@ function drawLooks() {
       if (single && l.variants[0].variant !== l.look && l.pack === 'My presets') row.append(el('small', { textContent: l.look }));
       if (l.variants.some((v) => v.masks.length)) row.append(el('small', { className: 'has', textContent: 'masks' }));
       if (l.variants.length > 1) row.append(el('small', { textContent: String(l.variants.length) }));
+      if (window.decorateLook) decorateLook(row, l);
       row.setAttribute('aria-expanded', String(l.key === open));
       row.onclick = () => {
         if (l.key === open && !single) { S.openLook = ''; drawLooks(); return; }            // open: fold it closed
@@ -548,7 +549,7 @@ function drawLooks() {
           b.dataset.preset = v.id;
           b.setAttribute('aria-pressed', String(v.id === look.preset));
           b.onclick = () => change({ preset: v.id });
-          return b;
+          return window.decorateVariant ? decorateVariant(b, v) : b;
         })));
       } else if (l.key === open) row.dataset.preset = l.variants[0].id;
     }

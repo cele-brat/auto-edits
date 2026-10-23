@@ -71,6 +71,10 @@ class Store:
                 # Photos from before this column are not queued (DEFAULT '{}'): theirs are worked out when first needed.
                 db.execute("ALTER TABLE photos ADD COLUMN autos TEXT NOT NULL DEFAULT '{}'")
             db.execute("CREATE INDEX IF NOT EXISTS photos_autos_due ON photos (id) WHERE autos=''")
+            if "faces" not in columns:               # face boxes and per-face scores (JSON), for Compare view and retouching
+                db.execute("ALTER TABLE photos ADD COLUMN faces TEXT NOT NULL DEFAULT ''")
+            if "client_pick" not in columns:         # 1 once a client chose it in a shared gallery (server/gallery.py)
+                db.execute("ALTER TABLE photos ADD COLUMN client_pick INTEGER NOT NULL DEFAULT 0")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
@@ -317,7 +321,7 @@ class Store:
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
         q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.paid_stamp, "
-             "p.cull, p.pick, p.crop, "
+             "p.cull, p.pick, p.crop, p.client_pick, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -359,6 +363,40 @@ class Store:
         with self._db() as db:
             return bool(db.execute("UPDATE photos SET crop=? WHERE wedding_id=? AND id=?",
                                    (json.dumps(crop) if crop else "", wedding_id, photo_id)).rowcount)
+
+    # ---- faces, kept per photo for Compare view and retouching ---------------------------------
+    def get_faces(self, photo_id: str, received: float, part: str = "faces"):
+        """One kept piece ("faces": boxes and scores; "mesh": landmarks) of this copy of the photo, or None."""
+        with self._db() as db:
+            r = db.execute("SELECT faces FROM photos WHERE id=?", (photo_id,)).fetchone()
+        if not r or not r["faces"]:
+            return None
+        try:
+            kept = json.loads(r["faces"])
+        except ValueError:
+            return None
+        if not isinstance(kept, dict) or abs(float(kept.get("received") or 0) - received) >= 1:
+            return None
+        return kept.get(part)
+
+    def put_faces(self, photo_id: str, value, received: float, part: str = "faces") -> None:
+        with self._db() as db:
+            db.execute("BEGIN IMMEDIATE")
+            r = db.execute("SELECT faces FROM photos WHERE id=?", (photo_id,)).fetchone()
+            if r is None:
+                return
+            try:
+                kept = json.loads(r["faces"]) if r["faces"] else {}
+            except ValueError:
+                kept = {}
+            if not isinstance(kept, dict) or abs(float(kept.get("received") or 0) - received) >= 1:
+                kept = {"received": received}
+            kept[part] = value
+            db.execute("UPDATE photos SET faces=? WHERE id=?", (json.dumps(kept), photo_id))
+
+    def set_client_pick(self, photo_id: str, on: bool) -> bool:
+        with self._db() as db:
+            return bool(db.execute("UPDATE photos SET client_pick=? WHERE id=?", (1 if on else 0, photo_id)).rowcount)
 
     def set_pick(self, wedding_id: str, photo_id: str, pick: str) -> bool:
         """The photographer's own rating: keep, maybe, reject, or '' to go back to the automatic one."""

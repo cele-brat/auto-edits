@@ -729,7 +729,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                      "v": int(r["received"]), "w": r["meta"].get("width"), "h": r["meta"].get("height"),
                      "iso": r["meta"].get("iso"), "taken": r["taken"], "camera": r["meta"].get("camera"),
                      "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None,
-                     "crop": r["crop"]} for r in rows]
+                     "crop": r["crop"], "client_pick": bool(r.get("client_pick"))} for r in rows]
         return {"photos": rows}
 
     def photo_or_404(wedding_id: str, photo_id: str, user: dict) -> dict:
@@ -988,6 +988,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         if renderer.owner_of(preset_id) != user["id"] or not renderer.remove_uploaded(preset_id):
             raise HTTPException(404, "Only presets you uploaded can be removed.")
         store.delete_preset(preset_id)
+        if getattr(app.state, "favourites", None):
+            app.state.favourites.forget_preset(preset_id)
         return {"deleted": True}
 
     @app.put("/api/weddings/{wedding_id}/folders/{folder_id}/look")
@@ -1422,6 +1424,16 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         """The app for someone logged in, the public home page for everyone else."""
         inside = accounts.session_user(autoedits) is not None
         return FileResponse(STATIC / ("index.html" if inside else "home.html"), headers={"Cache-Control": "no-cache"})
+
+    # Feature modules (engineer C, Oct 2026): style learning, retouching faces, compare view, favourites, client galleries.
+    from . import compare, favourites, gallery, style as style_mod
+    ctx = {"signed_in": signed_in, "store": store, "renderer": renderer, "culls": culls, "drawing": drawing, "state": state,
+           "accounts": accounts, "mailer": mailer, "link_base": link_base, "client_ip": client_ip, "wedding_or_404": wedding_or_404,
+           "static": STATIC, "preview_cap": PREVIEW_CAP, "sizes": SIZES}
+    for module in (favourites, style_mod, compare, gallery):
+        app.include_router(module.make_router(ctx))
+    app.state.favourites = ctx["favourites"]
+    app.state.galleries = ctx["galleries"]
 
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
