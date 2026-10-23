@@ -214,7 +214,7 @@ def test_server_sends_absolute_white_balance_from_the_as_shot_values(app):
     assert by["raw"]["kelvin"] > 5200 and by["raw"]["kelvin"] % 50 == 0 and by["raw"]["abs_tint"] > 8
     assert "kelvin" not in by["jpg"] and by["jpg"]["incremental_temp"] == 30
     info = (ROOT / "plugin" / "AutoEdits.lrplugin" / "Info.lua").read_text()
-    assert "minor = 8" in info and "'0.8'" in (ROOT / "plugin" / "AutoEdits.lrplugin" / "SendToServer.lua").read_text()
+    assert "minor = 9" in info and "'0.9'" in (ROOT / "plugin" / "AutoEdits.lrplugin" / "SendToServer.lua").read_text()
 
 
 # ---- 2. credits given back -------------------------------------------------------------

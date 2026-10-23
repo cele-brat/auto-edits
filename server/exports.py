@@ -72,13 +72,16 @@ class Exports:
 
     # ---- making and listing ------------------------------------------------
     def create(self, wedding_id: str, size: int, quality: int, watermark: str, folder_id: int | None,
-               ratings: tuple = (), pay=None) -> dict:
+               ratings: tuple = (), pay=None, stars: int = 0) -> dict:
         """ratings: export only photos rated so (keep / maybe / reject); empty means every photo.
+        stars: only photos with at least this many stars (0: every photo).
         pay(export_id, photos) is called before anything is saved; if it raises, no export is made."""
         photos = self.store.photos(wedding_id, folder_id)
         scope_name = photos[0]["folder"] if photos and folder_id is not None else ""
         if ratings:
             photos = [p for p in photos if (p["pick"] or (p["cull"] or {}).get("r")) in ratings]
+        if stars:
+            photos = [p for p in photos if (p.get("stars") or 0) >= stars]
         if not photos:
             raise ValueError("there are no photos to export")
         export_id = uuid.uuid4().hex[:12]
@@ -91,7 +94,7 @@ class Exports:
                 name, n = f"{stem}-{n}", n + 1
             seen.add((p["folder"], name.lower()))
             rows.append((export_id, p["id"], name + ".jpg", _safe(p["folder"])))
-        scope = " · ".join(x for x in (scope_name, " + ".join(ratings)) if x)
+        scope = " · ".join(x for x in (scope_name, " + ".join(ratings), f"{stars}+ stars" if stars else "") if x)
         if pay is not None:
             pay(export_id, len(rows))
         with self.store._db() as db:

@@ -71,6 +71,9 @@ class Store:
                 # Photos from before this column are not queued (DEFAULT '{}'): theirs are worked out when first needed.
                 db.execute("ALTER TABLE photos ADD COLUMN autos TEXT NOT NULL DEFAULT '{}'")
             db.execute("CREATE INDEX IF NOT EXISTS photos_autos_due ON photos (id) WHERE autos=''")
+            if "stars" not in columns:               # star rating (0-5) and colour label, as in Lightroom (history.py)
+                db.execute("ALTER TABLE photos ADD COLUMN stars INTEGER NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE photos ADD COLUMN label TEXT NOT NULL DEFAULT ''")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
@@ -317,7 +320,7 @@ class Store:
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
         q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.paid_stamp, "
-             "p.cull, p.pick, p.crop, "
+             "p.cull, p.pick, p.crop, p.stars, p.label, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]

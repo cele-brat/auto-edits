@@ -201,7 +201,7 @@ function drawFolders() {
 // A photo's rating: the photographer's own if set, else the automatic one, else none.
 const ratingOf = (p) => p.pick || (p.cull ? p.cull.r : null);
 const wholeFolder = () => S.photos.filter((p) => p.folder === S.folderId);
-const inFolder = () => wholeFolder().filter((p) => !S.rating || ratingOf(p) === S.rating);
+let inFolder = () => wholeFolder().filter((p) => !S.rating || ratingOf(p) === S.rating);
 const RATING_NAMES = { keep: 'Keep', maybe: 'Maybe', reject: 'Reject' };
 
 function thumb(p, withName, idx) {

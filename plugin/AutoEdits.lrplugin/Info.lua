@@ -1,4 +1,5 @@
 --[[ Auto Edits: Lightroom Classic plug-in.
+     Version 0.9: the settings window shows who is connected, the credits left and a newer version to download; star ratings and colour labels set in the app are applied to the photos.
      Version 0.8: white balance set to an absolute value (applying again never shifts it twice), the "Before Auto Edits" snapshot made only once, edits fetched and paid for chunk by chunk.
      Version 0.7: never spends below 0 credits when applying; brings the edits back and applies them; opens the app; sends photos to the Auto Edits server; reference and calibration exports for tuning. ]]
 return {
@@ -23,5 +24,5 @@ return {
         { title = 'Make reference exports (selected photos)', file = 'ReferenceExports.lua' },
     },
 
-    VERSION = { major = 0, minor = 8, revision = 0 },
+    VERSION = { major = 0, minor = 9, revision = 0 },
 }

@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v=33">
+<link rel="stylesheet" href="/static/develop.css?v=1">
 </head>
 <body>
 <div id="app" hidden>
@@ -33,6 +34,10 @@
         <button id="account-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 8a7 7 0 0 1 14 0"/></svg><span><b>Account and credits</b><small>Balance, buy credits, invoices, password</small></span></button>
         <button id="plugin-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18H6.5v2.5H4V18l6.03-6.03A4 4 0 0 0 14 10Zm1-2h.01"/></svg><span><b>Lightroom plug-in</b><small>Download it, install it, get your key</small></span></button>
         <a id="admin-link" href="/admin" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/></svg><span><b>Admin dashboard</b><small>Photographers, purchases, backups</small></span></a>
+        <p class="group">Settings</p>
+        <button id="menu-copy" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span><b>Copy settings…</b><small>Cmd/Ctrl+Shift+C: tick the panels to copy</small></span></button>
+        <button id="menu-paste" type="button" role="menuitem" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9zM7 6H5v15h14V6h-2"/></svg><span><b>Paste settings</b><small>Cmd/Ctrl+Shift+V: onto the selected photos</small></span></button>
+        <button id="menu-sync" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5l2-2v6h-6l2-2a5 5 0 0 0-9 3M20 12a8 8 0 0 1-14 5l-2 2v-6h6l-2 2a5 5 0 0 0 9-3"/></svg><span><b>Sync settings…</b><small>From this photo to every selected photo</small></span></button>
         <p class="group" id="menu-wedding-title">This wedding</p>
         <button id="originals" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg><span><b>Download original photos</b><small>The photos you uploaded, as one zip</small></span></button>
         <button id="delete-wedding" type="button" role="menuitem" class="danger"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13"/></svg><span><b>Delete this wedding</b><small>Removes it from Auto Edits only, not from your computer</small></span></button>
@@ -50,7 +55,7 @@
   <aside id="left" aria-label="Folders and presets">
     <details class="lp" id="nav-box" open>
       <summary>Navigator</summary>
-      <div id="nav"><img id="nav-img" alt=""></div>
+      <div id="nav"><img id="nav-img" alt=""><div id="nav-rect" hidden></div></div>
     </details>
     <details class="lp" id="folders-box" open>
       <summary>Folders <button id="folder-plus" class="plus" type="button" title="Add folders or photos" aria-haspopup="menu" aria-expanded="false">+</button></summary>
@@ -105,6 +110,7 @@
         <span id="tag-before" class="tag">Before</span>
         <span id="tag-after" class="tag">After</span>
         <span id="busy" hidden>Rendering</span>
+        <div id="zoom-layer" hidden><img id="zoom-img" alt="" draggable="false"></div>
         <svg id="shape-layer" hidden></svg>
         <div id="crop-box" hidden><i class="g"></i><i class="g"></i><i class="g"></i><i class="g"></i>
           <b data-h="nw"></b><b data-h="n"></b><b data-h="ne"></b><b data-h="e"></b><b data-h="se"></b><b data-h="s"></b><b data-h="sw"></b><b data-h="w"></b></div>
@@ -116,7 +122,8 @@
     <span class="for-grid">
       <label class="size" title="Thumbnail size"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="6" height="6"/><rect x="13" y="5" width="6" height="6"/><rect x="5" y="13" width="6" height="6"/><rect x="13" y="13" width="6" height="6"/></svg>
         <input id="cell-size" type="range" min="130" max="380" step="10" value="200" aria-label="Thumbnail size"></label>
-      <span class="hint-keys">Double-click a photo to edit it · <b>D</b> Develop · <b>G</b> Library</span>
+      <span id="sel-count"></span>
+      <span class="hint-keys">Double-click a photo to edit it · <b>D</b> Develop · <b>G</b> Library · <b>0–5</b> stars</span>
     </span>
     <span class="for-loupe">
       <span class="turns"><button type="button" data-turn="-90" title="Rotate left (Cmd+[)" aria-label="Rotate left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9a8 8 0 1 1 1 7"/><path d="M4 3v6h6"/></svg></button><button type="button" data-turn="90" title="Rotate right (Cmd+])" aria-label="Rotate right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 9a8 8 0 1 0-1 7"/><path d="M20 3v6h-6"/></svg></button></span>
@@ -126,7 +133,16 @@
         <button type="button" data-pick="maybe" title="Maybe (2)">Maybe</button>
         <button type="button" data-pick="reject" title="Reject (1)">Reject</button>
       </span>
+      <span class="seg zoom" role="group" aria-label="Zoom" title="Click the photo or press Z to zoom to 1:1">
+        <button type="button" data-zoom="fit" aria-pressed="true">Fit</button>
+        <button type="button" data-zoom="1:1" aria-pressed="false">1:1</button>
+        <button type="button" data-zoom="2:1" aria-pressed="false">2:1</button>
+      </span>
       <span id="caption"></span>
+    </span>
+    <span id="star-bar" role="group" aria-label="Stars and colour label">
+      <span class="stars-row" title="Stars (keys 0 to 5)"><button type="button" data-star="1">★</button><button type="button" data-star="2">★</button><button type="button" data-star="3">★</button><button type="button" data-star="4">★</button><button type="button" data-star="5">★</button></span>
+      <span class="labels-row" title="Colour label (keys 6 to 9)"><button type="button" data-label="red" aria-label="Red label"></button><button type="button" data-label="yellow" aria-label="Yellow label"></button><button type="button" data-label="green" aria-label="Green label"></button><button type="button" data-label="blue" aria-label="Blue label"></button><button type="button" data-label="purple" aria-label="Purple label"></button></span>
     </span>
   </div>
 
@@ -197,6 +213,21 @@
       <section id="adjust-box" data-pane="adjust">
         <div id="panels"></div>
         <p id="auto-values"></p>
+        <details class="panel" id="history-panel">
+          <summary>History<small></small></summary>
+          <div class="hist-tools">
+            <button id="undo" type="button" class="small" title="Undo (Cmd/Ctrl+Z)">Undo</button>
+            <button id="redo" type="button" class="small" title="Redo (Shift+Cmd/Ctrl+Z)">Redo</button>
+            <button id="sync-settings" type="button" class="small" title="Carry chosen panels from this photo to the selected photos">Sync…</button>
+          </div>
+          <p id="history-note" class="dim small"></p>
+          <div id="history-list"></div>
+        </details>
+        <details class="panel" id="snapshots-panel">
+          <summary>Snapshots</summary>
+          <div class="hist-tools"><input id="snapshot-name" type="text" placeholder="Name this state" maxlength="60" aria-label="Snapshot name"><button id="snapshot-add" type="button" class="small">Save</button></div>
+          <div id="snapshot-list"></div>
+        </details>
         <details class="help"><summary>How the sliders work</summary><p class="hint">The same panels and order as Lightroom. Each slider starts at the preset's own value. Tick <b>Auto</b> to have a setting worked out for each photo; its slider then adds your own change on top. Double-click a slider to put it back. Click a number to type it.</p></details>
       </section>
       <section id="mask-box" data-pane="masks">
@@ -228,9 +259,18 @@
       <div id="ratings" class="seg" role="group" aria-label="Show photos rated" hidden>
         <span class="lab">Filter</span>
         <button type="button" data-rating="" aria-pressed="true">All</button>
-        <button type="button" data-rating="keep" aria-pressed="false" title="Rate with key 3">Keep</button>
-        <button type="button" data-rating="maybe" aria-pressed="false" title="Rate with key 2">Maybe</button>
-        <button type="button" data-rating="reject" aria-pressed="false" title="Rate with key 1">Reject</button>
+        <button type="button" data-rating="keep" aria-pressed="false" title="Rate with key P">Keep</button>
+        <button type="button" data-rating="maybe" aria-pressed="false" title="Rate with key U">Maybe</button>
+        <button type="button" data-rating="reject" aria-pressed="false" title="Rate with key X">Reject</button>
+      </div>
+      <div id="filters" class="seg" role="group" aria-label="Show photos by stars and colour label" hidden>
+        <button type="button" data-stars="0" aria-pressed="true">Any stars</button>
+        <button type="button" data-stars="1" aria-pressed="false" title="1 star and up">★+</button>
+        <button type="button" data-stars="2" aria-pressed="false" title="2 stars and up">★★+</button>
+        <button type="button" data-stars="3" aria-pressed="false" title="3 stars and up">★★★+</button>
+        <button type="button" data-stars="4" aria-pressed="false" title="4 stars and up">★★★★+</button>
+        <button type="button" data-stars="5" aria-pressed="false" title="5 stars">★★★★★</button>
+        <span class="labels-row"><button type="button" data-flabel="red" aria-pressed="false" aria-label="Red label"></button><button type="button" data-flabel="yellow" aria-pressed="false" aria-label="Yellow label"></button><button type="button" data-flabel="green" aria-pressed="false" aria-label="Green label"></button><button type="button" data-flabel="blue" aria-pressed="false" aria-label="Blue label"></button><button type="button" data-flabel="purple" aria-pressed="false" aria-label="Purple label"></button></span>
       </div>
     </div>
     <div id="strip"></div>
@@ -311,6 +351,16 @@
       <option value="">Every photo</option>
       <option value="keep">Keep only</option>
       <option value="keep,maybe">Keep and Maybe</option>
+    </select>
+  </label>
+  <label class="field">Stars
+    <select id="export-stars">
+      <option value="0">Any</option>
+      <option value="1">1 star and up</option>
+      <option value="2">2 stars and up</option>
+      <option value="3">3 stars and up</option>
+      <option value="4">4 stars and up</option>
+      <option value="5">5 stars only</option>
     </select>
   </label>
   <label class="field">Size
@@ -490,6 +540,19 @@
   </form>
 </dialog>
 
+<dialog id="copy-dialog" aria-labelledby="copy-title">
+  <h2 class="title" id="copy-title">Copy settings</h2>
+  <p class="dim" id="copy-text"></p>
+  <form id="copy-form">
+    <div class="row"><button type="button" id="copy-all" class="quiet small">Check all</button><button type="button" id="copy-none" class="quiet small">Check none</button></div>
+    <div id="copy-list" class="copy-list"></div>
+    <p id="copy-error" role="alert"></p>
+    <div class="row end">
+      <button id="copy-close" type="button" class="quiet">Cancel</button>
+      <button type="submit" class="primary" id="copy-go">Copy</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="original-dialog" aria-labelledby="original-title">
   <h2 class="title" id="original-title">Reset to original?</h2>
   <p id="original-text"></p>
@@ -513,5 +576,6 @@
 <script src="/static/buy.js?v=6"></script>
 <script src="/static/crop.js?v=5"></script>
 <script src="/static/drawn.js?v=2"></script>
+<script src="/static/develop.js?v=1"></script>
 </body>
 </html>
