@@ -90,6 +90,7 @@ end
 function M.photo(spec)
     local p = { spec = spec, broken = spec.broken, develop = spec.develop or {}, snapshots = {} }
     function p:getRawMetadata(k) return self.spec.raw[k] end
+    function p:setRawMetadata(k, v) self.spec.raw[k] = v end
     function p:getDevelopSettings() return self.develop end
     -- like Lightroom: update=true replaces a snapshot of the same name (losing what it held)
     function p:createDevelopSnapshot(name, update)

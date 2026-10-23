@@ -87,6 +87,9 @@ class Store:
                 db.execute("ALTER TABLE photos ADD COLUMN faces TEXT NOT NULL DEFAULT ''")
             if "client_pick" not in columns:         # 1 once a client chose it in a shared gallery (server/gallery.py)
                 db.execute("ALTER TABLE photos ADD COLUMN client_pick INTEGER NOT NULL DEFAULT 0")
+            if "stars" not in columns:               # star rating (0-5) and colour label, as in Lightroom (history.py)
+                db.execute("ALTER TABLE photos ADD COLUMN stars INTEGER NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE photos ADD COLUMN label TEXT NOT NULL DEFAULT ''")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
@@ -372,7 +375,7 @@ class Store:
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
         q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.paid_stamp, "
-             "p.cull, p.pick, p.crop, p.version, p.client_pick, "
+             "p.cull, p.pick, p.crop, p.version, p.client_pick, p.stars, p.label, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]

@@ -128,6 +128,7 @@ class NewExport(BaseModel):
     watermark: str = ""
     folder: int | None = None
     ratings: list[str] = []
+    stars: int = 0                             # only photos with at least this many stars (editing.py)
 
 
 class NewCull(BaseModel):
@@ -731,7 +732,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                      "v": int(r["received"]), "w": r["meta"].get("width"), "h": r["meta"].get("height"),
                      "iso": r["meta"].get("iso"), "taken": r["taken"], "camera": r["meta"].get("camera"),
                      "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None,
-                     "crop": r["crop"], "ver": r["version"], "client_pick": bool(r["client_pick"])} for r in rows]
+                     "crop": r["crop"], "ver": r["version"], "client_pick": bool(r["client_pick"]),
+                     "stars": r["stars"] or 0, "label": r["label"] or ""} for r in rows]
         return {"photos": rows}
 
     def photo_or_404(wedding_id: str, photo_id: str, user: dict) -> dict:
@@ -1250,7 +1252,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                            wedding=wedding_id)
         try:
             made = exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder,
-                                  tuple(r for r in RATINGS if r in body.ratings), pay=pay)
+                                  tuple(r for r in RATINGS if r in body.ratings), pay=pay, stars=min(5, max(0, body.stars)))
             store.touch(wedding_id, force=True)                # an export counts as using the wedding (retention.py)
             return made
         except NotEnoughCredits as e:
@@ -1468,6 +1470,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     app.state.favourites = ctx["favourites"]
     app.state.galleries = ctx["galleries"]
 
+    app.include_router(__import__("server.editing", fromlist=["router"]).router(signed_in, store, accounts, renderer, drawing, given_look, PREVIEW_CAP, VERSION))
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
 

@@ -32,6 +32,27 @@ local Server = require 'Server'
 
 local SNAPSHOT_NAME = 'Before Auto Edits'
 local CHUNK = 40
+local LABELS = { red = 'red', yellow = 'yellow', green = 'green', blue = 'blue', purple = 'purple' }
+
+-- Star ratings and colour labels set in the app go onto the photos (plain metadata, no credits).
+-- Returns how many photos were marked, or nil and why.
+local function applyMarks(catalog, weddingId)
+    local ok, got = Server.get('/api/weddings/' .. weddingId .. '/marks')
+    if not ok then return nil, got end
+    local todo = {}
+    for uuid, m in pairs(got.marks or {}) do
+        local photo = catalog:findPhotoByUuid(uuid)
+        if photo then todo[#todo + 1] = { photo = photo, stars = tonumber(m.stars) or 0, label = LABELS[m.label] } end
+    end
+    if #todo == 0 then return 0 end
+    catalog:withWriteAccessDo('Auto Edits: ratings and labels', function()
+        for _, t in ipairs(todo) do
+            if t.stars > 0 then t.photo:setRawMetadata('rating', math.min(5, t.stars)) end
+            if t.label then t.photo:setRawMetadata('colorNameForLabel', t.label) end
+        end
+    end, { timeout = 120 })
+    return #todo
+end
 
 local function clamp(v, lo, hi) return math.max(lo, math.min(hi, v)) end
 
@@ -175,6 +196,11 @@ local function run(context)
 
     local progress = LrProgressScope { title = 'Auto Edits: applying edits', functionContext = context }
     progress:setCancelable(true)
+    local marked = applyMarks(LrApplication.activeCatalog(), wedding.id) or 0
+    local function markedLine()
+        if marked > 0 then return string.format('Star ratings and colour labels from the app: %d photos.', marked) end
+        return nil
+    end
     -- First only what it would cost (dry): nothing is handed out or paid until you say "Apply".
     local items, why, balance = fetchEdits(wedding.id, again, progress, true, { 0, 0.2 })
     if not items then
@@ -220,6 +246,7 @@ local function run(context)
         if done > 0 then lines[#lines + 1] = string.format('%d photos already have their edit.', done) end
         if noEdit > 0 then lines[#lines + 1] = string.format('%d photos have no preset or setting chosen in the app.', noEdit) end
         if notHere > 0 then lines[#lines + 1] = string.format('%d photos are not in this catalogue.', notHere) end
+        lines[#lines + 1] = markedLine()
         LrDialogs.message('Auto Edits', table.concat(lines, '\n'), 'info')
         return
     end
@@ -328,6 +355,7 @@ local function run(context)
         table.sort(later)
         lines[#lines + 1] = '\nChosen in the app but not applied by this version: ' .. table.concat(later, ', ') .. '.'
     end
+    if marked > 0 then lines[#lines + 1] = '\n' .. markedLine() end
     if cancelled then lines[#lines + 1] = '\nCancelled. Start again to carry on: photos already done are skipped.' end
     lines[#lines + 1] = '\nTo undo a photo: Develop > Snapshots > "' .. SNAPSHOT_NAME .. '".'
     LrDialogs.message('Auto Edits: edits applied', table.concat(lines, '\n'), 'info')
