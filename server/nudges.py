@@ -8,6 +8,11 @@
     - confirmed but no credit used yet: "your free credits end on <date>", counted from when they were given.
   They stop as soon as a credit is used (or bought).
 
+* Storage ending (Oct 2026): 7 days before a prepaid storage grant ends, and 3 days before an auto-renew
+  charge, one email each (kind "storage", step = the grant id; kind "renew", step = the charge number).
+* Low credits: when the balance is below LOW_CREDITS (or 10% of the last purchase, whichever is larger),
+  one email in 7 days with a Buy link (kind "low", step = the week number).
+
 Run by the worker every few minutes; does real work at most once an hour.
 """
 from __future__ import annotations
@@ -18,6 +23,10 @@ FREE_DAYS = 15
 REMIND_DAYS = (3, 6, 9, 12, 14)
 DAY = 86400
 USE_KINDS = ("cull", "export", "lightroom")          # kinds that spend credits
+LOW_CREDITS = 50
+LOW_SHARE = 0.10                                     # ... or 10% of the last purchase, whichever is larger
+LOW_EVERY_DAYS = 7
+STORAGE_WARN_DAYS, RENEW_WARN_DAYS = 7, 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS nudges (
@@ -72,6 +81,11 @@ def _due_step(start: float, now: float, sent: set[int]) -> tuple[int | None, lis
     if not due or days >= FREE_DAYS:
         return None, due
     return due[-1], due[:-1]
+
+
+def is_low(balance: int, last_purchase: int) -> bool:
+    """Below 50, or below 10% of the last purchase, whichever is larger."""
+    return balance < max(LOW_CREDITS, int(last_purchase * LOW_SHARE))
 
 
 def _day(t: float) -> str:
@@ -148,4 +162,72 @@ class Nudges:
                 subject, text, html = mail.use_reminder(self.base, left, _day(g[0] + FREE_DAYS * DAY), last)
             self.mailer.send(u["email"], subject, text, html)
             done[kind] += 1
+        done.update(self.storage_and_credits(now))
+        return done
+
+    def storage_and_credits(self, now: float) -> dict:
+        """Storage ending or renewing soon, and low credits (see the module notes). Each sent once."""
+        from . import mail, payments as pay
+        done = {"storage": 0, "renew": 0, "low": 0}
+        with self.accounts._db() as db:
+            tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "storage_grants" not in tables or "subscriptions" not in tables:
+                return done                          # the server has not run with payments phase 2 yet
+            users = {r["id"]: dict(r) for r in db.execute("SELECT id, email, admin, verified FROM users WHERE admin=0")}
+            grants = [dict(r) for r in db.execute(
+                "SELECT g.id, g.user_id, g.gb, g.until, COALESCE(o.sub_id, '') AS sub_id FROM storage_grants g "
+                "LEFT JOIN orders o ON o.id=g.order_id WHERE g.until>? AND g.until<=?",
+                (now, now + STORAGE_WARN_DAYS * DAY))]
+            subs = [dict(r) for r in db.execute(
+                "SELECT * FROM subscriptions WHERE status='active' AND next_charge>? AND next_charge<=?",
+                (now, now + RENEW_WARN_DAYS * DAY))]
+            renewing = {r[0] for r in db.execute("SELECT user_id FROM subscriptions WHERE status IN ('active','created')")}
+        # 1. prepaid storage ending within 7 days (not when auto-renew keeps it going)
+        for g in grants:
+            u = users.get(g["user_id"])
+            if not u or g["sub_id"] or u["id"] in renewing:
+                continue
+            with self.accounts._db() as db:
+                if g["id"] in self._sent(db, u["id"], "storage"):
+                    continue
+                self._mark(db, u["id"], "storage", [g["id"]], now)
+            subject, text, html = mail.storage_ending(self.base, g["gb"], _day(g["until"]), renews=False)
+            self.mailer.send(u["email"], subject, text, html)
+            done["storage"] += 1
+        # 2. an auto-renew charge within 3 days
+        for s in subs:
+            u = users.get(s["user_id"])
+            if not u:
+                continue
+            step = s["charges"] + 1
+            with self.accounts._db() as db:
+                if step in self._sent(db, u["id"], "renew"):
+                    continue
+                self._mark(db, u["id"], "renew", [step], now)
+            subject, text, html = mail.storage_ending(self.base, s["blocks"] * pay.BLOCK_GB, _day(s["next_charge"]),
+                                                      renews=True, amount=pay.rupees(s["amount"]))
+            self.mailer.send(u["email"], subject, text, html)
+            done["renew"] += 1
+        # 3. low credits, once in 7 days, only once the account has spent or bought credits
+        week = int(now // (LOW_EVERY_DAYS * DAY))
+        for u in users.values():
+            if not u["verified"]:
+                continue
+            with self.accounts._db() as db:
+                balance = int(db.execute("SELECT COALESCE(SUM(delta),0) FROM ledger WHERE user_id=?", (u["id"],)).fetchone()[0])
+                last = db.execute("SELECT delta FROM ledger WHERE user_id=? AND kind='purchase' ORDER BY id DESC LIMIT 1",
+                                  (u["id"],)).fetchone()
+                spent = db.execute("SELECT 1 FROM ledger WHERE user_id=? AND delta<0 AND kind<>'expired' LIMIT 1", (u["id"],)).fetchone()
+                if not (last or spent) or not is_low(balance, int(last[0]) if last else 0):
+                    continue
+                sent = self._sent(db, u["id"], "low")
+                if sent and max(sent) >= week:
+                    continue
+                self._mark(db, u["id"], "low", [week], now)
+            price = pay.prices()
+            line = (f"Credits cost {pay.rupees(price['credit_paise'])} each + 18% GST (from {pay.MIN_CREDITS}), or the Season pack: "
+                    f"{price['season_credits']:,} credits for {pay.rupees(price['season_paise'])} + GST.")
+            subject, text, html = mail.low_credits(self.base, balance, line)
+            self.mailer.send(u["email"], subject, text, html)
+            done["low"] += 1
         return done

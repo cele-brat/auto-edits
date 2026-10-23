@@ -3,7 +3,7 @@ const Buy = { prices: null, kind: 'credits' };
 const inr = (paise) => '₹' + (paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 async function loadPrices() {
-  if (!Buy.prices) Buy.prices = await api('/api/buy/prices');
+  if (!Buy.prices) Buy.prices = await api('/api/billing/prices');   // live prices, the Season pack, auto-renew
   return Buy.prices;
 }
 
@@ -40,7 +40,7 @@ function buyTab(kind) {
   Buy.kind = kind;
   for (const b of document.querySelectorAll('#buy-dialog [data-kind]')) b.setAttribute('aria-selected', String(b.dataset.kind === kind));
   for (const d of document.querySelectorAll('#buy-dialog [data-for]')) d.hidden = d.dataset.for !== kind;
-  $('buy-title').textContent = kind === 'credits' ? 'Buy credits' : 'Add storage';
+  $('buy-title').textContent = kind === 'credits' ? 'Buy credits' : kind === 'season' ? 'Season pack' : 'Add storage';
   quoteBuy();
 }
 
@@ -57,17 +57,22 @@ async function openBuy(kind) {
     $('buy-credits').min = p.min_credits; $('buy-credits').step = p.credit_step; $('buy-credits').value = p.min_credits;
   }
   const each = p.credit_paise * (100 + p.gst) / 100, least = p.min_credits * each;
-  $('buy-credits-note').textContent = `${inr(p.credit_paise)} a credit` + (p.credit_paise === 100 ? ` until ${p.launch_ends}` : '') +
+  $('buy-credits-note').textContent = `${inr(p.credit_paise)} a credit` + (p.launch ? ` until ${p.launch_ends}` : '') +
     ` + ${p.gst}% GST (${inr(each)} with GST). From ${p.min_credits} credits (${inr(least)} incl. GST), in steps of ${p.credit_step}.`;
+  $('buy-season-note').textContent = `${p.season_credits.toLocaleString('en-IN')} credits for ${inr(p.season_paise)} + ${p.gst}% GST: ` +
+    `${inr(p.season_paise / p.season_credits)} a credit instead of ${inr(p.credit_paise)}.` + (p.launch ? ` This pack is on until ${p.launch_ends}.` : '');
+  const renewing = (p.subscriptions || []).filter((x) => x.status === 'active' || x.status === 'created');
+  $('buy-renew').checked = false; $('buy-renew').disabled = !!renewing.length;
   $('buy-grants').textContent = `${p.block_gb} GB for ${inr(p.block_paise_month)} a month, plus ${p.gst}% GST. ` +
-    (p.grants.length ? 'Running now: ' + p.grants.map((g) => `${g.gb} GB until ${new Date(g.until * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`).join(', ') + '.' : 'Starts as soon as you pay.');
+    (p.grants.length ? 'Running now: ' + p.grants.map((g) => `${g.gb} GB until ${new Date(g.until * 1000).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`).join(', ') + '.' : 'Starts as soon as you pay.') +
+    (renewing.length ? ` Auto-renew is on (${renewing[0].blocks * p.block_gb} GB a month); stop it from the Purchases tab to change it.` : '');
   $('buy-error').textContent = '';
   buyTab(kind);
   $('buy-dialog').showModal();
 }
 
 function buyBody() {
-  return { kind: Buy.kind, credits: parseInt($('buy-credits').value || '0', 10), blocks: parseInt($('buy-blocks').value || '1', 10),
+  return { kind: Buy.kind, renew: Buy.kind === 'storage' && $('buy-renew').checked, credits: parseInt($('buy-credits').value || '0', 10), blocks: parseInt($('buy-blocks').value || '1', 10),
     months: parseInt($('buy-months').value || '1', 10), state: $('buy-state').value, gstin: $('buy-gstin').value.trim().toUpperCase(),
     name: $('buy-name').value.trim() };
 }
@@ -79,6 +84,7 @@ function quoteBuy() {
     $('buy-error').textContent = '';
     const body = buyBody();
     const p = Buy.prices || { min_credits: 500, credit_step: 100 };
+    if (body.renew) { $('buy-months').value = 1; body.months = 1; $('buy-months').disabled = true; } else $('buy-months').disabled = false;
     const short = body.kind === 'credits' && (!body.credits || body.credits < p.min_credits);
     const odd = body.kind === 'credits' && !short && body.credits % p.credit_step;
     $('buy-min').hidden = !(short || odd);
@@ -88,12 +94,13 @@ function quoteBuy() {
     try {
       const q = await api('/api/buy/quote', { method: 'POST', body });
       const row = (a, b, cls) => { const tr = document.createElement('tr'); if (cls) tr.className = cls; for (const t of [a, b]) { const td = document.createElement('td'); td.textContent = t; tr.append(td); } return tr; };
-      const rows = [row(q.kind === 'credits' ? `${q.credits.toLocaleString('en-IN')} credits × ${inr(q.unit)}` : `${q.blocks * 50} GB × ${q.months} month${q.months > 1 ? 's' : ''}`, inr(q.taxable))];
+      const rows = [row(q.kind === 'credits' ? `${q.credits.toLocaleString('en-IN')} credits × ${inr(q.unit)}` : q.kind === 'season' ? `Season pack: ${q.credits.toLocaleString('en-IN')} credits`
+        : `${q.blocks * 50} GB × ${q.months} month${q.months > 1 ? 's' : ''}` + (body.renew ? ', every month' : ''), inr(q.taxable))];
       if (q.cgst) rows.push(row('CGST 9%', inr(q.cgst)), row('SGST 9%', inr(q.sgst))); else rows.push(row('IGST 18%', inr(q.igst)));
       rows.push(row('Total, incl. 18% GST', inr(q.total), 'total'));
       $('buy-sum').replaceChildren(...rows);
       $('buy-go').disabled = false;
-      $('buy-go').textContent = `Pay ${inr(q.total)}`;
+      $('buy-go').textContent = body.renew ? `Pay ${inr(q.total)} a month` : `Pay ${inr(q.total)}`;
     } catch (err) { $('buy-sum').replaceChildren(); $('buy-go').disabled = true; $('buy-error').textContent = err.message; }
   }, 250);
 }
@@ -127,19 +134,21 @@ $('buy-form').onsubmit = async (e) => {
   $('buy-go').textContent = 'Opening payment…';
   try {
     try { localStorage.setItem('ae-state', $('buy-state').value); } catch (x) { /* no storage */ }
-    const order = await api('/api/buy', { method: 'POST', body: buyBody() });
+    const body = buyBody();
+    const renew = body.renew;
+    const order = renew ? await api('/api/storage/subscribe', { method: 'POST', body }) : await api('/api/buy', { method: 'POST', body });
     await checkoutScript();
     const rzp = new window.Razorpay({
-      key: order.key, order_id: order.rzp_order, amount: order.amount, currency: 'INR',
+      key: order.key, ...(renew ? { subscription_id: order.subscription_id } : { order_id: order.rzp_order, amount: order.amount }), currency: 'INR',
       name: 'Auto Edits', description: order.what, prefill: { email: order.email, name: order.name },
       theme: { color: '#0d5b61' },
       handler: async (resp) => {
         try {
-          const done = await api('/api/buy/verify', { method: 'POST', body: resp });
+          const done = await api(renew ? '/api/storage/subscribe/verify' : '/api/buy/verify', { method: 'POST', body: resp });
           Buy.aside = [];
           $('buy-dialog').close();
           Buy.prices = null;
-          notice(`Payment received, thank you. Invoice ${done.invoice} is in your account window.`);
+          notice(`Payment received, thank you. Invoice ${done.invoice} is in your account window and on its way by email.`);
           await openAccount();
         } catch (err) { comeBack(); $('buy-error').textContent = err.message; }
       },
@@ -157,7 +166,7 @@ for (const b of document.querySelectorAll('#buy-dialog .step')) b.onclick = () =
   const v = Math.max(Buy.prices ? Buy.prices.min_credits : 500, (parseInt($('buy-credits').value || '0', 10) || 0) + parseInt(b.dataset.step, 10));
   $('buy-credits').value = v; quoteBuy();
 };
-for (const id of ['buy-credits', 'buy-blocks', 'buy-months', 'buy-state', 'buy-gstin']) $(id).addEventListener('input', quoteBuy);
+for (const id of ['buy-credits', 'buy-blocks', 'buy-months', 'buy-state', 'buy-gstin', 'buy-renew']) $(id).addEventListener('input', quoteBuy);
 $('buy').onclick = () => openBuy('credits');
 $('buy-storage').onclick = () => openBuy('storage');
 // the credits box and the storage line open the matching purchase

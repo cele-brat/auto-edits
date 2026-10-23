@@ -195,6 +195,9 @@ section { padding: clamp(72px, 11vw, 168px) var(--edge) 0; }
 .close h2 { max-width: 16ch; margin-bottom: 30px; }
 footer { border-top: 1px solid var(--rule); padding: 26px var(--edge) 40px; display: flex; gap: 20px; flex-wrap: wrap; font-size: 16px; color: var(--soft); }
 footer span:first-child { margin-right: auto; }
+footer .powered { font-size: 13px; color: var(--soft); } footer .powered a { color: inherit; }
+.tag-card .season { margin: 18px 0 0; padding: 12px 14px; border: 1px dashed var(--peacock); border-radius: 6px; font-size: 15px; }
+.tag-card .season b { color: var(--peacock-deep); }
 
 dialog { border: 0; border-radius: 8px; padding: 34px; width: min(440px, 92vw); background: var(--paper); color: var(--ink); box-shadow: 0 40px 80px -30px rgba(0, 0, 0, .5); }
 dialog::backdrop { background: rgba(8, 40, 44, .62); }
@@ -436,13 +439,14 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
     </div>
     <div class="tag-card" data-go="signup">
       <p class="per">per credit</p>
-      <p class="amount"><s aria-label="Usual price 3 rupees"><span class="rs">₹</span>3</s><strong><span class="rs">₹</span>1</strong></p>
-      <p class="until">Launch price until 31 December 2026, <span class="gst">+18% GST</span></p>
+      <p class="amount"><s aria-label="Usual price 3 rupees" id="price-usual"><span class="rs">₹</span>3</s><strong id="price-now"><span class="rs">₹</span>1</strong></p>
+      <p class="until">Launch price until <span id="price-until">31 December 2026</span>, <span class="gst">+18% GST</span></p>
       <dl>
-        <div><dt>Export 1,000 photos</dt><dd><s>₹3,000</s> ₹1,000 + GST</dd></div>
-        <div><dt>Cull 5,000 photos</dt><dd><s>₹1,500</s> ₹500 + GST</dd></div>
-        <div><dt>Smallest pack: 500 credits</dt><dd>₹590 incl. GST</dd></div>
+        <div><dt>Export 1,000 photos</dt><dd id="price-export"><s>₹3,000</s> ₹1,000 + GST</dd></div>
+        <div><dt>Cull 5,000 photos</dt><dd id="price-cull"><s>₹1,500</s> ₹500 + GST</dd></div>
+        <div><dt>Smallest pack: 500 credits</dt><dd id="price-least">₹590 incl. GST</dd></div>
       </dl>
+      <p class="season" id="price-season"><b>Season pack:</b> 5,000 credits for ₹4,000 + GST (₹0.80 a credit), one-time, until 31 December 2026.</p>
       <p class="free"><b>Free trial: 50 credits</b> on sign-up, enough to export 50 edited photos or cull 500. Use them within 15 days.</p>
     </div>
   </div>
@@ -477,7 +481,7 @@ footer nav { display: flex; gap: 16px; flex-wrap: wrap; }
 </section>
 </main>
 
-<footer><span>Auto Edits by Cele-Brat</span><nav aria-label="Policies"><a href="#faq">Questions</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="/shipping">Delivery</a><a href="/contact">Contact us</a></nav></footer>
+<footer><span>Auto Edits by Cele-Brat<br><small class="powered">Powered by Cele-Brat.Tech | <a href="mailto:info@cele-brat.tech">info@cele-brat.tech</a></small></span><nav aria-label="Policies"><a href="#faq">Questions</a><a href="/terms">Terms</a><a href="/privacy">Privacy</a><a href="/refunds">Refunds</a><a href="/shipping">Delivery</a><a href="/contact">Contact us</a></nav></footer>
 
 <dialog id="auth" class="login" aria-labelledby="auth-title">
   <form id="auth-form" novalidate>
@@ -715,5 +719,6 @@ if (asked.get('link') === 'expired' || asked.get('link') === 'used') {
 } else if (asked.has('login')) { openAuth('login'); history.replaceState(null, '', '/'); }
 else if (asked.has('signup')) { openAuth('signup'); history.replaceState(null, '', '/'); }
 </script>
+<script src="/static/prices.js?v=1"></script>
 </body>
 </html>

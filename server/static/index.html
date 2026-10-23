@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v=33">
+<link rel="stylesheet" href="/static/billing.css?v=1">
 </head>
 <body>
 <div id="app" hidden>
@@ -45,6 +46,7 @@
     </details>
   </header>
   <div id="viewing" role="status" hidden><span id="viewing-text"></span> <button id="viewing-stop" type="button" class="primary">Back to admin</button></div>
+  <div id="low-credits" role="status" hidden><span id="low-credits-text"></span> <button id="low-credits-buy" type="button" class="primary">Buy credits</button><button id="low-credits-x" type="button" class="quiet" aria-label="Hide">×</button></div>
   <div id="notice" role="status" hidden><span id="notice-text"></span> <button id="notice-action" type="button" hidden></button><button id="notice-x" type="button" class="quiet" aria-label="Hide this message">×</button></div>
 
   <aside id="left" aria-label="Folders and presets">
@@ -66,6 +68,7 @@
       <div id="preset-menu" class="mini-menu" role="menu" hidden>
         <button id="preset-create" type="button" role="menuitem">Create preset…<small>From the settings on screen</small></button>
         <label class="as-item" role="menuitem">Import from Lightroom…<small>Exported .xmp files, masks included</small><input id="upload" type="file" accept=".xmp" multiple aria-label="Import presets from Lightroom"></label>
+        <button id="preset-bulk" type="button" role="menuitem">Import a folder or zip…<small>Whole preset packs; folders become groups</small></button>
       </div>
       <div class="lp-body">
         <div class="adj amount"><span class="name">Amount</span><input id="amount" type="range" min="0" max="2" step="0.05" aria-label="Preset amount"><output></output></div>
@@ -234,6 +237,7 @@
       </div>
     </div>
     <div id="strip"></div>
+    <p id="powered">Powered by Cele-Brat.Tech | <a href="mailto:info@cele-brat.tech">info@cele-brat.tech</a></p>
   </footer>
 </div>
 
@@ -381,6 +385,8 @@
       <table id="purchases"><thead><tr><th>Date</th><th>What</th><th class="n">Paid</th><th class="n">Invoice</th></tr></thead><tbody></tbody></table>
     </div>
     <p class="dim" id="purchases-none">No purchases yet. Invoices for what you buy appear here.</p>
+    <div id="renew-box" hidden><h3 class="sub">Auto-renew storage</h3><p id="renew-text" class="dim"></p><div class="row"><button type="button" id="renew-stop">Stop auto-renew</button></div></div>
+    <div id="refunds-box" hidden><h3 class="sub">Credit notes</h3><ul id="refunds-list"></ul></div>
   </section>
 
   <section class="acc-pane" data-pane="lightroom" hidden>
@@ -434,6 +440,7 @@
   <form id="code-needed" class="row" hidden><input id="code-needed-input" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="6-digit code from your app" aria-label="Code from your authenticator app"><button type="submit" class="primary">Continue</button></form>
   <p id="account-error" role="alert"></p>
   <p class="dim policies"><a href="/terms" target="_blank">Terms</a> · <a href="/privacy" target="_blank">Privacy</a> · <a href="/refunds" target="_blank">Refunds</a> · <a href="/contact" target="_blank">Contact us</a></p>
+  <p class="dim policies powered">Powered by Cele-Brat.Tech | <a href="mailto:info@cele-brat.tech">info@cele-brat.tech</a></p>
 </dialog>
 
 <dialog id="buy-dialog" aria-labelledby="buy-title">
@@ -442,6 +449,7 @@
   <p class="dim" id="buy-test" hidden>Test mode: no real money is taken.</p>
   <div class="buy-tabs" role="tablist">
     <button type="button" role="tab" data-kind="credits" aria-selected="true">Credits</button>
+    <button type="button" role="tab" data-kind="season" aria-selected="false">Season pack</button>
     <button type="button" role="tab" data-kind="storage" aria-selected="false">Extra storage</button>
   </div>
   <form id="buy-form">
@@ -453,11 +461,16 @@
       <p class="dim" id="buy-credits-note"></p>
       <p id="buy-min" class="warn" hidden></p>
     </div>
+    <div data-for="season" hidden>
+      <p id="buy-season-note"></p>
+      <p class="dim">One-time pack. The credits never end and work exactly like any others.</p>
+    </div>
     <div data-for="storage" hidden>
       <label for="buy-blocks">Extra space</label>
       <select id="buy-blocks"></select>
       <label for="buy-months">For</label>
       <select id="buy-months"></select>
+      <label class="check"><input id="buy-renew" type="checkbox"> Auto-renew every month (cancel any time from your account)</label>
       <p class="dim" id="buy-grants"></p>
     </div>
     <label for="buy-state">Your state (for GST)</label>
@@ -490,6 +503,16 @@
   </form>
 </dialog>
 
+<dialog id="bulk-dialog" aria-labelledby="bulk-title">
+  <h2 class="title" id="bulk-title">Import a folder or zip of presets</h2>
+  <p class="dim">Every .xmp inside is imported. Each folder becomes a pack in the Presets panel (a folder inside a folder: “Pack / Sub”). Up to 50 MB at a time; you can also drop a folder or zip on the Presets panel.</p>
+  <div class="row end">
+    <button id="bulk-close" type="button" class="quiet">Cancel</button>
+    <button id="bulk-zip" type="button">Choose a zip…</button>
+    <button id="bulk-folder" type="button" class="primary">Choose a folder…</button>
+  </div>
+</dialog>
+
 <dialog id="original-dialog" aria-labelledby="original-title">
   <h2 class="title" id="original-title">Reset to original?</h2>
   <p id="original-text"></p>
@@ -510,7 +533,9 @@
 <script src="/static/cull.js?v=17"></script>
 <script src="/static/export.js?v=16"></script>
 <script src="/static/account.js?v=22"></script>
-<script src="/static/buy.js?v=6"></script>
+<script src="/static/buy.js?v=7"></script>
+<script src="/static/billing.js?v=1"></script>
+<script src="/static/bulkpresets.js?v=1"></script>
 <script src="/static/crop.js?v=5"></script>
 <script src="/static/drawn.js?v=2"></script>
 </body>

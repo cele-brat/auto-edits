@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import legal, limits, payments as pay, security, webguard
+from . import billing, legal, limits, payments as pay, security, webguard
 from .accounts import AlreadyThere
 from engine.presets import parse_xmp
 
@@ -537,11 +537,13 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                     payments.fulfil(p["order_id"], p.get("id", ""), int(p.get("amount", 0)))
                 except pay.PaymentError:
                     raise HTTPException(400, "amount mismatch")
+        elif str(event.get("event", "")).startswith("subscription."):
+            return billing.handle_event(app, event)            # auto-renew storage (server/billing.py)
         return {"ok": True}
 
     @app.get("/api/purchases")
     def purchases(user: dict = Depends(signed_in)):
-        return {"purchases": [{k: o[k] for k in ("id", "kind", "credits", "blocks", "months", "total", "invoice_no", "paid")}
+        return {"purchases": [{k: o[k] for k in ("id", "kind", "credits", "blocks", "months", "total", "invoice_no", "paid", "refunded", "sub_id")}
                               for o in payments.for_user(user["id"])], "grants": payments.grants(user["id"])}
 
     @app.get("/invoice/{order_id}")
@@ -558,7 +560,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def admin_purchases(admin: dict = Depends(the_admin)):
         rows = payments.recent(300)
         return {"purchases": [{k: o[k] for k in ("id", "email", "kind", "credits", "blocks", "months", "taxable", "cgst", "sgst",
-                                                 "igst", "total", "invoice_no", "paid", "rzp_payment", "buyer_gstin", "state", "test")}
+                                                 "igst", "total", "invoice_no", "paid", "rzp_payment", "buyer_gstin", "state", "test", "refunded", "sub_id")}
                               for o in rows], "test": payments.rzp.test_mode}
 
     # ---- two-step login (offered to the studio account) ----------------------------------
@@ -1423,6 +1425,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         inside = accounts.session_user(autoedits) is not None
         return FileResponse(STATIC / ("index.html" if inside else "home.html"), headers={"Cache-Control": "no-cache"})
 
+    app.include_router(billing.router(app, accounts, payments, mailer, store, renderer, signed_in, confirmed, the_admin,
+                                      link_base, SELLER, too_many))   # payments phase 2, bulk presets (server/billing.py)
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     return app
 

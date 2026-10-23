@@ -18,9 +18,10 @@ GSTIN = "08ARTPK7888A1Z5"
 SUPPORT_PHONE = "+91 96022 12620"
 GRIEVANCE_OFFICER = "Bharat"
 COURTS = "Ajmer, Rajasthan"
-UPDATED = "19 October 2026"
-TERMS_VERSION = "2026-10-19"
+UPDATED = "23 October 2026"
+TERMS_VERSION = "2026-10-23"
 REFUND_DAYS = 7
+POWERED_BY = "Powered by Cele-Brat.Tech | info@cele-brat.tech"
 
 
 def _mail() -> str:
@@ -71,6 +72,22 @@ except as set out in our <a href="/refunds">Refund policy</a>.</li>
 <li>Credits for photos that could not be exported, or for exports you stop or remove before they finish, are given
 back automatically.</li>
 <li>We may change prices for future purchases. Credits you already hold are not affected.</li>
+<li>Packs (such as the Season pack) are credits bought at a pack price: they work exactly like other credits and are
+refunded in the same share as the money, as set out in the Refund policy.</li>
+</ol>
+
+<h2>3A. Storage plans</h2>
+<ol>
+<li>Every account has a storage allowance. Extra storage is sold in blocks of 50 GB a month, either <b>prepaid</b> for
+1, 3, 6 or 12 months, or on <b>auto-renew</b>, where the same amount is charged every month to the payment method
+you gave Razorpay until you cancel.</li>
+<li>Auto-renew can be cancelled at any time from the account window in the app, or by writing to us. The storage stays
+until the end of the month already paid for; no further charge is made after that. We email you 3 days before each
+renewal charge and 7 days before prepaid storage ends.</li>
+<li>If a renewal charge fails, Razorpay retries it; if it keeps failing the auto-renew stops and the extra storage ends.
+When your photos and exports then take more room than your allowance, new uploads stop until you make space or add
+storage again. Nothing of yours is deleted because of that alone.</li>
+<li>Prepaid storage is not refunded for the months already started, except as in the Refund policy.</li>
 </ol>
 
 <h2>4. Your photos and presets</h2>
@@ -173,8 +190,8 @@ To use these rights, {_reach()}.</p>
 
 def _refunds() -> str:
     return f"""
-<p>Auto Edits is paid for with credits. There are no subscriptions, so there is nothing to cancel: you only pay when you
-buy credits.</p>
+<p>Auto Edits is paid for with credits, and extra storage can be bought prepaid or on auto-renew. Credits have no
+subscription: you only pay when you buy them.</p>
 
 <h2>1. Credits given back automatically</h2>
 <p>If a photo cannot be exported, or you stop or remove an export before it finishes, the credits for the photos that
@@ -185,6 +202,15 @@ were not made are returned to your balance straight away. You can see each one i
 <li>Unused credits you bought can be refunded if you ask within {REFUND_DAYS} days of the purchase.</li>
 <li>Credits that have already been used, and free credits, cannot be refunded.</li>
 <li>If a payment was taken twice, or taken without credits being added, we refund it in full whenever you tell us.</li>
+</ol>
+
+<h2>2A. Storage plans and auto-renew</h2>
+<ol>
+<li><b>Cancelling auto-renew:</b> open the account window in the app and choose “Stop auto-renew”, or write to us.
+It takes effect at the end of the month already paid for; that month is not refunded, and nothing more is charged.</li>
+<li><b>Prepaid storage:</b> can be refunded for the months not yet started if you ask within {REFUND_DAYS} days of the
+purchase and the extra space is not in use.</li>
+<li>A renewal charge taken after you cancelled, or taken twice, is refunded in full.</li>
 </ol>
 
 <h2>3. How to ask</h2>
@@ -282,7 +308,7 @@ footer a {{ color: var(--soft); }} footer a[aria-current] {{ color: var(--ink); 
 <p class="updated">Last updated {UPDATED}</p>
 {body()}
 </main>
-<footer><p>{links}</p><p>{BRAND} · {BUSINESS}</p></footer>
+<footer><p>{links}</p><p>{BRAND} · {BUSINESS}</p><p>{POWERED_BY}</p></footer>
 </body>
 </html>
 """

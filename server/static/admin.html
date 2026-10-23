@@ -92,10 +92,24 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
   <h2 class="section" id="purchases-title">Purchases <span class="sub" id="buy-mode" style="font-weight:400"></span></h2>
   <div class="wrap">
     <table>
-      <thead><tr><th>Paid</th><th>Photographer</th><th>What</th><th class="n">Taxable</th><th class="n">GST</th><th class="n">Total</th><th>Invoice</th></tr></thead>
-      <tbody id="purchases"><tr><td colspan="7">Loading…</td></tr></tbody>
+      <thead><tr><th>Paid</th><th>Photographer</th><th>What</th><th class="n">Taxable</th><th class="n">GST</th><th class="n">Total</th><th>Invoice</th><th></th></tr></thead>
+      <tbody id="purchases"><tr><td colspan="8">Loading…</td></tr></tbody>
     </table>
   </div>
+  <h2 class="section">Prices <span class="sub" style="font-weight:400">· changes apply at once to the home page, the buy window and new orders; every change is logged</span></h2>
+  <form id="prices" class="row" style="flex-wrap:wrap;gap:10px 16px;align-items:end">
+    <label>Credit price (paise)<br><input id="pr-credit_price_paise" type="number" min="1" style="width:110px"></label>
+    <label>Launch price until<br><input id="pr-launch_price_until" type="date" style="width:160px"></label>
+    <label>Credit price after (paise)<br><input id="pr-credit_price_after_paise" type="number" min="1" style="width:110px"></label>
+    <label>Season pack credits<br><input id="pr-season_pack_credits" type="number" min="1" style="width:110px"></label>
+    <label>Season pack price (paise)<br><input id="pr-season_pack_paise" type="number" min="1" style="width:130px"></label>
+    <label>Pack credits after launch<br><input id="pr-later_pack_credits" type="number" min="1" style="width:110px"></label>
+    <label>Pack price after (paise)<br><input id="pr-later_pack_paise" type="number" min="1" style="width:130px"></label>
+    <label>50 GB a month (paise)<br><input id="pr-block_paise_month" type="number" min="1" style="width:110px"></label>
+    <button type="submit" class="primary">Save prices</button>
+    <span id="prices-note" class="sub"></span>
+  </form>
+  <p id="prices-error" role="alert" style="color:var(--danger)"></p>
   <h2 class="section">Admin activity <span class="sub" style="font-weight:400">· every View as, download, credit change and sign-in of the studio account</span></h2>
   <div class="wrap">
     <table>
@@ -106,6 +120,18 @@ h2.section { font-size: 15px; color: var(--dim); font-weight: 600; margin: 26px 
   </div>
 </div>
 
+<dialog id="refund" aria-labelledby="refund-title">
+  <button class="x" type="button" id="refund-close" aria-label="Close">×</button>
+  <h2 class="title" id="refund-title">Refund</h2>
+  <p id="refund-who" class="sub"></p>
+  <form id="refund-form" class="row" style="flex-wrap:wrap">
+    <label>Amount ₹ (incl. GST)<br><input id="refund-amount" type="number" min="1" step="0.01" style="width:140px"></label>
+    <label style="flex:1 1 220px">Reason (goes on the credit note)<br><input id="refund-reason" type="text" maxlength="300" style="width:100%"></label>
+    <button type="submit" class="danger" id="refund-go">Refund</button>
+  </form>
+  <p id="refund-error" role="alert" style="color:var(--danger)"></p>
+  <ul id="refund-list" class="sub"></ul>
+</dialog>
 <dialog id="detail" aria-labelledby="detail-title">
   <button class="x" type="button" id="detail-close" aria-label="Close">×</button>
   <h2 class="title" id="detail-title"></h2>
@@ -274,16 +300,18 @@ const inr = (p) => '₹' + (p / 100).toLocaleString('en-IN', { minimumFractionDi
 async function loadPurchases() {
   try {
     const { purchases, test } = await api('/api/admin/purchases');
+    A.purchases = purchases;
     const real = purchases.filter((o) => !o.test);
     const sum = real.reduce((n, o) => n + o.taxable, 0);
     $('buy-mode').textContent = `· ${real.length} paid · ${inr(sum)} before GST` + (purchases.length > real.length ? ` · ${purchases.length - real.length} test` : '') + (test ? ' · server on TEST keys' : '');
     $('purchases').replaceChildren(...(purchases.length ? purchases.map((o) => el('tr', { className: 'go', title: 'Open the invoice', onclick: (e) => { if (!e.target.closest('a')) window.open(`/invoice/${o.id}`, '_blank'); } },
       el('td', { textContent: when(o.paid) }), el('td', { textContent: o.email || '' }),
-      el('td', { textContent: (o.test ? 'TEST · ' : '') + (o.kind === 'credits' ? `${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo`) }),
+      el('td', { textContent: (o.test ? 'TEST · ' : '') + (o.kind === 'credits' ? `${fmt(o.credits)} credits` : o.kind === 'season' ? `Season pack · ${fmt(o.credits)} credits` : `${o.blocks * 50} GB × ${o.months} mo` + (o.sub_id ? ' · auto-renew' : '')) }),
       el('td', { className: 'n', textContent: inr(o.taxable) }), el('td', { className: 'n', textContent: inr(o.cgst + o.sgst + o.igst) }),
       el('td', { className: 'n', textContent: inr(o.total) }),
-      el('td', {}, el('a', { className: 'dl', href: `/invoice/${o.id}`, target: '_blank', textContent: o.invoice_no }))))
-      : [el('tr', {}, el('td', { colSpan: 7, textContent: 'No purchases yet.' }))]));
+      el('td', {}, el('a', { className: 'dl', href: `/invoice/${o.id}`, target: '_blank', textContent: o.invoice_no })),
+      el('td', { className: 'n' }, el('button', { type: 'button', className: 'quiet', textContent: (o.refunded ? `Refunded ${inr(o.refunded)} · ` : '') + 'Refund…', onclick: () => openRefund(o) }))))
+      : [el('tr', {}, el('td', { colSpan: 8, textContent: 'No purchases yet.' }))]));
   } catch (err) { /* shown by the gate or the error line */ }
 }
 
@@ -371,5 +399,7 @@ async function start() {
 }
 api('/api/admin/view-as-stop', { method: 'POST' }).catch(() => {}).then(start);
 </script>
+<script src="/static/admin-billing.js?v=1"></script>
+<footer class="sub" style="padding:20px 0 30px;text-align:center">Powered by Cele-Brat.Tech | <a href="mailto:info@cele-brat.tech">info@cele-brat.tech</a></footer>
 </body>
 </html>
