@@ -36,6 +36,7 @@ import numpy as np
 from engine import render as _r
 from engine import crop as _crop
 from engine import shapes as _shapes
+from engine import retouch as _retouch
 from engine.auto import TOGGLES, auto_correct, combine
 from engine.presets import effective_settings, local_corrections
 
@@ -68,7 +69,7 @@ MASK_ADJUST = {"ev": (-2.0, 2.0), "contrast": (-100, 100), "hl": (-100, 100), "s
 def default_look() -> dict:
     return {"mode": "preset", "preset": None, "amount": 1.0, "toggles": [], "ev": 0.0, "temp": 0.0, "tint": 0.0,
             "hl": 0.0, "sh": 0.0, "wh": 0.0, "bl": 0.0, "noise": 0.0, "angle": 0.0, "masks": {},
-            "preset_masks": True, "adj": {}, "crop": None, "shapes": []}
+            "preset_masks": True, "adj": {}, "crop": None, "shapes": [], "retouch": {}}
 
 
 def _number(value, lo, hi, default=0.0) -> float:
@@ -111,6 +112,8 @@ def clean_look(raw, preset_ids=None) -> dict:
             look["masks"][kind] = kept
     look["crop"] = _crop.clean(raw.get("crop"))          # per photo; never changes the photo itself
     look["shapes"] = _shapes.clean(raw.get("shapes"), MASK_ADJUST)   # radial, linear and brush masks you draw
+    r = _retouch.clean(raw.get("retouch"))                           # skin smoothing, blemishes, eyes, teeth, healed spots
+    look["retouch"] = {} if _retouch.is_off(r) else r
     if look["mode"] == "auto":
         look["preset"], look["toggles"] = None, list(TOGGLES)
     elif look["mode"] == "preset":
@@ -550,6 +553,7 @@ class Renderer:
         self._autos = _Cache(4000)
         self._masks = _Cache(12)
         self._small_masks = _Cache(160)
+        self._faces = _Cache(400)
         self._mask_lock = threading.Lock()
         self.autos_store = None                          # where worked-out automatic values are kept (Store)
         self._versions: dict[str, str] = {}              # uploaded preset id -> fingerprint of its content
@@ -598,6 +602,7 @@ class Renderer:
                         "pack": p["pack"], "about": p["description"] if mine else plain_about(p),
                         "tags": [] if mine else preset_tags(p), "mine": mine, "made": bool(p.get("made")),
                         "own_masks": sorted((p.get("app_masks") or {}).keys()), "wb": p.get("app_wb") or None,
+                        "retouch": p.get("app_retouch") or None, "learned": bool(p.get("learned")),
                         "s": {k: v for k, v in p["settings"].items()
                               if k in adjustments.SLIDERS and isinstance(v, (int, float)) and not isinstance(v, bool)
                               and v != adjustments.neutral(k)},
@@ -679,6 +684,29 @@ class Renderer:
         part.replace(kept)
         return made
 
+    # ---- faces for retouching ---------------------------------------------------------
+    def face_mesh(self, path: Path, frame8: np.ndarray, turn: int = 0, angle: float = 0.0) -> list[dict]:
+        """The face landmarks (fractions) of this photo's straightened frame, found once per photo and turn
+        and kept in memory and, with autos_store, in the database beside the photo."""
+        key = f"mesh:{turn}:{round(float(angle), 1)}"
+        stamp = path.stat().st_mtime_ns if path.exists() else 0
+
+        def make():
+            store = self.autos_store
+            if store is not None:
+                kept = store.get_faces(path.stem, stamp / 1e9, key)
+                if kept is not None:
+                    return kept
+            h, w = frame8.shape[:2]
+            k = min(1.0, 1600 / max(h, w))
+            small = cv2.resize(frame8, (max(1, round(w * k)), max(1, round(h * k))), interpolation=cv2.INTER_AREA) if k < 1 else frame8
+            with self._mask_lock:
+                found = _retouch.landmarks(small)
+            if store is not None:
+                store.put_faces(path.stem, found, stamp / 1e9, key)
+            return found
+        return self._faces.get((str(path), stamp, key), make)
+
     # ---- looks ----------------------------------------------------------
     def auto_values(self, path: Path, toggles, iso=None) -> dict:
         """The automatic values for one photo. Measured on a fixed-size copy, so
@@ -746,8 +774,13 @@ class Renderer:
         for kind, values in look["masks"].items():              # your own changes on top of the preset's
             masks[kind] = {**masks.get(kind, {}), **values}
         corrections = local_corrections(preset) if preset and look["preset_masks"] else []
+        retouch = dict((preset or {}).get("app_retouch") or {})       # presets made in the app carry their retouch
+        for k, v in look["retouch"].items():
+            if v or k == "spots":
+                retouch[k] = v
+        retouch = _retouch.clean(retouch)
         return {"settings": settings, "curves": curves, "manual": manual, "auto": auto["settings"],
-                "masks": masks, "corrections": corrections,
+                "masks": masks, "corrections": corrections, "retouch": {} if _retouch.is_off(retouch) else retouch,
                 "shapes": ([*((preset or {}).get("app_shapes") or [])] if look["preset_masks"] else []) + look["shapes"], "angle": float(settings.get("CropAngle") or 0.0),
                 "auto_wb": auto["manual"], "amount": look["amount"], "preset": preset["display_name"] if preset else None,
                 "crop": look["crop"]}
@@ -802,6 +835,8 @@ class Renderer:
             out = local_adjust8(out, masks, d["masks"], d["corrections"])
         if abs(d["angle"]) >= 0.05:
             out = straighten(out, d["angle"])
+        if d["retouch"]:
+            out = _retouch.apply(out, d["retouch"], self.face_mesh(path, out, turn, d["angle"]))
         if d["shapes"]:
             out = apply_shapes8(out, d["shapes"])
         if crop:
@@ -849,6 +884,8 @@ class Renderer:
             if show in masks:
                 out = (np.clip(show_mask(out.astype(np.float32) / 255, masks[show]), 0, 1) * 255 + 0.5).astype(np.uint8)
         out = straighten(out, d["angle"])
+        if d["retouch"] and size > 400:                              # not at grid size: faces are too small to matter
+            out = _retouch.apply(out, d["retouch"], self.face_mesh(path, out, turn, d["angle"]))
         if d["shapes"]:
             out = apply_shapes8(out, d["shapes"], show)
         if crop:
@@ -940,6 +977,8 @@ def lightroom_edit(renderer: "Renderer", path: Path, look: dict, iso=None, as_sh
         not_yet.append("your own masks")
     if d["shapes"]:
         not_yet.append("radial, linear and brush masks")
+    if d["retouch"]:
+        not_yet.append("skin retouching")
     crop = _crop.rect(d["crop"])
     if _crop.turn_of(d["crop"]):
         not_yet.append("rotation by 90 or 180 degrees")
@@ -988,7 +1027,7 @@ def preset_from_look(renderer: "Renderer", look: dict, name: str, group: str, ow
     from engine.presets import write_xmp
     look = clean_look(look, renderer.presets)
     base = renderer.presets.get(look["preset"]) if look["preset"] else None
-    plain = {**look, "mode": "preset", "toggles": [], "masks": {}, "crop": None, "shapes": []}
+    plain = {**look, "mode": "preset", "toggles": [], "masks": {}, "crop": None, "shapes": [], "retouch": {}}
     d = renderer.develop(Path("/nonexistent"), plain)            # no auto values, so no photo is read
     settings = {k: v for k, v in d["settings"].items() if k not in ("CropAngle",)}
     amount = float(look["amount"])
@@ -1018,6 +1057,10 @@ def preset_from_look(renderer: "Renderer", look: dict, name: str, group: str, ow
         drawn = ([*((base or {}).get("app_shapes") or [])] if look["preset_masks"] else []) + look["shapes"]
         if drawn:
             preset["app_shapes"] = drawn
+        retouch = {**((base or {}).get("app_retouch") or {}), **{k: v for k, v in look["retouch"].items() if k != "spots" and v}}
+        retouch.pop("spots", None)                                  # healed spots belong to one photo, not a preset
+        if not _retouch.is_off(retouch):
+            preset["app_retouch"] = _retouch.clean(retouch)
     if with_wb:
         base_wb = (base or {}).get("app_wb") or {}
         temp, tint = float(base_wb.get("temp", 0)) + look["temp"], float(base_wb.get("tint", 0)) + look["tint"]

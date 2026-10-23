@@ -170,6 +170,31 @@ class Culls:
                         job.get("ref") or job["wedding_id"], int(job.get("total") or 0), time.time(), job["wedding_id"]))
 
 
+    def faces(self, wedding_id: str, photo: dict, renderer) -> list[dict]:
+        """Face boxes and per-face scores of one photo (engine/cull.face_report), worked out once per copy of
+        the photo and kept in photos.faces. Uses the cull's own measurements when they are there."""
+        from engine.cull import face_report
+        store = self.store
+        received = float(photo["received"])
+        kept = store.get_faces(photo["id"], received, "faces")
+        if kept is not None:
+            return kept
+        path = store.preview_path(wedding_id, photo["id"])
+        img = renderer._load(path, 1600)
+        measured = None
+        pkl = path.with_suffix(".cull.pkl")
+        if pkl.exists():
+            try:
+                stamp, m = pickle.loads(pkl.read_bytes())
+                if stamp == path.stat().st_mtime_ns:
+                    measured = m["faces"]
+            except Exception:
+                measured = None
+        report = face_report(img, measured)
+        store.put_faces(photo["id"], report, received, "faces")
+        return report
+
+
 def _named(reason: str, names: dict) -> str:
     """Reasons name a twin frame by photo id; show its file name instead."""
     for pid, name in names.items():

@@ -236,3 +236,21 @@ def cull(items: list[tuple[str, dict]], checks=CHECKS, strictness: str = "normal
                     r["result"], r["stars"] = "maybe", STARS["maybe"]
                     r["reasons"].append(f"similar to {best['name']}")
     return out
+
+
+def face_report(img, faces: list[dict] | None = None) -> list[dict]:
+    """Every face with the scores the Compare view shows: box (fractions), eyes open (0..1, from the
+    blink scores), sharpness of the face, smile. Faces too small to judge carry only the box."""
+    y = _luma(img)
+    out = []
+    for f in faces if faces is not None else find_faces(img):
+        row = {"box": [round(v, 4) for v in f["box"]], "judged": bool(f.get("judged")), "size": round(float(f["size"]), 4)}
+        if f.get("judged"):
+            row["eyes_open"] = round(1.0 - max(float(f.get("blink_left", 0)), float(f.get("blink_right", 0))), 3)
+            row["smile"] = round(float(f.get("smile", 0)), 3)
+            sharp, smear = sharpness_dirs(y, f["box"])
+            row["sharpness"] = round(float(sharp), 4)
+            row["smear"] = round(float(smear), 3)
+            row["score"] = round(sharp * 4 - (1 - row["eyes_open"]) * 0.6 + row["smile"] * 0.15, 4)
+        out.append(row)
+    return out
