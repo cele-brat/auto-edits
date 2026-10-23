@@ -43,6 +43,14 @@ CREATE INDEX IF NOT EXISTS photos_by_folder ON photos (folder_id, taken, file_na
 """
 
 
+class Stale(Exception):
+    """A look was saved from another tab since this one last loaded it (set_*_settings with expect)."""
+
+    def __init__(self, current, version: int):
+        self.current, self.version = current, version
+        super().__init__("changed in another tab")
+
+
 class Store:
     def __init__(self, data_dir: str | Path, blobs=None):
         from .blobs import NoBlobs
@@ -71,9 +79,21 @@ class Store:
                 # Photos from before this column are not queued (DEFAULT '{}'): theirs are worked out when first needed.
                 db.execute("ALTER TABLE photos ADD COLUMN autos TEXT NOT NULL DEFAULT '{}'")
             db.execute("CREATE INDEX IF NOT EXISTS photos_autos_due ON photos (id) WHERE autos=''")
+            if "version" not in columns:             # counts up on every look save: two tabs cannot overwrite each other unseen
+                db.execute("ALTER TABLE photos ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
+            if "version" not in {r["name"] for r in db.execute("PRAGMA table_info(folders)")}:
+                db.execute("ALTER TABLE folders ADD COLUMN version INTEGER NOT NULL DEFAULT 0")
             if "owner" not in {r["name"] for r in db.execute("PRAGMA table_info(presets)")}:
                 db.execute("ALTER TABLE presets ADD COLUMN owner TEXT NOT NULL DEFAULT ''")
             db.execute("CREATE INDEX IF NOT EXISTS weddings_by_owner ON weddings (owner, created)")
+            wcols = {r["name"] for r in db.execute("PRAGMA table_info(weddings)")}
+            if "last_used" not in wcols:             # retention (server/retention.py): last upload, edit, export or view
+                db.execute("ALTER TABLE weddings ADD COLUMN last_used REAL NOT NULL DEFAULT 0")
+                db.execute("UPDATE weddings SET last_used=COALESCE((SELECT MAX(p.received) FROM photos p WHERE p.wedding_id=weddings.id), "
+                           "created)")
+            if "archived" not in wcols:              # when its photos and exports were removed (0: still here)
+                db.execute("ALTER TABLE weddings ADD COLUMN archived REAL NOT NULL DEFAULT 0")
+                db.execute("ALTER TABLE weddings ADD COLUMN photos_kept INTEGER NOT NULL DEFAULT 0")   # how many it had
 
     def _give_weddings_owners(self):
         """Weddings made before there were accounts had one name per catalogue for everyone.
@@ -129,9 +149,12 @@ class Store:
             created = row is None
             if created:
                 wid = uuid.uuid4().hex[:12]
-                db.execute("INSERT INTO weddings (id, name, catalog, created, owner) VALUES (?,?,?,?,?)",
-                           (wid, name, catalog, time.time(), owner))
+                db.execute("INSERT INTO weddings (id, name, catalog, created, owner, last_used) VALUES (?,?,?,?,?,?)",
+                           (wid, name, catalog, time.time(), owner, time.time()))
                 row = db.execute("SELECT * FROM weddings WHERE id=?", (wid,)).fetchone()
+            elif row["archived"]:                    # its photos were removed (retention.py): it starts again, same name
+                db.execute("UPDATE weddings SET archived=0, photos_kept=0, last_used=? WHERE id=?", (time.time(), row["id"]))
+                row = db.execute("SELECT * FROM weddings WHERE id=?", (row["id"],)).fetchone()
         (self.wedding_dir(row["id"]) / "previews").mkdir(parents=True, exist_ok=True)
         return {**dict(row), "is_new": created}
 
@@ -141,20 +164,23 @@ class Store:
             if row is None:
                 return None
             folders = db.execute(
-                "SELECT f.id, f.name, f.settings, COUNT(p.id) AS photos, COALESCE(SUM(p.bytes),0) AS bytes "
+                "SELECT f.id, f.name, f.settings, f.version, COUNT(p.id) AS photos, COALESCE(SUM(p.bytes),0) AS bytes "
                 "FROM folders f LEFT JOIN photos p ON p.folder_id=f.id "
                 "WHERE f.wedding_id=? GROUP BY f.id ORDER BY f.name", (wedding_id,)).fetchall()
         folders = [{**dict(f), "settings": json.loads(f["settings"] or "{}")} for f in folders]
         return {**dict(row), "folders": folders, "photos": sum(f["photos"] for f in folders),
                 "bytes": sum(f["bytes"] for f in folders)}
 
-    def weddings(self, owner: str | None = None) -> list[dict]:
-        """One photographer's weddings, newest first (None: everyone's)."""
+    def weddings(self, owner: str | None = None, archived: bool = False) -> list[dict]:
+        """One photographer's weddings, newest first (None: everyone's). Archived ones (retention.py:
+        photos removed, name kept) are left out unless asked for."""
+        where = "" if archived else "archived=0"
         with self._db() as db:
             if owner is None:
-                ids = [r["id"] for r in db.execute("SELECT id FROM weddings ORDER BY created DESC")]
+                ids = [r["id"] for r in db.execute(f"SELECT id FROM weddings {'WHERE ' + where if where else ''} ORDER BY created DESC")]
             else:
-                ids = [r["id"] for r in db.execute("SELECT id FROM weddings WHERE owner=? ORDER BY created DESC", (owner,))]
+                ids = [r["id"] for r in db.execute(f"SELECT id FROM weddings WHERE owner=? {'AND ' + where if where else ''} "
+                                                   "ORDER BY created DESC", (owner,))]
         return [self.wedding(i) for i in ids]
 
     # ---- how much a photographer holds (limits.py) -----------------------------------
@@ -181,6 +207,29 @@ class Store:
         with self._db() as db:
             r = db.execute("SELECT owner FROM weddings WHERE id=?", (wedding_id,)).fetchone()
         return r["owner"] if r else None
+
+    def touch(self, wedding_id: str, now: float | None = None, force: bool = False) -> None:
+        """The wedding was used just now (upload, edit, export, view): retention counts from here.
+        Written at most once a minute unless forced, so reads stay cheap."""
+        now = now or time.time()
+        with self._db() as db:
+            db.execute("UPDATE weddings SET last_used=? WHERE id=? AND last_used<?", (now, wedding_id, now if force else now - 60))
+
+    def archive_wedding(self, wedding_id: str, now: float | None = None) -> int:
+        """Retention: remove the wedding's photos and exports (from this disk and from storage) but keep the
+        wedding row itself: its name, how many photos it had, and so the ledger rows that point to it.
+        Returns how many photos were removed."""
+        with self._db() as db:
+            n = db.execute("SELECT COUNT(*) FROM photos WHERE wedding_id=?", (wedding_id,)).fetchone()[0]
+            db.execute("DELETE FROM photos WHERE wedding_id=?", (wedding_id,))
+            db.execute("DELETE FROM folders WHERE wedding_id=?", (wedding_id,))
+            for table in ("exports", "cull_jobs"):
+                if db.execute("SELECT 1 FROM sqlite_master WHERE name=?", (table,)).fetchone():
+                    db.execute(f"DELETE FROM {table} WHERE wedding_id=?", (wedding_id,))
+            db.execute("UPDATE weddings SET archived=?, photos_kept=? WHERE id=?", (now or time.time(), n, wedding_id))
+        shutil.rmtree(self.wedding_dir(wedding_id), ignore_errors=True)
+        self.blobs.delete_prefix(f"weddings/{wedding_id}/")
+        return int(n)
 
     def delete_wedding(self, wedding_id: str) -> bool:
         """Remove a wedding and all its images from the server. Nothing else is touched."""
@@ -306,6 +355,8 @@ class Store:
             else:
                 db.execute("INSERT INTO photos (folder_id, file_name, taken, meta, bytes, received, id, wedding_id, "
                            "lr_uuid, autos) VALUES (?,?,?,?,?,?,?,?,?,'')", values + (photo_id, wedding_id, lr_uuid))
+            db.execute("UPDATE weddings SET last_used=?, archived=0, photos_kept=0 WHERE id=? AND (last_used<? OR archived<>0)",
+                       (now, wedding_id, now))      # a photo sent to an archived wedding brings it back
         if self.blobs.on:                           # into storage straight away; this disk keeps a working copy
             try:
                 self.blobs.put(self._key(wedding_id, photo_id), path)
@@ -317,7 +368,7 @@ class Store:
 
     def photos(self, wedding_id: str, folder_id: int | None = None) -> list[dict]:
         q = ("SELECT p.id, p.lr_uuid, p.file_name, p.taken, p.meta, p.bytes, p.settings, p.received, p.applied, p.paid_stamp, "
-             "p.cull, p.pick, p.crop, "
+             "p.cull, p.pick, p.crop, p.version, "
              "f.name AS folder, f.id AS folder_id "
              "FROM photos p JOIN folders f ON f.id=p.folder_id WHERE p.wedding_id=?")
         args: list = [wedding_id]
@@ -326,6 +377,7 @@ class Store:
             args.append(folder_id)
         with self._db() as db:
             rows = db.execute(q + " ORDER BY f.name, p.taken, p.file_name", args).fetchall()
+        self.touch(wedding_id)                       # looking at the photos counts as using the wedding (retention.py)
         return [{**dict(r), "meta": json.loads(r["meta"]), "cull": json.loads(r["cull"]) if r["cull"] else None,
                  "settings": json.loads(r["settings"]) if r["settings"] else None,
                  "crop": json.loads(r["crop"]) if r["crop"] else None} for r in rows]
@@ -342,17 +394,35 @@ class Store:
                 "folder_settings": json.loads(r["folder_settings"] or "{}")}
 
     # ---- looks ----------------------------------------------------------
-    def set_folder_settings(self, wedding_id: str, folder_id: int, settings: dict) -> bool:
+    def set_folder_settings(self, wedding_id: str, folder_id: int, settings: dict, expect: int | None = None) -> int | None:
+        """Save a folder's look. Returns its new version (1, 2, 3...), or None when there is no such folder.
+        With expect (the version the caller last saw), a look saved since by another tab raises Stale."""
         with self._db() as db:
-            return bool(db.execute("UPDATE folders SET settings=? WHERE wedding_id=? AND id=?",
-                                   (json.dumps(settings), wedding_id, folder_id)).rowcount)
+            db.execute("BEGIN IMMEDIATE")
+            r = db.execute("SELECT settings, version FROM folders WHERE wedding_id=? AND id=?", (wedding_id, folder_id)).fetchone()
+            if r is None:
+                return None
+            if expect is not None and int(r["version"]) != int(expect):
+                raise Stale(json.loads(r["settings"] or "{}"), int(r["version"]))
+            db.execute("UPDATE folders SET settings=?, version=version+1 WHERE wedding_id=? AND id=?",
+                       (json.dumps(settings), wedding_id, folder_id))
+            db.execute("UPDATE weddings SET last_used=? WHERE id=?", (time.time(), wedding_id))
+        return int(r["version"]) + 1
 
-    def set_photo_settings(self, wedding_id: str, photo_id: str, settings: dict | None) -> bool:
-        """A photo's own look. None puts it back on its folder's look."""
+    def set_photo_settings(self, wedding_id: str, photo_id: str, settings: dict | None, expect: int | None = None) -> int | None:
+        """A photo's own look. None puts it back on its folder's look. Returns the photo's new version, or None
+        when there is no such photo; with expect, a look saved since by another tab raises Stale."""
         value = json.dumps(settings) if settings is not None else ""
         with self._db() as db:
-            return bool(db.execute("UPDATE photos SET settings=? WHERE wedding_id=? AND id=?",
-                                   (value, wedding_id, photo_id)).rowcount)
+            db.execute("BEGIN IMMEDIATE")
+            r = db.execute("SELECT settings, version FROM photos WHERE wedding_id=? AND id=?", (wedding_id, photo_id)).fetchone()
+            if r is None:
+                return None
+            if expect is not None and int(r["version"]) != int(expect):
+                raise Stale(json.loads(r["settings"]) if r["settings"] else None, int(r["version"]))
+            db.execute("UPDATE photos SET settings=?, version=version+1 WHERE wedding_id=? AND id=?", (value, wedding_id, photo_id))
+            db.execute("UPDATE weddings SET last_used=? WHERE id=?", (time.time(), wedding_id))
+        return int(r["version"]) + 1
 
     def set_crop(self, wedding_id: str, photo_id: str, crop: dict | None) -> bool:
         """A photo's own crop, or None for the whole picture. Only a setting: the photo is never changed."""

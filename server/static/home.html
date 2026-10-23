@@ -656,10 +656,6 @@ $a('auth-close').onclick = () => auth.close();
 auth.addEventListener('mousedown', (e) => { if (e.target === auth) auth.close(); });
 document.addEventListener('keydown', (e) => { if (e.code === 'KeyK' && e.altKey && e.shiftKey) openAuth('key'); });
 
-// after a sign-up: signed in means a new account (open the app); otherwise the email has the next step
-async function signedIn() {
-  try { return (await fetch('/api/session', { credentials: 'same-origin' })).ok; } catch (x) { return false; }
-}
 async function post(path, body) {
   const r = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'AutoEdits' }, body: JSON.stringify(body) });
   let data = {};
@@ -698,7 +694,7 @@ $a('auth-form').onsubmit = async (e) => {
     else if (m === 'signup') r = await post('/api/signup', { email, password, name: $a('auth-name').value.trim(), agree: $a('auth-agree').checked });
     else r = await post('/api/forgot', { email });
     if (r.ok && m === 'forgot') { $a('auth-note').textContent = 'If there is an account with this email, the link is on its way. Check your inbox and spam folder.'; return; }
-    if (r.ok && m === 'signup' && !(await signedIn())) { $a('auth-note').textContent = `Thank you. We sent an email to ${email}: open it to carry on. Check the spam folder too.`; return; }
+    if (r.ok && m === 'signup') { $a('auth-note').textContent = `Check your email to continue. We sent a link to ${email}: open it to confirm your address and log in. Check the spam folder too.`; return; }
     if (r.ok && r.data.need_code) { auth.dataset.ticket = r.data.ticket; $a('auth-code').value = ''; mode('code'); return; }
     if (r.ok) { location.href = m === 'signup' ? '/?welcome=1' : '/'; return; }
     err.textContent = r.detail || (r.status === 401 ? 'That email and password do not match.' : 'Something went wrong. Please try again.');
@@ -711,6 +707,14 @@ const asked = new URLSearchParams(location.search);
 if (asked.get('link') === 'expired' || asked.get('link') === 'used') {
   openAuth('login');
   $a('auth-note').textContent = 'That link was already used or has expired. If you confirmed your email before, it is confirmed: just log in.';
+  history.replaceState(null, '', '/');
+} else if (asked.get('deleted') === '1') {
+  openAuth('login');
+  $a('auth-note').textContent = 'Your account has been deleted. Thank you for trying Auto Edits.';
+  history.replaceState(null, '', '/');
+} else if (asked.get('email') === 'changed') {
+  openAuth('login');
+  $a('auth-note').textContent = 'Your email address has been changed. Log in with the new address.';
   history.replaceState(null, '', '/');
 } else if (asked.has('login')) { openAuth('login'); history.replaceState(null, '', '/'); }
 else if (asked.has('signup')) { openAuth('signup'); history.replaceState(null, '', '/'); }

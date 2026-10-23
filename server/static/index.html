@@ -9,11 +9,13 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css?v=33">
+<link rel="stylesheet" href="/static/dashboard.css?v=1">
 </head>
 <body>
 <div id="app" hidden>
   <header id="bar">
     <span id="brand">Auto Edits<small>by Cele-Brat</small></span>
+    <span id="env-banner" hidden title="A test copy of Auto Edits: test payments only, no email to photographers">STAGING</span>
     <select id="wedding" aria-label="Wedding"></select>
     <span id="count"></span>
     <span class="grow"></span>
@@ -366,6 +368,8 @@
   <nav class="acc-tabs" role="tablist" aria-label="Account sections">
     <button type="button" role="tab" data-acc="credits" aria-selected="true">Credit history</button>
     <button type="button" role="tab" data-acc="purchases" aria-selected="false">Purchases</button>
+    <button type="button" role="tab" data-acc="usage" aria-selected="false">Usage</button>
+    <button type="button" role="tab" data-acc="weddings" aria-selected="false">Weddings</button>
     <button type="button" role="tab" data-acc="lightroom" aria-selected="false">Lightroom</button>
     <button type="button" role="tab" data-acc="security" aria-selected="false">Security</button>
   </nav>
@@ -381,6 +385,18 @@
       <table id="purchases"><thead><tr><th>Date</th><th>What</th><th class="n">Paid</th><th class="n">Invoice</th></tr></thead><tbody></tbody></table>
     </div>
     <p class="dim" id="purchases-none">No purchases yet. Invoices for what you buy appear here.</p>
+  </section>
+
+  <section class="acc-pane" data-pane="usage" hidden>
+    <div class="acc-pane-head"><h3>Usage by wedding</h3><a class="statement" href="/api/usage.csv" download>Download as CSV</a></div>
+    <div id="usage-chart" class="usage-chart" aria-label="Credits spent per wedding"></div>
+    <table id="usage"><thead><tr><th>Wedding</th><th class="n">Photos</th><th class="n">Exports</th><th class="n">Lightroom</th><th class="n">Culls</th><th class="n">Credits</th><th class="n">Storage</th><th>Last activity</th></tr></thead><tbody></tbody><tfoot></tfoot></table>
+  </section>
+
+  <section class="acc-pane" data-pane="weddings" hidden>
+    <div class="acc-pane-head"><h3>Your weddings on the server</h3></div>
+    <p class="dim" id="weddings-note">Auto Edits is a working tool, not an archive: a wedding not opened, edited or exported for 180 days has its uploaded photos and exports removed from the server (you get an email 14 days before, and again the day before). The wedding's name and credit history stay. The photos on your own computer are never touched.</p>
+    <table id="wedding-list"><thead><tr><th>Wedding</th><th class="n">Photos</th><th>Last used</th><th>Expires on</th><th></th></tr></thead><tbody></tbody></table>
   </section>
 
   <section class="acc-pane" data-pane="lightroom" hidden>
@@ -408,6 +424,16 @@
         <button type="submit">Save password</button>
       </form>
     </div>
+    <div class="acc-block" id="email-block">
+      <h3>Change email</h3>
+      <p class="dim">We send a link to the new address; the change happens when you open it. The old address gets a note.</p>
+      <form id="email-form" class="acc-form">
+        <input id="email-new" type="email" autocomplete="email" placeholder="New email address" aria-label="New email address" required>
+        <input id="email-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Your password">
+        <button type="submit">Send the link</button>
+      </form>
+      <p class="dim" id="email-note"></p>
+    </div>
     <div class="acc-block" id="twostep" hidden>
       <h3>Two-step login</h3>
       <p class="dim" id="twostep-state"></p>
@@ -428,6 +454,18 @@
         <div class="row"><button type="button" id="twostep-copy">Copy</button><button type="button" id="twostep-save">Download as a file</button></div>
       </div>
       <form id="twostep-renew" class="row" hidden><input id="twostep-renew-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="Current 6-digit code" aria-label="Current code"><button type="submit">Make new backup codes</button></form>
+    </div>
+    <div class="acc-block" id="delete-block">
+      <h3>Delete my account</h3>
+      <p class="dim">Removes your uploaded photos, exports and presets for good, and your name and email from the account. Credit and invoice records are kept as tax law requires. We email you a link first; the deletion happens when you open it.</p>
+      <details id="delete-details"><summary>Delete my account…</summary>
+        <form id="delete-form" class="acc-form">
+          <input id="delete-password" type="password" autocomplete="current-password" placeholder="Your password" aria-label="Your password">
+          <input id="delete-confirm" type="text" autocomplete="off" placeholder="Type DELETE to confirm" aria-label="Type DELETE to confirm">
+          <button type="submit" class="danger">Send the deletion link</button>
+        </form>
+        <p class="dim" id="delete-note"></p>
+      </details>
     </div>
   </section>
 
@@ -505,7 +543,7 @@
     <button id="confirm-yes" type="button" class="danger">Delete from server</button>
   </div>
 </dialog>
-<script src="/static/app.js?v=29"></script>
+<script src="/static/app.js?v=30"></script>
 <script src="/static/addfolder.js?v=18"></script>
 <script src="/static/cull.js?v=17"></script>
 <script src="/static/export.js?v=16"></script>
@@ -513,5 +551,6 @@
 <script src="/static/buy.js?v=6"></script>
 <script src="/static/crop.js?v=5"></script>
 <script src="/static/drawn.js?v=2"></script>
+<script src="/static/dashboard.js?v=1"></script>
 </body>
 </html>

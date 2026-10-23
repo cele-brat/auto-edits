@@ -32,8 +32,9 @@ async function api(path, options = {}) {
   if (r.status === 401) { showSignIn(); throw new Error('signed out'); }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const e = new Error(typeof data.detail === 'string' ? data.detail : `The server answered ${r.status}.`);
+    const e = new Error(typeof data.detail === 'string' ? data.detail : (data.detail && data.detail.message) || `The server answered ${r.status}.`);
     e.status = r.status;
+    e.body = data.detail && typeof data.detail === 'object' ? data.detail : null;     // a 409 carries the other tab's look
     throw e;
   }
   return data;
@@ -146,6 +147,41 @@ function queueSave(key, run) {
   pending.set(key, { timer });
 }
 
+// Two tabs on the same folder: each look save says which version it started from (ver on photos,
+// version on folders). The server answers 409 with the other tab's look when it changed in between;
+// then "Reload / Keep mine" is offered next to "Saved".
+async function saveVersioned(item, url, look, key) {
+  const v = item[key];
+  try {
+    const r = await api(url + (Number.isInteger(v) ? `?version=${v}` : ''), { method: 'PUT', body: look });
+    if (Number.isInteger(r.version)) item[key] = r.version;
+    return r;
+  } catch (e) {
+    if (e.status !== 409) throw e;
+    const other = e.body && e.body.look !== undefined ? e.body : { look: null, version: null };
+    showConflict(() => {                          // Reload: take the other tab's look
+      item[key] = other.version;
+      if (key === 'ver') item.look = other.look; else item.settings = other.look || {};
+      drawPanel(); drawStage(); refreshThumbs(); drawFolders();
+    }, async () => {                              // Keep mine: save again on top of the other tab's version
+      item[key] = other.version;
+      await saveVersioned(item, url, look, key);
+      $('saved').textContent = 'Saved';
+      refreshThumbs(); drawFolders();
+    });
+    throw new Error('This photo was changed in another tab.');
+  }
+}
+function showConflict(reload, keep) {
+  let box = $('saved-conflict');
+  if (!box) { box = el('span', { id: 'saved-conflict' }); $('saved').after(box); }
+  const a = el('button', { type: 'button', className: 'quiet', textContent: 'Reload' });
+  const b = el('button', { type: 'button', className: 'quiet', textContent: 'Keep mine' });
+  a.onclick = () => { box.replaceChildren(); $('saved').textContent = ''; reload(); };
+  b.onclick = async () => { box.replaceChildren(); $('saved').textContent = 'Saving…'; try { await keep(); } catch (x) { $('saved').textContent = `Not saved. ${x.message}`; } };
+  box.replaceChildren(a, b);
+}
+
 // live: a slider is being dragged. Only the numbers and the photo are redrawn (the photo at most
 // every 80 ms), so the slider follows the hand; everything else is redrawn when it is let go.
 let stageTimer = null, liveBusy = false, liveAgain = false;
@@ -165,11 +201,11 @@ function change(patch, live = false) {
   if (editingPhoto()) {
     const p = photo();
     p.look = look;
-    queueSave(`p${p.id}`, () => api(`${base(p)}/look`, { method: 'PUT', body: look }));
+    queueSave(`p${p.id}`, () => saveVersioned(p, `${base(p)}/look`, look, 'ver'));
   } else {
     const f = folder();
     f.settings = look;
-    queueSave(`f${f.id}`, () => api(`/api/weddings/${S.wedding.id}/folders/${f.id}/look`, { method: 'PUT', body: look }));
+    queueSave(`f${f.id}`, () => saveVersioned(f, `/api/weddings/${S.wedding.id}/folders/${f.id}/look`, look, 'version'));
   }
   if (!live) { clearTimeout(stageTimer); stageTimer = null; stageLive = false; drawPanel(); drawStage(); return; }
   drawSliders(look);

@@ -136,6 +136,8 @@ def test_payments_off_without_keys(tmp_path, box):
 def test_unconfirmed_and_view_as_cannot_buy(app, box):
     c = TestClient(app)
     c.post("/api/signup", json={"email": "n@example.com", "password": "a good password", "agree": True})
+    assert c.post("/api/buy", json={"kind": "credits", "credits": 500, "state": "08"}).status_code == 401   # not signed in yet
+    c.post("/api/login", json={"email": "n@example.com", "password": "a good password"})
     assert c.post("/api/buy", json={"kind": "credits", "credits": 500, "state": "08"}).status_code == 403
 
 
