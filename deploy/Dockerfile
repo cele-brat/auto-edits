@@ -14,8 +14,6 @@ COPY data/presets.json data/lr_response.json data/params.json ./data/
 COPY server ./server
 # the Lightroom plug-in, zipped on request at /download/lightroom-plugin
 COPY plugin/AutoEdits.lrplugin ./plugin/AutoEdits.lrplugin
-# wkhtmltopdf turns invoice / credit-note pages into the PDF attached to the email (server/billing.py)
-RUN apt-get update && apt-get install -y --no-install-recommends wkhtmltopdf && rm -rf /var/lib/apt/lists/*
 RUN useradd --uid 10001 --no-create-home autoedits && mkdir /data && chown autoedits /data
 USER autoedits
 # one maths thread per request: more threads than the processor share allows makes rendering erratic
