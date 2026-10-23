@@ -83,6 +83,14 @@ def run_if_due(store, mailer, to: str, backups=None, now: dt.datetime | None = N
             return None
         db.execute("INSERT OR REPLACE INTO settings (k, v) VALUES ('health_last_day', ?)", (today,))
     found = problems(store, backups, now.timestamp())
+    try:                                             # SPF / DKIM / DMARC of the sending domain (server/mailcheck.py)
+        from . import mailcheck
+        domain = mailcheck.sending_domain()
+        gone = mailcheck.missing(domain) if domain else []
+        if gone:
+            found.append(f"email records missing for the sending domain: {', '.join(gone)} (run: python -m server.mailcheck)")
+    except Exception:
+        pass
     if found and to:
         text = ("The daily Auto Edits check found something to look at:\n\n" + "\n".join(f"- {p}" for p in found) +
                 "\n\nOn the VPS: ./deploy/ops.sh status shows the containers; /admin shows backups.")

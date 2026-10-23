@@ -53,11 +53,16 @@ def browser(app):
 
 
 def sign_up(app, box, email, verify=True):
+    """A signed-in browser. Sign-up itself gives no session (Oct 2026: "check your email"): the confirm
+    link signs in; without verify, the browser logs in with the password instead."""
     c = browser(app)
     r = c.post("/api/signup", json={"email": email, "password": "a good password", "name": "Ravi", "agree": True})
     assert r.status_code == 200, r.text
+    assert "autoedits" not in c.cookies                               # no session until the email link is opened
     if verify:
         assert c.get(f"/verify/{box.link(email, 'verify')}", follow_redirects=False).status_code == 303
+    else:
+        assert c.post("/api/login", json={"email": email, "password": "a good password"}).status_code == 200
     return c
 
 
@@ -81,10 +86,12 @@ def test_sign_up_confirm_email_and_get_free_credits(app, box):
     w = wedding_with(c, 1)
     assert c.post(f"/api/weddings/{w['id']}/cull", json={}).status_code == 403          # confirm the email first
     token = box.link("ravi@example.com", "verify")
-    r = c.get(f"/verify/{token}", follow_redirects=False)
-    assert r.headers["location"] == "/?verified=1"
-    me = c.get("/api/me").json()
+    fresh = browser(app)                                              # the link signs in, in any browser
+    r = fresh.get(f"/verify/{token}", follow_redirects=False)
+    assert r.headers["location"] == "/?verified=1" and "autoedits" in fresh.cookies
+    me = fresh.get("/api/me").json()
     assert me["user"]["verified"] and me["credits"] == 50
+    assert c.get("/api/me").json()["user"]["verified"]
     assert c.get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?verified=again"  # once only: said kindly
     assert browser(app).get(f"/verify/{token}", follow_redirects=False).headers["location"] == "/?link=used"  # elsewhere: log in
     assert browser(app).get("/verify/made-up", follow_redirects=False).headers["location"] == "/?link=used"

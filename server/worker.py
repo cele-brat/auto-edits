@@ -148,11 +148,18 @@ def main():
     from .nudges import Nudges
     mailer = Mailer()
     admin = os.environ.get("AUTOEDITS_ADMIN_EMAIL", "")
-    nudges = Nudges(Accounts(store, admin), mailer, os.environ.get("AUTOEDITS_BASE_URL", "https://edits.cele-brat.solutions"))
+    from .retention import Retention
+    from . import staging
+    mailer = staging.only_studio(mailer, admin)                  # a staging copy emails nobody but the studio
+    accounts = Accounts(store, admin)
+    base = os.environ.get("AUTOEDITS_BASE_URL", "https://edits.cele-brat.solutions")
+    nudges = Nudges(accounts, mailer, base)
+    retention = Retention(store, accounts, Exports(store), mailer, base)
     while True:                                                  # restart any worker that dies
         time.sleep(5)
         backups.run_if_due()                                     # the daily database copy (see server/backups.py)
         nudges.run_if_due()                                      # reminders and the end of free credits (server/nudges.py)
+        retention.run_if_due()                                   # old weddings: warn, then remove photos (server/retention.py)
         try:
             health.run_if_due(store, mailer, admin, backups)     # emails the studio only when something is wrong
         except Exception:

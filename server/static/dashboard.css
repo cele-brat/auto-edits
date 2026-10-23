@@ -1,0 +1,21 @@
+/* The Account window's Usage and Weddings tabs, the delete-account block, the STAGING banner. */
+#env-banner { background: var(--danger); color: #fff; font: 700 11px/1 var(--sans, sans-serif); letter-spacing: .12em; padding: 5px 9px; border-radius: 4px; margin-left: 8px; white-space: nowrap; }
+#usage, #wedding-list { width: 100%; border-collapse: collapse; font-size: 13px; }
+#usage th, #wedding-list th { text-align: left; color: var(--dim); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+#usage td, #wedding-list td { padding: 6px; border-bottom: 1px solid #2c2c2c; vertical-align: top; }
+#usage .n, #wedding-list .n { text-align: right; white-space: nowrap; }
+#usage tfoot td { font-weight: 600; border-top: 2px solid var(--line2); border-bottom: 0; }
+#usage tr.go { cursor: pointer; } #usage tr.go:hover td { background: var(--raise); }
+#wedding-list td.warn { color: var(--marigold); font-weight: 600; }
+#wedding-list td.dim { color: var(--dim); }
+#wedding-list button { font-size: 12px; padding: 4px 10px; white-space: nowrap; }
+.usage-chart { margin: 4px 0 14px; }
+.usage-chart svg { width: 100%; height: auto; display: block; }
+.usage-chart .usage-bar { fill: var(--marigold); opacity: .85; }
+.usage-chart .usage-label { fill: var(--dim); font-size: 11px; }
+.usage-chart .usage-num { fill: var(--text); font-size: 11px; }
+#delete-block summary { cursor: pointer; color: #ff8a80; font-weight: 600; margin: 4px 0 10px; }
+#delete-block .acc-form, #email-block .acc-form { margin-top: 8px; }
+#delete-note, #email-note { min-height: 1.2em; margin-top: 6px; }
+#saved-conflict { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }
+#saved-conflict button { font-size: 12px; padding: 3px 9px; }

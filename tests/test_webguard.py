@@ -35,6 +35,7 @@ def jpeg(size=(2400, 1600)):
 def photographer(app):
     c = TestClient(app)
     assert c.post("/api/signup", json={"email": "p@example.com", "password": "a good password", "agree": True}).status_code == 200
+    assert c.post("/api/login", json={"email": "p@example.com", "password": "a good password"}).status_code == 200   # sign-up gives no session
     return c
 
 

@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from . import VERSION, adjustments, blobs as blob_store, mail
 from .backups import Backups
 from .accounts import Accounts, NotEnoughCredits, cull_cost, public
-from . import billing, legal, limits, payments as pay, security, webguard
+from . import billing, dpdp, legal, limits, payments as pay, retention, security, staging, uptime, usage, webguard
 from .accounts import AlreadyThere
 from engine.presets import parse_xmp
 
@@ -35,7 +35,7 @@ from .exports import SIZES as EXPORT_SIZES, Exports
 from .culling import RATINGS, Culls
 from .looks import MY_PACK, SIZES, Renderer, clean_look, edit_stamp, effective_look, lightroom_edit, preset_from_look
 from .state import State
-from .store import Store
+from .store import Stale, Store
 
 STATIC = Path(__file__).resolve().parent / "static"
 PLUGIN = Path(__file__).resolve().parent.parent / "plugin" / "AutoEdits.lrplugin"
@@ -151,7 +151,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     accounts = Accounts(store, admin_email or "studio@auto-edits.local")
     backups = Backups(store)
     payments = pay.Payments(store, accounts, razorpay)
-    mailer = mailer or mail.Mailer()
+    mailer = staging.only_studio(mailer or mail.Mailer(), admin_email)   # staging: no email leaves except to the studio
     base_url = os.environ.get("AUTOEDITS_BASE_URL", "").rstrip("/")
     app = FastAPI(title="Auto Edits", version=VERSION, docs_url=None, redoc_url=None, openapi_url=None)
     app.add_middleware(webguard.Guard, static=STATIC)       # security headers, and no forms sent from other sites
@@ -160,6 +160,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     exports = Exports(store)
     app.state.exports = exports
     culls = Culls(store)
+    staging.check(payments.rzp)                  # a staging copy refuses to start with live Razorpay keys
 
     if store.blobs.on and os.environ.get("AUTOEDITS_WARM_UP") == "1":
 
@@ -288,10 +289,9 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             return {"ok": True, "check_email": True}
         except ValueError as e:
             raise HTTPException(422, str(e))
-        # The same answer either way. (A new account is also signed in straight away, so the app opens;
-        # sign-ups are limited to 8 an hour from one address, which keeps that from being used to test emails.)
+        # The same answer either way, and no session yet: the link in the email signs the new account in
+        # (Bharat, Oct 2026: "check your email to continue"). Sign-ups are limited to 8 an hour from one address.
         send_verify(request, user)
-        give_cookie(response, request, user["id"])
         return {"ok": True, "check_email": True}
 
     @app.post("/api/login")
@@ -731,7 +731,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                      "v": int(r["received"]), "w": r["meta"].get("width"), "h": r["meta"].get("height"),
                      "iso": r["meta"].get("iso"), "taken": r["taken"], "camera": r["meta"].get("camera"),
                      "edited": len(r["meta"].get("edited") or []), "cull": r["cull"], "pick": r["pick"] or None,
-                     "crop": r["crop"]} for r in rows]
+                     "crop": r["crop"], "ver": r["version"]} for r in rows]
         return {"photos": rows}
 
     def photo_or_404(wedding_id: str, photo_id: str, user: dict) -> dict:
@@ -752,7 +752,7 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     def session_info(user: dict = Depends(signed_in)):
         from .nudges import free_status
         return {"ok": True, "version": VERSION, "user": public(user), "credits": accounts.balance(user["id"]),
-                "free": free_status(accounts, user["id"]), "viewing_as": user.get("viewing_as")}
+                "free": free_status(accounts, user["id"]), "viewing_as": user.get("viewing_as"), "env": staging.ENV}
 
     # ---- the admin dashboard -------------------------------------------------------
     @app.get("/admin")
@@ -810,10 +810,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                 "storage": limits.usage(store, u), "limits": {"photos": u["limit_photos"], "gb": u["limit_gb"],
                                                                "default_photos": limits.PHOTOS_PER_WEDDING,
                                                                "default_gb": limits.STORAGE_GB},
-                "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes")} | store.health(w["id"]) |
+                "weddings": [{k: w[k] for k in ("id", "name", "created", "photos", "bytes", "archived", "last_used")} | store.health(w["id"]) |
                              {"exports": [{k: e[k] for k in ("id", "size", "done", "total", "state", "created", "scope")}
                                           for e in exports.for_wedding(w["id"])]}
-                             for w in store.weddings(user_id)]}
+                             for w in store.weddings(user_id, archived=True)]}
 
     @app.post("/api/admin/users/{user_id}/limits")
     def admin_limits(user_id: str, body: dict = Body(...), admin: dict = Depends(the_admin)):
@@ -992,26 +992,47 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
         store.delete_preset(preset_id)
         return {"deleted": True}
 
+    def expected_version(version: int | None, if_match: str) -> int | None:
+        """Two tabs on the same folder: a save may say which version of the look it started from (?version=N
+        or If-Match: N). A look saved since by another tab is then refused with 409 and the current look."""
+        if version is not None:
+            return version
+        if if_match.strip().strip('"').isdigit():
+            return int(if_match.strip().strip('"'))
+        return None
+
+    def stale(e: Stale) -> HTTPException:
+        return HTTPException(409, {"message": "This photo was changed in another tab.", "look": e.current, "version": e.version})
+
     @app.put("/api/weddings/{wedding_id}/folders/{folder_id}/look")
-    def set_folder_look(wedding_id: str, folder_id: int, look: dict = Body(...), user: dict = Depends(signed_in)):
+    def set_folder_look(wedding_id: str, folder_id: int, look: dict = Body(...), version: int | None = None,
+                        if_match: str = Header(default=""), user: dict = Depends(signed_in)):
         wedding_or_404(wedding_id, user)
         look = clean_look(look, allowed_presets(user))
         look["crop"] = None                      # crops belong to photos, not to looks
-        if not store.set_folder_settings(wedding_id, folder_id, look):
+        try:
+            v = store.set_folder_settings(wedding_id, folder_id, look, expected_version(version, if_match))
+        except Stale as e:
+            raise stale(e)
+        if v is None:
             raise HTTPException(404, "no such folder")
-        return {"look": look}
+        return {"look": look, "version": v}
 
     @app.put("/api/weddings/{wedding_id}/photos/{photo_id}/look")
-    def set_photo_look(wedding_id: str, photo_id: str, look: dict | None = Body(default=None),
-                       user: dict = Depends(signed_in)):
+    def set_photo_look(wedding_id: str, photo_id: str, look: dict | None = Body(default=None), version: int | None = None,
+                       if_match: str = Header(default=""), user: dict = Depends(signed_in)):
         """Give one photo its own look, or send null to put it back on its folder's look."""
         wedding_or_404(wedding_id, user)
         look = clean_look(look, allowed_presets(user)) if look else None
         if look:
             look["crop"] = None
-        if not store.set_photo_settings(wedding_id, photo_id, look):
+        try:
+            v = store.set_photo_settings(wedding_id, photo_id, look, expected_version(version, if_match))
+        except Stale as e:
+            raise stale(e)
+        if v is None:
             raise HTTPException(404, "no such photo")
-        return {"look": look}
+        return {"look": look, "version": v}
 
     def read_look(text: str, user: dict) -> dict:
         try:
@@ -1226,8 +1247,10 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
             accounts.charge(user, photos, "export", f"Export of {photos} photos: {w['name']}", export_id, photos,
                            wedding=wedding_id)
         try:
-            return exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder,
+            made = exports.create(wedding_id, body.size, min(100, max(40, body.quality)), body.watermark, body.folder,
                                   tuple(r for r in RATINGS if r in body.ratings), pay=pay)
+            store.touch(wedding_id, force=True)                # an export counts as using the wedding (retention.py)
+            return made
         except NotEnoughCredits as e:
             raise no_credits(e)
         except ValueError as e:
@@ -1405,6 +1428,12 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
                         f"  <url><loc>{SITE}/</loc><lastmod>{changed}</lastmod></url>\n"
                         + "".join(f"  <url><loc>{SITE}/{slug}</loc></url>\n" for slug in legal.PAGES)
                         + "</urlset>\n", media_type="application/xml")
+
+    ctx = dict(store=store, accounts=accounts, exports=exports, renderer=renderer, state=state, mailer=mailer, payments=payments,
+               signed_in=signed_in, own_session=own_session, link_base=link_base, give_cookie=give_cookie, client_ip=client_ip,
+               too_many=too_many, cookie=COOKIE)
+    for extra in (uptime, retention, dpdp, usage):     # new modules (before /{slug}, so their single-segment paths are reached)
+        app.include_router(extra.router(ctx))
 
     @app.api_route("/{slug}", methods=["GET", "HEAD"])
     def policy_page(slug: str):
