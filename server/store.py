@@ -571,6 +571,14 @@ class Store:
             rows = db.execute("SELECT id, wedding_id FROM photos WHERE autos='' LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
 
+    def facts_due(self, limit: int = 40) -> list[dict]:
+        """Photos measured before 26 Oct 2026 (no face-led exposure, no facts kept beside them):
+        the worker works the new tone piece out for them, newest first."""
+        with self._db() as db:
+            rows = db.execute("SELECT id, wedding_id FROM photos WHERE autos<>'' AND instr(autos, '\"tone2:11\"')=0 "
+                              "ORDER BY received DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in rows]
+
     def get_autos(self, photo_id: str) -> dict:
         with self._db() as db:
             r = db.execute("SELECT autos FROM photos WHERE id=?", (photo_id,)).fetchone()

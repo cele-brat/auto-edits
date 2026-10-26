@@ -19,11 +19,12 @@ TOGGLES = ("exposure", "highlights", "shadows", "whites", "blacks",
            "white_balance", "noise", "straighten", "lens")
 
 AUTO_PARAMS = {
-    "target_mid": 0.56,        # where the photo's middle brightness should sit (display scale 0..1)
+    "target_mid": 0.50,        # where the photo's middle brightness should sit (display scale 0..1)
     "exposure_strength": 0.6,  # how much of the measured gap is corrected
     "night_strength": 0.45,    # same, for scenes that are mostly dark on purpose
-    "face_target": 0.52,       # brightness aimed for on faces
-    "face_weight": 0.5,        # how much faces count against the whole frame
+    "face_target": 0.50,       # brightness aimed for on faces
+    "face_weight": 0.7,        # how much faces count against the whole frame
+    "max_ev_up": 1.2,          # never brightened by more than this
     "max_ev": 2.0,
     "wb_strength": 0.85,       # most of the cast is removed; a little of the room's warmth is kept
 }
@@ -47,8 +48,10 @@ def measure(img) -> dict:
     }
 
 
-def auto_exposure(img, faces=None, P=AUTO_PARAMS) -> float:
-    """Exposure change in EV (stops)."""
+def auto_exposure(img, faces=None, P=AUTO_PARAMS, skin=None) -> float:
+    """Exposure change in EV (stops). faces: boxes as fractions; skin: the face-skin mask (any size).
+    With either, the faces decide most of the result, so a dark hall or a bright sky does not
+    push the people the wrong way."""
     small = _small(img)
     y = _luma(small)
     lin = srgb_to_linear(y)
@@ -69,23 +72,30 @@ def auto_exposure(img, faces=None, P=AUTO_PARAMS) -> float:
     strength = P["night_strength"] if night else P["exposure_strength"]
     ev *= strength
 
+    vals = []
     if faces:                                                 # faces pull the result toward a good skin level
-        vals = []
         for (x0, y0, x1, y1) in faces:
             patch = y[int(y0 * h):max(int(y1 * h), int(y0 * h) + 1), int(x0 * w):max(int(x1 * w), int(x0 * w) + 1)]
             if patch.size:
                 vals.append(float(np.median(patch)))
-        if vals:
-            face_lin = float(srgb_to_linear(np.array([np.median(vals)], np.float32))[0])
-            face_t = float(srgb_to_linear(np.array([P["face_target"]], np.float32))[0])
-            ev_face = np.log2(face_t / max(face_lin, 1e-4)) * (0.7 if night else 0.9)
-            ev = (1 - P["face_weight"]) * ev + P["face_weight"] * ev_face
+    if skin is not None and not vals:
+        m = np.asarray(skin, np.float32)
+        if m.shape[:2] != y.shape:
+            m = cv2.resize(m, (w, h), interpolation=cv2.INTER_AREA)
+        on = m > 0.5
+        if on.mean() > 0.002:                                 # enough skin to judge by
+            vals.append(float(np.median(y[on])))
+    if vals:
+        face_lin = float(srgb_to_linear(np.array([np.median(vals)], np.float32))[0])
+        face_t = float(srgb_to_linear(np.array([P["face_target"]], np.float32))[0])
+        ev_face = np.log2(face_t / max(face_lin, 1e-4)) * (0.7 if night else 0.9)
+        ev = (1 - P["face_weight"]) * ev + P["face_weight"] * ev_face
 
     # never push large areas into clipping
     p97 = float(np.percentile(lin, 97))
     if ev > 0:
         ev = min(ev, max(0.0, np.log2(0.92 / max(p97, 1e-4))))
-    return float(np.clip(round(ev * 20) / 20, -P["max_ev"], P["max_ev"]))      # steps of 0.05 EV
+    return float(np.clip(round(ev * 20) / 20, -P["max_ev"], P.get("max_ev_up", P["max_ev"])))      # steps of 0.05 EV
 
 
 def auto_tone(img, exposure_ev=0.0) -> dict:
@@ -283,7 +293,7 @@ def auto_correct(img, toggles=TOGGLES, faces=None, iso=None, skin=None) -> dict:
         work = _wb(_small(img), wb["temp"], wb["tint"], DEFAULT_PARAMS)
     ev = 0.0
     if "exposure" in toggles:
-        ev = auto_exposure(work, faces)
+        ev = auto_exposure(work, faces, skin=skin)
         settings["Exposure2012"] = ev
     tone_keys = {"highlights": "Highlights2012", "shadows": "Shadows2012", "whites": "Whites2012", "blacks": "Blacks2012"}
     if toggles & set(tone_keys):

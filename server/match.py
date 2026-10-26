@@ -9,7 +9,7 @@ from collections import Counter
 
 from engine import match as _match
 
-TONE_PART = "tone:11"             # the piece every photo has: white balance + exposure + the four tone values
+TONE_PART = "tone2:11"             # the piece every photo has: white balance + exposure + the four tone values
 
 
 def _kelvin(meta: dict):
@@ -99,10 +99,11 @@ class FolderMatch:
         """The folder in a few numbers: main light, mean brightness/warmth/colour, photos counted."""
         f = self.folder(folder_id)
         facts = f["facts"]
+        pending = max(f["pending"], f["n"] - len(facts))          # measured before facts were kept: being filled in
         if not facts:
-            return {"n": f["n"], "measured": 0, "pending": f["pending"], "scene": None}
+            return {"n": f["n"], "measured": 0, "pending": pending, "scene": None}
         count = Counter(x["scene"] for x in facts)
         mean = lambda k: round(sum(x[k] for x in facts) / len(facts), 4)
-        return {"n": f["n"], "measured": len(facts), "pending": f["pending"], "scene": count.most_common(1)[0][0],
+        return {"n": f["n"], "measured": len(facts), "pending": pending, "scene": count.most_common(1)[0][0],
                 "scenes": dict(count), "median": mean("median"), "warmth": mean("warmth"), "colour": mean("colour"),
                 "dark": mean("dark")}

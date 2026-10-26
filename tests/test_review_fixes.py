@@ -391,7 +391,7 @@ def test_auto_values_are_worked_out_after_upload_and_kept(app, tmp_path):
     work(idle_exit=True, data_dir=str(tmp_path))
     with sqlite3.connect(app.state.store.db_path) as db:
         kept = [json.loads(r[0]) for r in db.execute("SELECT autos FROM photos")]
-    assert all("tone:11" in k and "noise:400" in k for k in kept)
+    assert all("tone2:11" in k and "noise:400" in k for k in kept)
     before = {p["uuid"]: p["edit"] for p in c.get(f"/api/weddings/{w['id']}/apply").json()["photos"]}
     for p in (tmp_path / "weddings" / w["id"] / "previews").glob("*.jpg"):
         p.unlink()                                                # working copies gone (trimmed): kept values serve

@@ -311,7 +311,8 @@ tr.go { cursor: pointer; } tr.go:hover td { background: rgba(255, 255, 255, .05)
 #nav img:not([src]), #nav img[src=""] { visibility: hidden; }
 
 /* event folders: one line each, with the count on the right like Lightroom's Folders panel */
-#folders { overflow: auto; max-height: 24vh; padding: 4px 0 6px; }
+#folders { overflow: auto; max-height: 40vh; padding: 4px 0 6px; overscroll-behavior: contain; }
+#folders::after { content: ""; display: block; height: 2px; }
 #folders button { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; width: 100%; text-align: left; border: 0; border-radius: 0; background: none; padding: 6px 14px 6px 16px; position: relative; }
 #folders button:hover { background: #2e2e2e; }
 #folders button[aria-current=true] { background: #3d3d3d; }

@@ -89,6 +89,21 @@ def work_out_autos(store, renderer, n: int = AUTOS_PER_TURN) -> int:
     return done
 
 
+def fill_facts(store, renderer, n: int = 40) -> int:
+    """The new tone piece (face-led exposure, with facts) for photos measured before 26 Oct 2026.
+    A photo that cannot be read gets an empty piece, so it is not tried again."""
+    done = 0
+    for r in store.facts_due(n):
+        try:
+            renderer.auto_part(store.preview_path(r["wedding_id"], r["id"]), "tone2:11")
+        except Exception:
+            kept = store.get_autos(r["id"])
+            store.put_autos(r["id"], {"tone2:11": {"settings": {}, "manual": {}, "info": {}}, "facts": {}},
+                            float(kept.get("_received") or 0) or None)
+        done += 1
+    return done
+
+
 def work(idle_exit: bool = False, data_dir: str | None = None, blobs=None) -> int:
     """Do exports until there is nothing left (idle_exit) or for ever. Returns how many were made."""
     store = Store(data_dir or os.environ.get("AUTOEDITS_DATA", "data/server"),
@@ -100,7 +115,7 @@ def work(idle_exit: bool = False, data_dir: str | None = None, blobs=None) -> in
     from .match import FolderMatch
     renderer.match = FolderMatch(store)
     seen: dict = {}
-    made, beaten = 0, 0.0
+    made, beaten, checked_facts = 0, 0.0, 0.0
     while True:
         if time.time() - beaten > 60:                            # alive (server/health.py), once a minute
             health.beat(store)
@@ -132,6 +147,10 @@ def work(idle_exit: bool = False, data_dir: str | None = None, blobs=None) -> in
                                retry=isinstance(e, (MemoryError, OSError)) and not isinstance(e, FileNotFoundError))
         if work_out_autos(store, renderer):
             busy = True
+        if time.time() - checked_facts > 30 or idle_exit:           # older photos: facts filled in, a batch at a time
+            if fill_facts(store, renderer):
+                busy = True
+            checked_facts = time.time()
         if not busy:
             if idle_exit:
                 return made

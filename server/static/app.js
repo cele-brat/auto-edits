@@ -232,6 +232,8 @@ function drawFolders() {
     b.onclick = () => openFolder(f.id);
     return b;
   }));
+  const current = nav.querySelector('[aria-current=true]');            // the folder in use stays in view when the list scrolls
+  if (current && current.scrollIntoView) current.scrollIntoView({ block: 'nearest' });
 }
 
 // A photo's rating: the photographer's own if set, else the automatic one, else none.

@@ -406,7 +406,7 @@ def auto_parts(toggles, iso=None) -> list[str]:
     toggles = set(toggles)
     parts = []
     if toggles & {"exposure", "white_balance", *_TONE}:
-        parts.append(f"tone:{int('white_balance' in toggles)}{int('exposure' in toggles)}")
+        parts.append(f"tone2:{int('white_balance' in toggles)}{int('exposure' in toggles)}")   # tone2: faces decide exposure (26 Oct)
     iso = int(iso) if isinstance(iso, (int, float)) and not isinstance(iso, bool) else None
     if "noise" in toggles:
         parts.append(f"noise:{iso or ''}")
@@ -418,7 +418,7 @@ def auto_parts(toggles, iso=None) -> list[str]:
 
 def _part_toggles(part: str) -> tuple[tuple, int | None]:
     kind, _, arg = part.partition(":")
-    if kind == "tone":
+    if kind in ("tone", "tone2"):
         return (*_TONE, *(("white_balance",) if arg[0] == "1" else ()), *(("exposure",) if arg[1] == "1" else ())), None
     if kind == "noise":
         return ("noise",), (int(arg) if arg else None)
@@ -724,7 +724,7 @@ class Renderer:
         tone = False
         for part in auto_parts(toggles, iso):
             r = self.auto_part(path, part)
-            if part.startswith("tone:"):
+            if part.startswith("tone"):
                 r = _keep_asked(r, set(toggles))
                 tone = True
             for k in out:
@@ -756,7 +756,7 @@ class Renderer:
             if part in kept and abs(float(kept.get("_received") or 0) - stamp / 1e9) < 1:
                 return kept[part]
             skin = None
-            if "white_balance" in toggles:                    # faces keep the white balance honest
+            if "white_balance" in toggles or "exposure" in toggles:   # faces keep white balance and exposure honest
                 try:
                     skin = self.masks(path)["face_skin"]
                 except Exception:
@@ -765,7 +765,7 @@ class Renderer:
             value = json.loads(json.dumps(auto_correct(img, toggles, None, iso, skin), default=_plain))
             if self.autos_store is not None:
                 kept_values = {part: value}
-                if part.startswith("tone:"):              # what the photo looks like, for matching and recommending
+                if part.startswith("tone"):               # what the photo looks like, for matching and recommending
                     kept_values["facts"] = _match.facts_of(img)
                 self.autos_store.put_autos(path.stem, kept_values, stamp / 1e9)
             return value

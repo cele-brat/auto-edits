@@ -56,7 +56,7 @@ def _num(v):
 
 def medians(values: list[dict]) -> dict:
     """The middle of a group's automatic values. values: [{"settings": {...}, "manual": {...}}, ...]
-    (the "tone:11" piece of each photo). Returns {key: median} for the keys in BANDS, plus "n"."""
+    (the "tone2:11" piece of each photo). Returns {key: median} for the keys in BANDS, plus "n"."""
     cols: dict[str, list[float]] = {k: [] for k in BANDS}
     for v in values:
         for k in BANDS:

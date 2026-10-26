@@ -54,12 +54,12 @@ def test_worker_keeps_facts_and_auto_is_matched_in_the_folder(app, tmp_path):
     store = app.state.store
     photos = store.photos(w["id"], f)
     kept = [store.get_autos(p["id"]) for p in photos]
-    assert all("facts" in k and "tone:11" in k for k in kept)
+    assert all("facts" in k and "tone2:11" in k for k in kept)
     fm = app.state.renderer.match
     assert fm.folder(f)["n"] == 5 and fm.folder(f)["pending"] == 0
     med = fm.medians_for(photos[-1]["id"])
     assert med and med["n"] >= 3
-    raw = kept[-1]["tone:11"]["settings"]["Exposure2012"]       # the bright odd one, on its own
+    raw = kept[-1]["tone2:11"]["settings"]["Exposure2012"]       # the bright odd one, on its own
     got = c.get(f"/api/weddings/{w['id']}/photos/{photos[-1]['id']}/develop").json()
     matched = got["auto"]["Exposure2012"]
     assert abs(matched - med["Exposure2012"]) <= m.BANDS["Exposure2012"] * m.PULL + 0.01
@@ -96,3 +96,15 @@ def test_recommend_rules_directly():
     picks = recommend.recommend(cat, "Reception_Night", {"scene": "indoor tungsten", "warmth": 0.1, "median": 0.2, "colour": 0.2, "measured": 3})
     assert [p["id"] for p in picks][:2] == ["a2", "me"]                   # reception look at its night variant, then your own style
     assert recommend.folder_words("Mehndi & Haldi 2026") == ["haldi", "mehndi", "mehendi"]
+
+
+def test_faces_decide_exposure_when_a_skin_mask_is_given():
+    """A dark hall with a well-lit face: the whole frame asks for +EV, the face says leave it."""
+    from engine.auto import auto_exposure
+    img = np.full((120, 160, 3), 0.06, np.float32)
+    img[40:80, 60:100] = (0.62, 0.48, 0.40)
+    skin = np.zeros((120, 160), np.float32)
+    skin[40:80, 60:100] = 1.0
+    whole = auto_exposure(img)
+    face = auto_exposure(img, skin=skin)
+    assert whole > 0.8 and face < whole - 0.4
