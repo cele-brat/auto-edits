@@ -52,8 +52,12 @@ refreshThumbs = function () {                                                // 
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A') && S.view === 'grid' && !e.target.matches('input, textarea, select')) {
     e.preventDefault(); for (const p of inFolder()) Dv.selected.add(p.id); paintSelection();
+  } else if ((e.metaKey || e.ctrlKey) && (e.key === 'a' || e.key === 'A') && S.view === 'loupe' && !e.target.matches('input, textarea, select')) {
+    e.preventDefault();                                      // in Develop, Cmd+A must not select the page (it tints the photo)
   }
 }, true);
+// Dragging on the photo or the divider never starts a page selection.
+$('frame').addEventListener('selectstart', (e) => e.preventDefault());
 
 // ---- stars and colour labels on the thumbnails ---------------------------------------------------
 function decorate(b, p) {
