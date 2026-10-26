@@ -553,7 +553,7 @@ function drawLooks() {
   const none = el('button', { type: 'button', className: 'look none', textContent: 'No preset' });
   none.setAttribute('aria-pressed', String(!chosen));
   none.onclick = () => { S.openLook = null; change({ preset: null }); };
-  const rows = [none, ...(window.favouriteRows ? favouriteRows(look) : [])];
+  const rows = [none, ...(window.recommendedRows ? recommendedRows(look) : []), ...(window.favouriteRows ? favouriteRows(look) : [])];
   const shown = shownLooks();
   for (const pack of S.packs || []) {
     const looks = shown.filter((l) => l.pack === pack);

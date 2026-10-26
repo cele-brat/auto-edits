@@ -179,6 +179,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
 
     renderer = Renderer()
     renderer.autos_store = store                 # automatic values are kept in the database (worked out after upload)
+    from .match import FolderMatch
+    renderer.match = FolderMatch(store)          # Auto values matched across each folder (engine/match.py)
     state = State(store)
     drawing = threading.BoundedSemaphore(RENDERS_AT_ONCE)
     app.state.renderer = renderer
@@ -1465,7 +1467,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     ctx = {"signed_in": signed_in, "store": store, "renderer": renderer, "culls": culls, "drawing": drawing, "state": state,
            "accounts": accounts, "mailer": mailer, "link_base": link_base, "client_ip": client_ip, "wedding_or_404": wedding_or_404,
            "static": STATIC, "preview_cap": PREVIEW_CAP, "sizes": SIZES}
-    for module in (favourites, style_mod, compare, gallery):
+    from . import recommend
+    for module in (favourites, style_mod, compare, gallery, recommend):
         app.include_router(module.make_router(ctx))
     app.state.favourites = ctx["favourites"]
     app.state.galleries = ctx["galleries"]

@@ -97,6 +97,8 @@ def work(idle_exit: bool = False, data_dir: str | None = None, blobs=None) -> in
     culls = Culls(store)
     renderer = Renderer()
     renderer.autos_store = store
+    from .match import FolderMatch
+    renderer.match = FolderMatch(store)
     seen: dict = {}
     made, beaten = 0, 0.0
     while True:

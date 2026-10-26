@@ -38,6 +38,7 @@ from engine import crop as _crop
 from engine import shapes as _shapes
 from engine import retouch as _retouch
 from engine.auto import TOGGLES, auto_correct, combine
+from engine import match as _match
 from engine.presets import effective_settings, local_corrections
 
 from . import adjustments
@@ -556,6 +557,7 @@ class Renderer:
         self._faces = _Cache(400)
         self._mask_lock = threading.Lock()
         self.autos_store = None                          # where worked-out automatic values are kept (Store)
+        self.match = None                                # server/match.py: folder facts, so Auto matches across a folder
         self._versions: dict[str, str] = {}              # uploaded preset id -> fingerprint of its content
 
     def add_uploaded(self, preset: dict):
@@ -719,12 +721,22 @@ class Renderer:
         if not toggles:
             return {"settings": {}, "manual": {}, "info": {}}
         out = {"settings": {}, "manual": {}, "info": {}}
+        tone = False
         for part in auto_parts(toggles, iso):
             r = self.auto_part(path, part)
             if part.startswith("tone:"):
                 r = _keep_asked(r, set(toggles))
+                tone = True
             for k in out:
                 out[k].update(r.get(k) or {})
+        if tone and self.match is not None:              # one set: pulled toward the photos shot in the same light
+            try:
+                med = self.match.medians_for(path.stem)
+            except Exception:
+                med = None
+            if med:
+                out["settings"], out["manual"] = _match.matched(out["settings"], out["manual"], med)
+                out["info"]["matched"] = {"n": med.get("n")}
         return out
 
     def auto_part(self, path: Path, part: str) -> dict:
@@ -749,9 +761,13 @@ class Renderer:
                     skin = self.masks(path)["face_skin"]
                 except Exception:
                     skin = None                               # no masks: neutral areas alone decide
-            value = json.loads(json.dumps(auto_correct(self._load(path, 800), toggles, None, iso, skin), default=_plain))
+            img = self._load(path, 800)
+            value = json.loads(json.dumps(auto_correct(img, toggles, None, iso, skin), default=_plain))
             if self.autos_store is not None:
-                self.autos_store.put_autos(path.stem, {part: value}, stamp / 1e9)
+                kept_values = {part: value}
+                if part.startswith("tone:"):              # what the photo looks like, for matching and recommending
+                    kept_values["facts"] = _match.facts_of(img)
+                self.autos_store.put_autos(path.stem, kept_values, stamp / 1e9)
             return value
         return self._autos.get((str(path), stamp, part), make)
 

@@ -692,3 +692,10 @@ input[type=range].fine-drag { cursor: col-resize; }
   #more summary { padding: 2px; }
   #more .chev { display: none; }
 }
+
+/* Recommended presets (static/recommend.js) */
+#looks .pack.recs { color: var(--marigold); }
+#looks .pack.recs small { text-transform: capitalize; }
+#looks .look.rec { padding-left: 14px; }
+#looks .look.rec .rec-n { display: inline-block; width: 15px; height: 15px; line-height: 15px; border-radius: 50%; background: #3a3a3a; color: #ddd; font-size: 10px; text-align: center; margin-right: 2px; }
+#looks .rec-note { padding: 4px 10px 6px 27px; font-size: 11.5px; color: var(--faint); }

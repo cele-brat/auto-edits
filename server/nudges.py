@@ -220,8 +220,8 @@ class Nudges:
                 spent = db.execute("SELECT 1 FROM ledger WHERE user_id=? AND delta<0 AND kind<>'expired' LIMIT 1", (u["id"],)).fetchone()
                 if not (last or spent) or not is_low(balance, int(last[0]) if last else 0):
                     continue
-                sent = self._sent(db, u["id"], "low")
-                if sent and max(sent) >= week:
+                last_sent = db.execute("SELECT MAX(sent) FROM nudges WHERE user_id=? AND kind='low'", (u["id"],)).fetchone()[0]
+                if last_sent is not None and now - float(last_sent) < LOW_EVERY_DAYS * DAY:   # 7 days since the last one, not calendar weeks
                     continue
                 self._mark(db, u["id"], "low", [week], now)
             price = pay.prices()
