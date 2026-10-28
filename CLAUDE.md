@@ -16,4 +16,4 @@
 ## Where things are
 - Live: https://edits.cele-brat.solutions. VPS: Hostinger 187.126.117.49, clone at `/opt/auto-edits`.
 - Storage: Cloudflare R2 bucket `auto-edits`. Daily database backups go to `backups/db/`. Restore: `python -m server.restore --list` / `--day YYYY-MM-DD`.
-- Full project state and the to-do list are in the claude.ai Project doc `claude/auto-edits-handover.md`.
+- Full project state and the to-do list: read `docs/HANDOVER.md` first (copy of the claude.ai Project doc `claude/auto-edits-handover.md`). Update it at the end of each session.
