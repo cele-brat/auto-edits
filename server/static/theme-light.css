@@ -1,0 +1,603 @@
+/* Light theme (theme.js sets data-theme on <html>: light, dark or auto).
+   The colour variables come from app.css, develop.css, features.css, billing.css and dashboard.css,
+   where each has its dark value; here they get their light ones. "auto" follows the computer. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --k-track: #cfcfcf;
+  --stage: #e3e3e3; --panel: #f5f5f5; --head: #ededed; --rail: #e2e2e2; --raise: #e4e4e4; --well: #ffffff;
+  --line: #dadada; --line2: #c4c4c4;
+  --text: #1f1f1f; --dim: #5c5c5c; --faint: #8a8a8a;
+  --marigold: #d99700; --marigold-text: #9a6600; --marigold-ink: #1a1a1a; --marigold-wash: rgba(217, 151, 0, .16); --danger: #d63c41;
+  --k-bd-000000: #c6c6c6;
+  --k-bd-000000-50: rgba(0, 0, 0, 0.25);
+  --k-bd-000000-60: rgba(0, 0, 0, 0.3);
+  --k-bd-0c0c0c: #cbcbcb;
+  --k-bd-111111: #cdcdcd;
+  --k-bd-1a1a1a: #d0d0d0;
+  --k-bd-2c2c2c: #d4d4d4;
+  --k-bd-333333: #d2d2d2;
+  --k-bd-3a3a3a: #cfcfcf;
+  --k-bd-3c3c3c: #cecece;
+  --k-bd-4a4a4a: #c7c7c7;
+  --k-bd-4f8a60: #4f8a60;
+  --k-bd-555555: #c1c1c1;
+  --k-bd-6ab0ff: #6ab0ff;
+  --k-bd-777777: #a9a9a9;
+  --k-bd-888888: #9d9d9d;
+  --k-bd-8a4a42: #8a4a42;
+  --k-bd-8a7032: #8a7032;
+  --k-bd-8a7a4a: #8a7a4a;
+  --k-bd-8a8a8a: #9c9c9c;
+  --k-bd-bbbbbb: #787878;
+  --k-bd-cfc8bc: #707070;
+  --k-bd-dddddd: #5f5f5f;
+  --k-bd-f2a900-55: rgba(242, 169, 0, .55);
+  --k-bd-ff8a80: #ff8a80;
+  --k-bd-ffb81f: #ffb81f;
+  --k-bd-ffffff: #464646;
+  --k-bd-ffffff-90: rgba(0, 0, 0, 0.63);
+  --k-bg-000000: #f7f7f7;
+  --k-bg-000000-50: rgba(0, 0, 0, 0.175);
+  --k-bg-000000-55: rgba(0, 0, 0, 0.193);
+  --k-bg-000000-60: rgba(0, 0, 0, 0.21);
+  --k-bg-000000-62: rgba(0, 0, 0, 0.217);
+  --k-bg-000000-72: rgba(0, 0, 0, 0.252);
+  --k-bg-0c0b0a-96: rgba(0, 0, 0, 0.336);
+  --k-bg-121212: #f1f1f1;
+  --k-bg-161616: #f0f0f0;
+  --k-bg-191919: #efefef;
+  --k-bg-1a1a1a: #eeeeee;
+  --k-bg-1c1c1c: #ededed;
+  --k-bg-1d1d1d: #ededed;
+  --k-bg-1f1f1f: #ececec;
+  --k-bg-262626: #e8e8e8;
+  --k-bg-2a2a2a: #e6e6e6;
+  --k-bg-2c2c2c: #e5e5e5;
+  --k-bg-2e2e2e: #e4e4e4;
+  --k-bg-303030: #e3e3e3;
+  --k-bg-333333: #e2e2e2;
+  --k-bg-363636: #e0e0e0;
+  --k-bg-3a2c00: #3a2c00;
+  --k-bg-3a3a3a: #dedede;
+  --k-bg-3d3d3d: #dcdcdc;
+  --k-bg-4a4a4a: #d5d5d5;
+  --k-bg-4a90e2: #4a90e2;
+  --k-bg-4fc46a: #4fc46a;
+  --k-bg-555555: #cfcfcf;
+  --k-bg-6ab0ff: #6ab0ff;
+  --k-bg-7fd69a-10: rgba(127, 214, 154, .1);
+  --k-bg-a66be8: #a66be8;
+  --k-bg-d6336c: #d6336c;
+  --k-bg-dcdcdc: #484848;
+  --k-bg-e5484d: #e5484d;
+  --k-bg-e9e4da: #414141;
+  --k-bg-f0c05a-10: rgba(240, 192, 90, .1);
+  --k-bg-f2c200: #f2c200;
+  --k-bg-ff8f80-10: rgba(255, 143, 128, .1);
+  --k-bg-ffb81f: #ffb81f;
+  --k-bg-ffffff: #202020;
+  --k-bg-ffffff-05: rgba(0, 0, 0, 0.035);
+  --k-bg-ffffff-06: rgba(0, 0, 0, 0.042);
+  --k-bg-ffffff-10: rgba(0, 0, 0, 0.07);
+  --k-bg-ffffff-12: rgba(0, 0, 0, 0.084);
+  --k-bg-ffffff-35: rgba(0, 0, 0, 0.245);
+  --k-bg-ffffff-85: rgba(0, 0, 0, 0.595);
+  --k-fg-000000: #eeeeee;
+  --k-fg-000000-70: rgba(0, 0, 0, 0.35);
+  --k-fg-1a1406: #e2e2e2;
+  --k-fg-1a1a1a: #dcdcdc;
+  --k-fg-555555: #a4a4a4;
+  --k-fg-666666: #8e8e8e;
+  --k-fg-6ab0ff: #3d6693;
+  --k-fg-7c7c7c: #787878;
+  --k-fg-7fd69a: #497c59;
+  --k-fg-8a8a8a: #6c6c6c;
+  --k-fg-999999: #5f5f5f;
+  --k-fg-9a9a9a: #5f5f5f;
+  --k-fg-a8a8a8: #535353;
+  --k-fg-aaaaaa: #525252;
+  --k-fg-b3261e: #b3261e;
+  --k-fg-bbbbbb: #444444;
+  --k-fg-bdbdbd: #434343;
+  --k-fg-c4c4c4: #3d3d3d;
+  --k-fg-c8c8c8: #3a3a3a;
+  --k-fg-cccccc: #373737;
+  --k-fg-cdcdcd: #363636;
+  --k-fg-cfcfcf: #353535;
+  --k-fg-d4d4d4: #313131;
+  --k-fg-d6336c: #d6336c;
+  --k-fg-d8d8d8: #2e2e2e;
+  --k-fg-dddddd: #2b2b2b;
+  --k-fg-e0e0e0: #292929;
+  --k-fg-e5484d: #e5484d;
+  --k-fg-e9d48a: #877a50;
+  --k-fg-f0c05a: #8b6f34;
+  --k-fg-f2c200: #8c7000;
+  --k-fg-f4f4f4: #1b1b1b;
+  --k-fg-ff8a80: #93504a;
+  --k-fg-ff8f80: #93524a;
+  --k-fg-ffffff: #141414;
+  --k-fg-ffffff-13: rgba(0, 0, 0, 0.091);
+  --k-fg-ffffff-25: rgba(0, 0, 0, 0.175);
+  --k-fg-ffffff-55: rgba(0, 0, 0, 0.385);
+  --k-fg-ffffff-70: rgba(0, 0, 0, 0.49);
+  --k-ot-000000: #f7f7f7;
+  --k-ot-000000-55: rgba(0, 0, 0, 0.193);
+  --k-ot-000000-60: rgba(0, 0, 0, 0.21);
+  --k-ot-000000-90: rgba(0, 0, 0, 0.315);
+  --k-sh-000000-35: rgba(0, 0, 0, 0.158);
+  --k-sh-000000-40: rgba(0, 0, 0, 0.18);
+  --k-sh-000000-50: rgba(0, 0, 0, 0.225);
+  --k-sh-000000-58: rgba(0, 0, 0, 0.261);
+  --k-sh-000000-60: rgba(0, 0, 0, 0.27);
+  --k-sh-000000-65: rgba(0, 0, 0, 0.293);
+  --k-sh-000000-80: rgba(0, 0, 0, 0.36);
+  --k-sh-888888: rgba(0, 0, 0, 0.3);
+  --k-sh-8a7a4a: rgba(0, 0, 0, 0.3);
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] {
+    color-scheme: light;
+  --k-track: #cfcfcf;
+    --stage: #e3e3e3; --panel: #f5f5f5; --head: #ededed; --rail: #e2e2e2; --raise: #e4e4e4; --well: #ffffff;
+    --line: #dadada; --line2: #c4c4c4;
+    --text: #1f1f1f; --dim: #5c5c5c; --faint: #8a8a8a;
+    --marigold: #d99700; --marigold-text: #9a6600; --marigold-ink: #1a1a1a; --marigold-wash: rgba(217, 151, 0, .16); --danger: #d63c41;
+    --k-bd-000000: #c6c6c6;
+    --k-bd-000000-50: rgba(0, 0, 0, 0.25);
+    --k-bd-000000-60: rgba(0, 0, 0, 0.3);
+    --k-bd-0c0c0c: #cbcbcb;
+    --k-bd-111111: #cdcdcd;
+    --k-bd-1a1a1a: #d0d0d0;
+    --k-bd-2c2c2c: #d4d4d4;
+    --k-bd-333333: #d2d2d2;
+    --k-bd-3a3a3a: #cfcfcf;
+    --k-bd-3c3c3c: #cecece;
+    --k-bd-4a4a4a: #c7c7c7;
+    --k-bd-4f8a60: #4f8a60;
+    --k-bd-555555: #c1c1c1;
+    --k-bd-6ab0ff: #6ab0ff;
+    --k-bd-777777: #a9a9a9;
+    --k-bd-888888: #9d9d9d;
+    --k-bd-8a4a42: #8a4a42;
+    --k-bd-8a7032: #8a7032;
+    --k-bd-8a7a4a: #8a7a4a;
+    --k-bd-8a8a8a: #9c9c9c;
+    --k-bd-bbbbbb: #787878;
+    --k-bd-cfc8bc: #707070;
+    --k-bd-dddddd: #5f5f5f;
+    --k-bd-f2a900-55: rgba(242, 169, 0, .55);
+    --k-bd-ff8a80: #ff8a80;
+    --k-bd-ffb81f: #ffb81f;
+    --k-bd-ffffff: #464646;
+    --k-bd-ffffff-90: rgba(0, 0, 0, 0.63);
+    --k-bg-000000: #f7f7f7;
+    --k-bg-000000-50: rgba(0, 0, 0, 0.175);
+    --k-bg-000000-55: rgba(0, 0, 0, 0.193);
+    --k-bg-000000-60: rgba(0, 0, 0, 0.21);
+    --k-bg-000000-62: rgba(0, 0, 0, 0.217);
+    --k-bg-000000-72: rgba(0, 0, 0, 0.252);
+    --k-bg-0c0b0a-96: rgba(0, 0, 0, 0.336);
+    --k-bg-121212: #f1f1f1;
+    --k-bg-161616: #f0f0f0;
+    --k-bg-191919: #efefef;
+    --k-bg-1a1a1a: #eeeeee;
+    --k-bg-1c1c1c: #ededed;
+    --k-bg-1d1d1d: #ededed;
+    --k-bg-1f1f1f: #ececec;
+    --k-bg-262626: #e8e8e8;
+    --k-bg-2a2a2a: #e6e6e6;
+    --k-bg-2c2c2c: #e5e5e5;
+    --k-bg-2e2e2e: #e4e4e4;
+    --k-bg-303030: #e3e3e3;
+    --k-bg-333333: #e2e2e2;
+    --k-bg-363636: #e0e0e0;
+    --k-bg-3a2c00: #3a2c00;
+    --k-bg-3a3a3a: #dedede;
+    --k-bg-3d3d3d: #dcdcdc;
+    --k-bg-4a4a4a: #d5d5d5;
+    --k-bg-4a90e2: #4a90e2;
+    --k-bg-4fc46a: #4fc46a;
+    --k-bg-555555: #cfcfcf;
+    --k-bg-6ab0ff: #6ab0ff;
+    --k-bg-7fd69a-10: rgba(127, 214, 154, .1);
+    --k-bg-a66be8: #a66be8;
+    --k-bg-d6336c: #d6336c;
+    --k-bg-dcdcdc: #484848;
+    --k-bg-e5484d: #e5484d;
+    --k-bg-e9e4da: #414141;
+    --k-bg-f0c05a-10: rgba(240, 192, 90, .1);
+    --k-bg-f2c200: #f2c200;
+    --k-bg-ff8f80-10: rgba(255, 143, 128, .1);
+    --k-bg-ffb81f: #ffb81f;
+    --k-bg-ffffff: #202020;
+    --k-bg-ffffff-05: rgba(0, 0, 0, 0.035);
+    --k-bg-ffffff-06: rgba(0, 0, 0, 0.042);
+    --k-bg-ffffff-10: rgba(0, 0, 0, 0.07);
+    --k-bg-ffffff-12: rgba(0, 0, 0, 0.084);
+    --k-bg-ffffff-35: rgba(0, 0, 0, 0.245);
+    --k-bg-ffffff-85: rgba(0, 0, 0, 0.595);
+    --k-fg-000000: #eeeeee;
+    --k-fg-000000-70: rgba(0, 0, 0, 0.35);
+    --k-fg-1a1406: #e2e2e2;
+    --k-fg-1a1a1a: #dcdcdc;
+    --k-fg-555555: #a4a4a4;
+    --k-fg-666666: #8e8e8e;
+    --k-fg-6ab0ff: #3d6693;
+    --k-fg-7c7c7c: #787878;
+    --k-fg-7fd69a: #497c59;
+    --k-fg-8a8a8a: #6c6c6c;
+    --k-fg-999999: #5f5f5f;
+    --k-fg-9a9a9a: #5f5f5f;
+    --k-fg-a8a8a8: #535353;
+    --k-fg-aaaaaa: #525252;
+    --k-fg-b3261e: #b3261e;
+    --k-fg-bbbbbb: #444444;
+    --k-fg-bdbdbd: #434343;
+    --k-fg-c4c4c4: #3d3d3d;
+    --k-fg-c8c8c8: #3a3a3a;
+    --k-fg-cccccc: #373737;
+    --k-fg-cdcdcd: #363636;
+    --k-fg-cfcfcf: #353535;
+    --k-fg-d4d4d4: #313131;
+    --k-fg-d6336c: #d6336c;
+    --k-fg-d8d8d8: #2e2e2e;
+    --k-fg-dddddd: #2b2b2b;
+    --k-fg-e0e0e0: #292929;
+    --k-fg-e5484d: #e5484d;
+    --k-fg-e9d48a: #877a50;
+    --k-fg-f0c05a: #8b6f34;
+    --k-fg-f2c200: #8c7000;
+    --k-fg-f4f4f4: #1b1b1b;
+    --k-fg-ff8a80: #93504a;
+    --k-fg-ff8f80: #93524a;
+    --k-fg-ffffff: #141414;
+    --k-fg-ffffff-13: rgba(0, 0, 0, 0.091);
+    --k-fg-ffffff-25: rgba(0, 0, 0, 0.175);
+    --k-fg-ffffff-55: rgba(0, 0, 0, 0.385);
+    --k-fg-ffffff-70: rgba(0, 0, 0, 0.49);
+    --k-ot-000000: #f7f7f7;
+    --k-ot-000000-55: rgba(0, 0, 0, 0.193);
+    --k-ot-000000-60: rgba(0, 0, 0, 0.21);
+    --k-ot-000000-90: rgba(0, 0, 0, 0.315);
+    --k-sh-000000-35: rgba(0, 0, 0, 0.158);
+    --k-sh-000000-40: rgba(0, 0, 0, 0.18);
+    --k-sh-000000-50: rgba(0, 0, 0, 0.225);
+    --k-sh-000000-58: rgba(0, 0, 0, 0.261);
+    --k-sh-000000-60: rgba(0, 0, 0, 0.27);
+    --k-sh-000000-65: rgba(0, 0, 0, 0.293);
+    --k-sh-000000-80: rgba(0, 0, 0, 0.36);
+    --k-sh-888888: rgba(0, 0, 0, 0.3);
+    --k-sh-8a7a4a: rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* ---- by hand: places where the general rule is not right ---- */
+/* Drawn on the photo (Develop: divider, Before/After, masks, crop, zoom; Compare): the photo
+   looks the same in both themes, so what sits on it keeps the dark theme's colours. */
+:root[data-theme="light"] #frame, :root[data-theme="light"] #compare-panes {
+  --k-bd-000000: #000;
+  --k-bd-000000-50: rgba(0, 0, 0, .5);
+  --k-bd-000000-60: rgba(0,0,0,.6);
+  --k-bd-0c0c0c: #0c0c0c;
+  --k-bd-111111: #111;
+  --k-bd-1a1a1a: #1a1a1a;
+  --k-bd-2c2c2c: #2c2c2c;
+  --k-bd-333333: #333;
+  --k-bd-3a3a3a: #3a3a3a;
+  --k-bd-3c3c3c: #3c3c3c;
+  --k-bd-4a4a4a: #4a4a4a;
+  --k-bd-4f8a60: #4f8a60;
+  --k-bd-555555: #555;
+  --k-bd-6ab0ff: #6ab0ff;
+  --k-bd-777777: #777;
+  --k-bd-888888: #888;
+  --k-bd-8a4a42: #8a4a42;
+  --k-bd-8a7032: #8a7032;
+  --k-bd-8a7a4a: #8a7a4a;
+  --k-bd-8a8a8a: #8a8a8a;
+  --k-bd-bbbbbb: #bbb;
+  --k-bd-cfc8bc: #cfc8bc;
+  --k-bd-dddddd: #ddd;
+  --k-bd-f2a900-55: rgba(242, 169, 0, .55);
+  --k-bd-ff8a80: #ff8a80;
+  --k-bd-ffb81f: #ffb81f;
+  --k-bd-ffffff: #fff;
+  --k-bd-ffffff-90: rgba(255, 255, 255, .9);
+  --k-bg-000000: #000;
+  --k-bg-000000-50: rgba(0,0,0,.5);
+  --k-bg-000000-55: rgba(0,0,0,.55);
+  --k-bg-000000-60: rgba(0, 0, 0, .6);
+  --k-bg-000000-62: rgba(0, 0, 0, .62);
+  --k-bg-000000-72: rgba(0,0,0,.72);
+  --k-bg-0c0b0a-96: rgba(12, 11, 10, .96);
+  --k-bg-121212: #121212;
+  --k-bg-161616: #161616;
+  --k-bg-191919: #191919;
+  --k-bg-1a1a1a: #1a1a1a;
+  --k-bg-1c1c1c: #1c1c1c;
+  --k-bg-1d1d1d: #1d1d1d;
+  --k-bg-1f1f1f: #1f1f1f;
+  --k-bg-262626: #262626;
+  --k-bg-2a2a2a: #2a2a2a;
+  --k-bg-2c2c2c: #2c2c2c;
+  --k-bg-2e2e2e: #2e2e2e;
+  --k-bg-303030: #303030;
+  --k-bg-333333: #333;
+  --k-bg-363636: #363636;
+  --k-bg-3a2c00: #3a2c00;
+  --k-bg-3a3a3a: #3a3a3a;
+  --k-bg-3d3d3d: #3d3d3d;
+  --k-bg-4a4a4a: #4a4a4a;
+  --k-bg-4a90e2: #4a90e2;
+  --k-bg-4fc46a: #4fc46a;
+  --k-bg-555555: #555;
+  --k-bg-6ab0ff: #6ab0ff;
+  --k-bg-7fd69a-10: rgba(127, 214, 154, .1);
+  --k-bg-a66be8: #a66be8;
+  --k-bg-d6336c: #d6336c;
+  --k-bg-dcdcdc: #dcdcdc;
+  --k-bg-e5484d: #e5484d;
+  --k-bg-e9e4da: #e9e4da;
+  --k-bg-f0c05a-10: rgba(240, 192, 90, .1);
+  --k-bg-f2c200: #f2c200;
+  --k-bg-ff8f80-10: rgba(255, 143, 128, .1);
+  --k-bg-ffb81f: #ffb81f;
+  --k-bg-ffffff: #fff;
+  --k-bg-ffffff-05: rgba(255, 255, 255, .05);
+  --k-bg-ffffff-06: rgba(255, 255, 255, .06);
+  --k-bg-ffffff-10: rgba(255,255,255,.1);
+  --k-bg-ffffff-12: rgba(255,255,255,.12);
+  --k-bg-ffffff-35: rgba(255, 255, 255, .35);
+  --k-bg-ffffff-85: rgba(255,255,255,.85);
+  --k-fg-000000: #000;
+  --k-fg-000000-70: rgba(0, 0, 0, .7);
+  --k-fg-1a1406: #1a1406;
+  --k-fg-1a1a1a: #1a1a1a;
+  --k-fg-555555: #555;
+  --k-fg-666666: #666;
+  --k-fg-6ab0ff: #6ab0ff;
+  --k-fg-7c7c7c: #7c7c7c;
+  --k-fg-7fd69a: #7fd69a;
+  --k-fg-8a8a8a: #8a8a8a;
+  --k-fg-999999: #999;
+  --k-fg-9a9a9a: #9a9a9a;
+  --k-fg-a8a8a8: #a8a8a8;
+  --k-fg-aaaaaa: #aaa;
+  --k-fg-b3261e: #b3261e;
+  --k-fg-bbbbbb: #bbb;
+  --k-fg-bdbdbd: #bdbdbd;
+  --k-fg-c4c4c4: #c4c4c4;
+  --k-fg-c8c8c8: #c8c8c8;
+  --k-fg-cccccc: #ccc;
+  --k-fg-cdcdcd: #cdcdcd;
+  --k-fg-cfcfcf: #cfcfcf;
+  --k-fg-d4d4d4: #d4d4d4;
+  --k-fg-d6336c: #d6336c;
+  --k-fg-d8d8d8: #d8d8d8;
+  --k-fg-dddddd: #ddd;
+  --k-fg-e0e0e0: #e0e0e0;
+  --k-fg-e5484d: #e5484d;
+  --k-fg-e9d48a: #e9d48a;
+  --k-fg-f0c05a: #f0c05a;
+  --k-fg-f2c200: #f2c200;
+  --k-fg-f4f4f4: #f4f4f4;
+  --k-fg-ff8a80: #ff8a80;
+  --k-fg-ff8f80: #ff8f80;
+  --k-fg-ffffff: #fff;
+  --k-fg-ffffff-13: rgba(255, 255, 255, .13);
+  --k-fg-ffffff-25: rgba(255, 255, 255, .25);
+  --k-fg-ffffff-55: rgba(255, 255, 255, .55);
+  --k-fg-ffffff-70: rgba(255, 255, 255, .7);
+  --k-ot-000000: #000;
+  --k-ot-000000-55: rgba(0, 0, 0, .55);
+  --k-ot-000000-60: rgba(0, 0, 0, .6);
+  --k-ot-000000-90: rgba(0, 0, 0, .9);
+  --k-sh-000000-35: rgba(0, 0, 0, .35);
+  --k-sh-000000-40: rgba(0,0,0,.4);
+  --k-sh-000000-50: rgba(0,0,0,.5);
+  --k-sh-000000-58: rgba(0, 0, 0, .58);
+  --k-sh-000000-60: rgba(0,0,0,.6);
+  --k-sh-000000-65: rgba(0, 0, 0, .65);
+  --k-sh-000000-80: rgba(0, 0, 0, .8);
+  --k-sh-888888: #888;
+  --k-sh-8a7a4a: #8a7a4a;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="auto"] #frame, :root[data-theme="auto"] #compare-panes {
+    --k-bd-000000: #000;
+    --k-bd-000000-50: rgba(0, 0, 0, .5);
+    --k-bd-000000-60: rgba(0,0,0,.6);
+    --k-bd-0c0c0c: #0c0c0c;
+    --k-bd-111111: #111;
+    --k-bd-1a1a1a: #1a1a1a;
+    --k-bd-2c2c2c: #2c2c2c;
+    --k-bd-333333: #333;
+    --k-bd-3a3a3a: #3a3a3a;
+    --k-bd-3c3c3c: #3c3c3c;
+    --k-bd-4a4a4a: #4a4a4a;
+    --k-bd-4f8a60: #4f8a60;
+    --k-bd-555555: #555;
+    --k-bd-6ab0ff: #6ab0ff;
+    --k-bd-777777: #777;
+    --k-bd-888888: #888;
+    --k-bd-8a4a42: #8a4a42;
+    --k-bd-8a7032: #8a7032;
+    --k-bd-8a7a4a: #8a7a4a;
+    --k-bd-8a8a8a: #8a8a8a;
+    --k-bd-bbbbbb: #bbb;
+    --k-bd-cfc8bc: #cfc8bc;
+    --k-bd-dddddd: #ddd;
+    --k-bd-f2a900-55: rgba(242, 169, 0, .55);
+    --k-bd-ff8a80: #ff8a80;
+    --k-bd-ffb81f: #ffb81f;
+    --k-bd-ffffff: #fff;
+    --k-bd-ffffff-90: rgba(255, 255, 255, .9);
+    --k-bg-000000: #000;
+    --k-bg-000000-50: rgba(0,0,0,.5);
+    --k-bg-000000-55: rgba(0,0,0,.55);
+    --k-bg-000000-60: rgba(0, 0, 0, .6);
+    --k-bg-000000-62: rgba(0, 0, 0, .62);
+    --k-bg-000000-72: rgba(0,0,0,.72);
+    --k-bg-0c0b0a-96: rgba(12, 11, 10, .96);
+    --k-bg-121212: #121212;
+    --k-bg-161616: #161616;
+    --k-bg-191919: #191919;
+    --k-bg-1a1a1a: #1a1a1a;
+    --k-bg-1c1c1c: #1c1c1c;
+    --k-bg-1d1d1d: #1d1d1d;
+    --k-bg-1f1f1f: #1f1f1f;
+    --k-bg-262626: #262626;
+    --k-bg-2a2a2a: #2a2a2a;
+    --k-bg-2c2c2c: #2c2c2c;
+    --k-bg-2e2e2e: #2e2e2e;
+    --k-bg-303030: #303030;
+    --k-bg-333333: #333;
+    --k-bg-363636: #363636;
+    --k-bg-3a2c00: #3a2c00;
+    --k-bg-3a3a3a: #3a3a3a;
+    --k-bg-3d3d3d: #3d3d3d;
+    --k-bg-4a4a4a: #4a4a4a;
+    --k-bg-4a90e2: #4a90e2;
+    --k-bg-4fc46a: #4fc46a;
+    --k-bg-555555: #555;
+    --k-bg-6ab0ff: #6ab0ff;
+    --k-bg-7fd69a-10: rgba(127, 214, 154, .1);
+    --k-bg-a66be8: #a66be8;
+    --k-bg-d6336c: #d6336c;
+    --k-bg-dcdcdc: #dcdcdc;
+    --k-bg-e5484d: #e5484d;
+    --k-bg-e9e4da: #e9e4da;
+    --k-bg-f0c05a-10: rgba(240, 192, 90, .1);
+    --k-bg-f2c200: #f2c200;
+    --k-bg-ff8f80-10: rgba(255, 143, 128, .1);
+    --k-bg-ffb81f: #ffb81f;
+    --k-bg-ffffff: #fff;
+    --k-bg-ffffff-05: rgba(255, 255, 255, .05);
+    --k-bg-ffffff-06: rgba(255, 255, 255, .06);
+    --k-bg-ffffff-10: rgba(255,255,255,.1);
+    --k-bg-ffffff-12: rgba(255,255,255,.12);
+    --k-bg-ffffff-35: rgba(255, 255, 255, .35);
+    --k-bg-ffffff-85: rgba(255,255,255,.85);
+    --k-fg-000000: #000;
+    --k-fg-000000-70: rgba(0, 0, 0, .7);
+    --k-fg-1a1406: #1a1406;
+    --k-fg-1a1a1a: #1a1a1a;
+    --k-fg-555555: #555;
+    --k-fg-666666: #666;
+    --k-fg-6ab0ff: #6ab0ff;
+    --k-fg-7c7c7c: #7c7c7c;
+    --k-fg-7fd69a: #7fd69a;
+    --k-fg-8a8a8a: #8a8a8a;
+    --k-fg-999999: #999;
+    --k-fg-9a9a9a: #9a9a9a;
+    --k-fg-a8a8a8: #a8a8a8;
+    --k-fg-aaaaaa: #aaa;
+    --k-fg-b3261e: #b3261e;
+    --k-fg-bbbbbb: #bbb;
+    --k-fg-bdbdbd: #bdbdbd;
+    --k-fg-c4c4c4: #c4c4c4;
+    --k-fg-c8c8c8: #c8c8c8;
+    --k-fg-cccccc: #ccc;
+    --k-fg-cdcdcd: #cdcdcd;
+    --k-fg-cfcfcf: #cfcfcf;
+    --k-fg-d4d4d4: #d4d4d4;
+    --k-fg-d6336c: #d6336c;
+    --k-fg-d8d8d8: #d8d8d8;
+    --k-fg-dddddd: #ddd;
+    --k-fg-e0e0e0: #e0e0e0;
+    --k-fg-e5484d: #e5484d;
+    --k-fg-e9d48a: #e9d48a;
+    --k-fg-f0c05a: #f0c05a;
+    --k-fg-f2c200: #f2c200;
+    --k-fg-f4f4f4: #f4f4f4;
+    --k-fg-ff8a80: #ff8a80;
+    --k-fg-ff8f80: #ff8f80;
+    --k-fg-ffffff: #fff;
+    --k-fg-ffffff-13: rgba(255, 255, 255, .13);
+    --k-fg-ffffff-25: rgba(255, 255, 255, .25);
+    --k-fg-ffffff-55: rgba(255, 255, 255, .55);
+    --k-fg-ffffff-70: rgba(255, 255, 255, .7);
+    --k-ot-000000: #000;
+    --k-ot-000000-55: rgba(0, 0, 0, .55);
+    --k-ot-000000-60: rgba(0, 0, 0, .6);
+    --k-ot-000000-90: rgba(0, 0, 0, .9);
+    --k-sh-000000-35: rgba(0, 0, 0, .35);
+    --k-sh-000000-40: rgba(0,0,0,.4);
+    --k-sh-000000-50: rgba(0,0,0,.5);
+    --k-sh-000000-58: rgba(0, 0, 0, .58);
+    --k-sh-000000-60: rgba(0,0,0,.6);
+    --k-sh-000000-65: rgba(0, 0, 0, .65);
+    --k-sh-000000-80: rgba(0, 0, 0, .8);
+    --k-sh-888888: #888;
+    --k-sh-8a7a4a: #8a7a4a;
+  }
+}
+
+/* white text on red stays white */
+:root[data-theme="light"] button.danger, :root[data-theme="light"] .danger.primary { color: #fff; }
+@media (prefers-color-scheme: light) { :root[data-theme="auto"] button.danger { color: #fff; } }
+
+/* Orange text: darker on white, so it can be read (orange fills and buttons stay as they are). */
+:root[data-theme="light"] #export-error,
+:root[data-theme="light"] #bar > #credits,
+:root[data-theme="light"] #bar > #credits:hover,
+:root[data-theme="light"] .cost,
+:root[data-theme="light"] #purchases a,
+:root[data-theme="light"] #buy-dialog a,
+:root[data-theme="light"] #account .statement,
+:root[data-theme="light"] #account .free-note,
+:root[data-theme="light"] #looks .look .has,
+:root[data-theme="light"] #split[aria-pressed=true],
+:root[data-theme="light"] #ratings button[aria-pressed=true] small,
+:root[data-theme="light"] #toolstrip button[aria-pressed=true],
+:root[data-theme="light"] #toolstrip button[data-n]:not([data-n=""])::after,
+:root[data-theme="light"] .panel > summary small,
+:root[data-theme="light"] .adj .value.moved,
+:root[data-theme="light"] .adj .auto:has(input:checked),
+:root[data-theme="light"] #masks .part .changed,
+:root[data-theme="light"] #drawn .part .changed,
+:root[data-theme="light"] .adj:has(.auto input:checked) .value,
+:root[data-theme="light"] 0%,
+:root[data-theme="light"] #buy-dialog .warn,
+:root[data-theme="light"] #add a,
+:root[data-theme="light"] #looks .pack.recs,
+:root[data-theme="light"] #sel-count,
+:root[data-theme="light"] #looks .look .star:hover, :root[data-theme="light"] #looks .variants .star:hover,
+:root[data-theme="light"] #looks .star[aria-pressed=true],
+:root[data-theme="light"] #looks .pack.favs,
+:root[data-theme="light"] .help-item summary:hover,
+:root[data-theme="light"] .help-a a, :root[data-theme="light"] #help-list a,
+:root[data-theme="light"] #wedding-list td.warn { color: var(--marigold-text); }
+@media (prefers-color-scheme: light) {
+:root[data-theme="auto"] #export-error,
+:root[data-theme="auto"] #bar > #credits,
+:root[data-theme="auto"] #bar > #credits:hover,
+:root[data-theme="auto"] .cost,
+:root[data-theme="auto"] #purchases a,
+:root[data-theme="auto"] #buy-dialog a,
+:root[data-theme="auto"] #account .statement,
+:root[data-theme="auto"] #account .free-note,
+:root[data-theme="auto"] #looks .look .has,
+:root[data-theme="auto"] #split[aria-pressed=true],
+:root[data-theme="auto"] #ratings button[aria-pressed=true] small,
+:root[data-theme="auto"] #toolstrip button[aria-pressed=true],
+:root[data-theme="auto"] #toolstrip button[data-n]:not([data-n=""])::after,
+:root[data-theme="auto"] .panel > summary small,
+:root[data-theme="auto"] .adj .value.moved,
+:root[data-theme="auto"] .adj .auto:has(input:checked),
+:root[data-theme="auto"] #masks .part .changed,
+:root[data-theme="auto"] #drawn .part .changed,
+:root[data-theme="auto"] .adj:has(.auto input:checked) .value,
+:root[data-theme="auto"] 0%,
+:root[data-theme="auto"] #buy-dialog .warn,
+:root[data-theme="auto"] #add a,
+:root[data-theme="auto"] #looks .pack.recs,
+:root[data-theme="auto"] #sel-count,
+:root[data-theme="auto"] #looks .look .star:hover, :root[data-theme="auto"] #looks .variants .star:hover,
+:root[data-theme="auto"] #looks .star[aria-pressed=true],
+:root[data-theme="auto"] #looks .pack.favs,
+:root[data-theme="auto"] .help-item summary:hover,
+:root[data-theme="auto"] .help-a a, :root[data-theme="auto"] #help-list a,
+:root[data-theme="auto"] #wedding-list td.warn { color: var(--marigold-text); }
+}
