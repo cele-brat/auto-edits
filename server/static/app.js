@@ -1192,7 +1192,7 @@ $('strip').addEventListener('wheel', (e) => {
 }, { passive: false });
 
 // Every window: a cross in the top corner, and a click on the dark area outside closes it too.
-for (const d of document.querySelectorAll('dialog')) {
+for (const d of document.querySelectorAll('dialog:not([data-no-x])')) {   // data-no-x: the guide, only its own two buttons
   const x = el('button', { type: 'button', className: 'x', textContent: '×', title: 'Close (Esc)' });
   x.setAttribute('aria-label', 'Close');
   x.onclick = () => { const own = d.querySelector('[id$=-close], #confirm-no'); if (own) own.click(); else d.close(); };
