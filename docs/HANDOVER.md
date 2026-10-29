@@ -43,6 +43,10 @@ Read this first in any new Claude Code session. The full history of each feature
 2. Close hides it for that login only (ephemeral state `guide-session`, keyed by the session cookie); Close with "Don't show again" ticked hides it for good (table `guide_closed`).
 3. Edit the steps in `GUIDE_STEPS` (guide.js). To show it to someone again after "Don't show again": `DELETE FROM guide_closed WHERE user_id=…`.
 
+## Help (29 Oct)
+1. `static/help.js`: Account menu › Help and questions, or press ?. Type a question: it is matched in the browser (no server, no AI) against ~45 answers in `HELP` (question, answer, extra words `k`); FAQ shown when nothing is typed (`faq: true`); "Show me" points at the place on screen with the guide's card (`t` target id, `open` a menu first); "Take the tour again".
+2. To add or fix an answer, edit `HELP`. If a search finds the wrong answer, add the user's words to that entry's `k`.
+
 ## Waiting on Bharat
 1. Try Auto on a real event folder (30+ photos, mixed light); say if even. Under-corrected → raise PULL/bands; drift → lower.
 2. Check Recommended picks on Haldi / Sangeet / Reception folders.
