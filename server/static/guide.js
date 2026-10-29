@@ -31,7 +31,7 @@ const GUIDE_STEPS = [
   { title: 'Share with the couple', target: 'more',
     text: 'In the Account menu, “Share as gallery…” makes a private link where the couple pick favourites. Their picks show up here under Client picks.' },
   { title: 'Credits and help', target: 'credits',
-    text: 'Your balance, buying credits, invoices and the Lightroom key are here. That is the tour. Tick “Don’t show again” before Close if you do not want it next time.' },
+    text: 'Your balance, buying credits, invoices and the Lightroom key are here. Any question later: Account menu › Help and questions, or press ?. That is the tour. Tick “Don’t show again” before Close if you do not want it next time.' },
 ];
 
 const Guide = { step: 0, lit: null };
@@ -50,10 +50,9 @@ function guideLight(t) {
   if (t) t.classList.add('guide-lit');
 }
 
-// Put the card on the side of the target with the most room, the arrow pointing at its middle.
-function placeGuide() {
-  const d = $('guide-dialog'), arrow = $('guide-arrow');
-  const t = Guide.lit && guideTarget(Guide.lit.id);
+// Put a card (the guide, or Help's "Show me") on the side of the target with the most room, its
+// arrow pointing at the target's middle. No target (or a phone): docked at the bottom right.
+function placeCard(d, arrow, t) {
   d.classList.toggle('docked', !t || innerWidth < 600);
   arrow.hidden = d.classList.contains('docked');
   if (arrow.hidden) { d.style.left = d.style.top = ''; return; }
@@ -81,6 +80,7 @@ function placeGuide() {
   if (side === 'right' || side === 'left') { arrow.style.top = `${clamp(cy - y, 18, h - 18)}px`; arrow.style.left = ''; }
   else { arrow.style.left = `${clamp(cx - x, 18, w - 18)}px`; arrow.style.top = ''; }
 }
+function placeGuide() { placeCard($('guide-dialog'), $('guide-arrow'), Guide.lit && guideTarget(Guide.lit.id)); }
 
 function drawGuide() {
   const s = GUIDE_STEPS[Guide.step];
