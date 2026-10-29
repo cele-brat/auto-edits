@@ -1467,8 +1467,8 @@ def create_app(data_dir: str | None = None, key: str | None = None, blobs=None, 
     ctx = {"signed_in": signed_in, "store": store, "renderer": renderer, "culls": culls, "drawing": drawing, "state": state,
            "accounts": accounts, "mailer": mailer, "link_base": link_base, "client_ip": client_ip, "wedding_or_404": wedding_or_404,
            "static": STATIC, "preview_cap": PREVIEW_CAP, "sizes": SIZES}
-    from . import recommend
-    for module in (favourites, style_mod, compare, gallery, recommend):
+    from . import guide, recommend
+    for module in (favourites, style_mod, compare, gallery, recommend, guide):
         app.include_router(module.make_router(ctx))
     app.state.favourites = ctx["favourites"]
     app.state.galleries = ctx["galleries"]
