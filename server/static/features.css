@@ -125,6 +125,9 @@ body.light-open { overflow: hidden; }
 #guide-dialog #guide-count { color: var(--dim); font-size: 12.5px; margin-bottom: 6px; }
 #guide-dialog .title { padding-right: 0; }
 #guide-dialog #guide-text { line-height: 1.5; }
+#guide-dialog .row button { white-space: nowrap; }
+#guide-never-box input { accent-color: var(--marigold); margin: 0; }
+#guide-never-box { margin: 14px 0 0; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); cursor: pointer; }
 #guide-arrow { position: absolute; width: 14px; height: 14px; background: #1d1d1d; border: 1px solid var(--marigold); transform: translate(-50%, -50%) rotate(45deg); }
 #guide-arrow[data-side=right] { left: 0; border-top: 0; border-right: 0; }
 #guide-arrow[data-side=left] { left: 100%; border-bottom: 0; border-left: 0; }

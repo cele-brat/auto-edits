@@ -1,5 +1,6 @@
-// Walk-through guide for new photographers. Opens each time the app starts until they press
-// Close (POST /api/guide/close, kept per account), then never again. "Show more" goes to the
+// Walk-through guide for new photographers. Opens each time the app starts. Close hides it for
+// this login; Close with "Don't show again" ticked hides it for good (POST /api/guide/close,
+// kept per account on the server). "Show more" goes to the
 // next step; the card moves beside the part of the screen that step is about, with an arrow
 // pointing at it (bottom right when that part is not on screen, e.g. no wedding yet).
 'use strict';
@@ -30,7 +31,7 @@ const GUIDE_STEPS = [
   { title: 'Share with the couple', target: 'more',
     text: 'In the Account menu, “Share as gallery…” makes a private link where the couple pick favourites. Their picks show up here under Client picks.' },
   { title: 'Credits and help', target: 'credits',
-    text: 'Your balance, buying credits, invoices and the Lightroom key are here. That is the tour. Press Close and this guide will not open again.' },
+    text: 'Your balance, buying credits, invoices and the Lightroom key are here. That is the tour. Tick “Don’t show again” before Close if you do not want it next time.' },
 ];
 
 const Guide = { step: 0, lit: null };
@@ -97,6 +98,7 @@ function drawGuide() {
 
 function openGuide() {
   Guide.step = 0;
+  $('guide-never').checked = false;
   if (!$('guide-dialog').open) $('guide-dialog').show();       // not modal: the screen it points at stays usable
   drawGuide();                                                 // after show(), so focus lands on Show more, not Close
 }
@@ -104,7 +106,7 @@ function openGuide() {
 $('guide-more').onclick = () => { Guide.step = Math.min(Guide.step + 1, GUIDE_STEPS.length - 1); drawGuide(); };
 $('guide-close').onclick = async () => {
   $('guide-dialog').close();
-  try { await api('/api/guide/close', { method: 'POST' }); } catch (e) { /* it shows again next time; fine */ }
+  try { await api('/api/guide/close', { method: 'POST', body: { forever: $('guide-never').checked } }); } catch (e) { /* it shows again next time; fine */ }
 };
 // Anything else that hides it only hides it for now: it comes back next time.
 $('guide-dialog').addEventListener('close', () => guideLight(null));
