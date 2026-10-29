@@ -47,6 +47,11 @@ Read this first in any new Claude Code session. The full history of each feature
 1. `static/help.js`: Account menu › Help and questions, or press ?. Type a question: it is matched in the browser (no server, no AI) against ~45 answers in `HELP` (question, answer, extra words `k`); FAQ shown when nothing is typed (`faq: true`); "Show me" points at the place on screen with the guide's card (`t` target id, `open` a menu first); "Take the tour again".
 2. To add or fix an answer, edit `HELP`. If a search finds the wrong answer, add the user's words to that entry's `k`.
 
+## Theme (29 Oct)
+1. Account menu › Theme: Light / Dark / Auto (follows the computer). Default Dark. Kept in this browser (`localStorage` `ae-theme`); `static/theme.js` (in `<head>`, no inline scripts allowed) sets `data-theme` on `<html>` before the page draws.
+2. Every hard-coded colour in app.css, develop.css, features.css, billing.css and dashboard.css is a variable `--k-<use>-<colour>` (use: bg, fg, bd = border, sh = shadow, ot = other), defined with its dark value at the top of each file (dark looks exactly as before; admin and the client gallery are unchanged). `static/theme-light.css` (app only) gives them light values, keeps the dark look for what is drawn on the photo (`#frame`, `#compare-panes`), and darkens orange text.
+3. New CSS: use the tokens (`--text`, `--panel`, `--line`…) or add a `--k-…` variable with a light value in theme-light.css; a plain hex colour will look the same in both themes.
+
 ## Waiting on Bharat
 1. Try Auto on a real event folder (30+ photos, mixed light); say if even. Under-corrected → raise PULL/bands; drift → lower.
 2. Check Recommended picks on Haldi / Sangeet / Reception folders.

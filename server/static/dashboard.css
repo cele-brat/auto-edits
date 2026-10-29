@@ -1,8 +1,13 @@
+:root {   /* colours (dark, the default); theme-light.css redefines them for the light theme */
+  --k-bd-2c2c2c: #2c2c2c;
+  --k-fg-ff8a80: #ff8a80;
+  --k-fg-ffffff: #fff;
+}
 /* The Account window's Usage and Weddings tabs, the delete-account block, the STAGING banner. */
-#env-banner { background: var(--danger); color: #fff; font: 700 11px/1 var(--sans, sans-serif); letter-spacing: .12em; padding: 5px 9px; border-radius: 4px; margin-left: 8px; white-space: nowrap; }
+#env-banner { background: var(--danger); color: var(--k-fg-ffffff); font: 700 11px/1 var(--sans, sans-serif); letter-spacing: .12em; padding: 5px 9px; border-radius: 4px; margin-left: 8px; white-space: nowrap; }
 #usage, #wedding-list { width: 100%; border-collapse: collapse; font-size: 13px; }
 #usage th, #wedding-list th { text-align: left; color: var(--dim); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); }
-#usage td, #wedding-list td { padding: 6px; border-bottom: 1px solid #2c2c2c; vertical-align: top; }
+#usage td, #wedding-list td { padding: 6px; border-bottom: 1px solid var(--k-bd-2c2c2c); vertical-align: top; }
 #usage .n, #wedding-list .n { text-align: right; white-space: nowrap; }
 #usage tfoot td { font-weight: 600; border-top: 2px solid var(--line2); border-bottom: 0; }
 #usage tr.go { cursor: pointer; } #usage tr.go:hover td { background: var(--raise); }
@@ -14,7 +19,7 @@
 .usage-chart .usage-bar { fill: var(--marigold); opacity: .85; }
 .usage-chart .usage-label { fill: var(--dim); font-size: 11px; }
 .usage-chart .usage-num { fill: var(--text); font-size: 11px; }
-#delete-block summary { cursor: pointer; color: #ff8a80; font-weight: 600; margin: 4px 0 10px; }
+#delete-block summary { cursor: pointer; color: var(--k-fg-ff8a80); font-weight: 600; margin: 4px 0 10px; }
 #delete-block .acc-form, #email-block .acc-form { margin-top: 8px; }
 #delete-note, #email-note { min-height: 1.2em; margin-top: 6px; }
 #saved-conflict { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }

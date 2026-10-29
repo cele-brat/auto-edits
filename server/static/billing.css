@@ -1,9 +1,13 @@
+:root {   /* colours (dark, the default); theme-light.css redefines them for the light theme */
+  --k-bd-0c0c0c: #0c0c0c;
+  --k-bg-3a2c00: #3a2c00;
+}
 /* Payments phase 2: the low-credit strip, the footer line, bulk preset import (server/static/billing.js, bulkpresets.js). */
 #low-credits { position: fixed; left: 0; right: 0; top: 46px; z-index: 29; display: flex; align-items: center; justify-content: center; gap: 10px;
-  padding: 5px 12px; background: #3a2c00; border-bottom: 2px solid var(--marigold); color: var(--text); font-size: 13px; }
+  padding: 5px 12px; background: var(--k-bg-3a2c00); border-bottom: 2px solid var(--marigold); color: var(--text); font-size: 13px; }
 #low-credits .primary { padding: 3px 12px; font-size: 12px; }
 #low-credits .quiet { padding: 2px 8px; }
-#powered { margin: 0; padding: 3px 12px; font-size: 11px; color: var(--faint); border-top: 1px solid #0c0c0c; }
+#powered { margin: 0; padding: 3px 12px; font-size: 11px; color: var(--faint); border-top: 1px solid var(--k-bd-0c0c0c); }
 #powered a { color: var(--faint); }
 #account .policies.powered { margin-top: 6px; padding-top: 0; border-top: 0; font-size: 12px; }
 #renew-box, #refunds-box { margin-top: 18px; }

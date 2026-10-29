@@ -105,6 +105,8 @@ const HELP = [
     a: 'Account menu › <b>Account and credits</b>: change your password or email there, or delete your account.' },
   { q: 'Are my photos private?', faq: true, k: 'private privacy safe secure security who see',
     a: 'Yes. Nothing is visible without logging in, each photographer sees only their own weddings, and the connection is encrypted.' },
+  { q: 'Can I use a light theme?', t: 'more', k: 'theme light dark mode auto colour color bright white night appearance',
+    a: 'Yes. Account menu › <b>Theme</b>: Light, Dark or Auto (follows your computer’s setting). It is remembered in this browser. Photos look the same in both.' },
   { q: 'Does it work on a phone?', k: 'phone mobile tablet ipad android iphone',
     a: 'Editing works best on a laptop. On a phone you can view, rate and export; the sliders and presets are further down the page.' },
   { q: 'How do I contact support?', k: 'contact support help email phone whatsapp problem bug issue',
@@ -121,6 +123,7 @@ function helpWords(text) {
   return String(text).toLowerCase().replace(/<[^>]+>/g, ' ').replace(/[^a-z0-9₹:\s-]/g, ' ').split(/[\s-]+/)
     .map((w) => HELP_SAME[w] || w)
     .map((w) => (w.length > 4 ? w.replace(/(ing|ed|er|es|s)$/, '') : w))
+    .map((w) => HELP_SAME[w] || w)                     // again: "colours" → "colour" → "color"
     .filter((w) => w && !HELP_STOP.has(w));
 }
 for (const h of HELP) h.words = { k: new Set(helpWords(h.k || '')), q: new Set(helpWords(h.q)), a: new Set(helpWords(h.a)) };

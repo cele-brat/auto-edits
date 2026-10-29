@@ -8,11 +8,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/static/app.css?v=35">
-<link rel="stylesheet" href="/static/billing.css?v=1">
-<link rel="stylesheet" href="/static/dashboard.css?v=1">
-<link rel="stylesheet" href="/static/features.css?v=5">
-<link rel="stylesheet" href="/static/develop.css?v=1">
+<link rel="stylesheet" href="/static/app.css?v=36">
+<link rel="stylesheet" href="/static/billing.css?v=2">
+<link rel="stylesheet" href="/static/dashboard.css?v=2">
+<link rel="stylesheet" href="/static/features.css?v=6">
+<link rel="stylesheet" href="/static/develop.css?v=2">
+<link rel="stylesheet" href="/static/theme-light.css?v=1">
+<script src="/static/theme.js?v=1"></script>
 </head>
 <body>
 <div id="app" hidden>
@@ -39,6 +41,8 @@
         <button id="plugin-open" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 10a4 4 0 1 0-3.5 3.97L9 15.5V18H6.5v2.5H4V18l6.03-6.03A4 4 0 0 0 14 10Zm1-2h.01"/></svg><span><b>Lightroom plug-in</b><small>Download it, install it, get your key</small></span></button>
         <a id="admin-link" href="/admin" role="menuitem" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6l-7-3Z"/></svg><span><b>Admin dashboard</b><small>Photographers, purchases, backups</small></span></a>
         <p class="group">Settings</p>
+        <div class="theme-pick" role="group" aria-label="Theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9Z"/></svg><span><b>Theme</b><small>Auto follows your computer</small></span>
+          <span class="seg"><button type="button" data-theme-pick="light" aria-pressed="false">Light</button><button type="button" data-theme-pick="dark" aria-pressed="false">Dark</button><button type="button" data-theme-pick="auto" aria-pressed="false">Auto</button></span></div>
         <button id="menu-copy" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span><b>Copy settings…</b><small>Cmd/Ctrl+Shift+C: tick the panels to copy</small></span></button>
         <button id="menu-paste" type="button" role="menuitem" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v3H9zM7 6H5v15h14V6h-2"/></svg><span><b>Paste settings</b><small>Cmd/Ctrl+Shift+V: onto the selected photos</small></span></button>
         <button id="menu-sync" type="button" role="menuitem"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14-5l2-2v6h-6l2-2a5 5 0 0 0-9 3M20 12a8 8 0 0 1-14 5l-2 2v-6h6l-2 2a5 5 0 0 0 9-3"/></svg><span><b>Sync settings…</b><small>From this photo to every selected photo</small></span></button>
@@ -747,6 +751,6 @@
 <script src="/static/sharegallery.js?v=1"></script>
 <script src="/static/develop.js?v=1"></script>
 <script src="/static/guide.js?v=5"></script>
-<script src="/static/help.js?v=1"></script>
+<script src="/static/help.js?v=2"></script>
 </body>
 </html>
