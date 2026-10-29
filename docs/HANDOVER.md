@@ -38,8 +38,8 @@ Read this first in any new Claude Code session. The full history of each feature
 4. a36017b Safari before view (no separate before layer: flicker / washed yellow), photo area not selectable, Cmd+A ignored in Develop.
 5. Not yet checked: real wedding folders for match bands; Lightroom route with matched values.
 
-## Walk-through guide (29 Oct, branch claude/loving-mayer-7caxpl, not deployed yet)
-1. `server/guide.py`, `static/guide.js`: an 8-step card at the bottom right with "Show more" (next step, outlines the button it talks about) and "Close". Opens every time the app opens until Close; Close is saved per account (table `guide_closed`), so it never opens again on any device. Admin "view as" never sees or closes it.
+## Walk-through guide (29 Oct, live 559fd73; placement beside each part in a follow-up PR)
+1. `server/guide.py`, `static/guide.js`: a 13-step card with "Show more" (next step) and "Close". Each step's card moves beside the part it explains (add photos, folders, cull, preset import, presets, Develop, Apply to, sliders, crop/masks, export, share, credits), with an arrow and an outline on that part; docked bottom right when the part is not on screen and on phones. Opens every time the app opens until Close; Close is saved per account (table `guide_closed`), so it never opens again on any device. Admin "view as" never sees or closes it.
 2. Edit the steps in `GUIDE_STEPS` (guide.js). To show it to someone again: `DELETE FROM guide_closed WHERE user_id=…`.
 
 ## Waiting on Bharat

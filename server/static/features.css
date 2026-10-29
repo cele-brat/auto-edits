@@ -118,10 +118,17 @@ body.light-open { overflow: hidden; }
 #g-send-dialog label { display: block; margin-top: 12px; font-size: 13px; color: var(--soft); }
 #g-send-dialog label input, #g-send-dialog label textarea { margin-top: 4px; }
 
-/* walk-through guide (guide.js): a card at the bottom right, the screen it points at stays visible */
-#guide-dialog { inset: auto 20px 20px auto; margin: 0; width: min(380px, calc(100% - 32px)); z-index: 50; }
+/* walk-through guide (guide.js): a card beside the part of the screen it explains, arrow pointing at it;
+   docked bottom right when that part is not on screen (and on phones) */
+#guide-dialog { inset: auto; margin: 0; width: min(340px, calc(100% - 32px)); z-index: 50; overflow: visible; border-color: var(--marigold); }
+#guide-dialog.docked { inset: auto 20px 20px auto; }
 #guide-dialog #guide-count { color: var(--dim); font-size: 12.5px; margin-bottom: 6px; }
 #guide-dialog .title { padding-right: 0; }
 #guide-dialog #guide-text { line-height: 1.5; }
+#guide-arrow { position: absolute; width: 14px; height: 14px; background: #1d1d1d; border: 1px solid var(--marigold); transform: translate(-50%, -50%) rotate(45deg); }
+#guide-arrow[data-side=right] { left: 0; border-top: 0; border-right: 0; }
+#guide-arrow[data-side=left] { left: 100%; border-bottom: 0; border-left: 0; }
+#guide-arrow[data-side=below] { top: 0; border-right: 0; border-bottom: 0; }
+#guide-arrow[data-side=above] { top: 100%; border-top: 0; border-left: 0; }
 .guide-lit { outline: 2px solid var(--marigold) !important; outline-offset: 3px; border-radius: 6px; }
-@media (max-width: 600px) { #guide-dialog { inset: auto 16px 16px 16px; width: auto; } }
+@media (max-width: 600px) { #guide-dialog.docked { inset: auto 16px 16px 16px; width: auto; } }
