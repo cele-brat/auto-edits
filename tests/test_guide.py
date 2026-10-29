@@ -24,20 +24,36 @@ def photographer(app, box, email):
     return c
 
 
-def test_guide_shows_until_closed_per_account(tmp_path):
+XR = {"X-Requested-With": "AutoEdits"}
+
+
+def login(app, email):
+    c = TestClient(app)
+    assert c.post("/api/login", json={"email": email, "password": "a good password"}).status_code == 200
+    return c
+
+
+def test_close_hides_for_this_login_only(tmp_path):
+    box = Mailbox()
+    app = create_app(str(tmp_path), KEY, admin_email="studio@cele-brat.com", mailer=box)
+    ravi = photographer(app, box, "ravi@example.com")
+    assert ravi.get("/api/guide").json() == {"show": True}
+    assert ravi.get("/api/guide").json() == {"show": True}            # still there on the next visit
+    assert ravi.post("/api/guide/close", headers=XR, json={}).json() == {"show": False, "forever": False}
+    assert ravi.get("/api/guide").json() == {"show": False}           # hidden for the rest of this login
+    assert login(app, "ravi@example.com").get("/api/guide").json() == {"show": True}   # back on the next login
+    assert TestClient(app).get("/api/guide").status_code == 401
+
+
+def test_dont_show_again_is_for_good_per_account(tmp_path):
     box = Mailbox()
     app = create_app(str(tmp_path), KEY, admin_email="studio@cele-brat.com", mailer=box)
     ravi = photographer(app, box, "ravi@example.com")
     asha = photographer(app, box, "asha@example.com")
-    assert ravi.get("/api/guide").json() == {"show": True}
-    assert ravi.get("/api/guide").json() == {"show": True}            # still there on the next visit
-    assert ravi.post("/api/guide/close", headers={"X-Requested-With": "AutoEdits"}).json() == {"show": False}
+    assert ravi.post("/api/guide/close", headers=XR, json={"forever": True}).json() == {"show": False, "forever": True}
     assert ravi.get("/api/guide").json() == {"show": False}
-    assert ravi.post("/api/guide/close", headers={"X-Requested-With": "AutoEdits"}).status_code == 200   # twice is fine
-    assert asha.get("/api/guide").json() == {"show": True}            # her own guide
-    assert TestClient(app).get("/api/guide").status_code == 401
-    # a new login (same database) remembers it
+    assert ravi.post("/api/guide/close", headers=XR, json={"forever": True}).status_code == 200   # twice is fine
+    assert asha.get("/api/guide").json() == {"show": True}            # her own choice
+    # a new login, even after a restart, remembers it
     again = create_app(str(tmp_path), KEY, admin_email="studio@cele-brat.com", mailer=box)
-    c = TestClient(again)
-    assert c.post("/api/login", json={"email": "ravi@example.com", "password": "a good password"}).status_code == 200
-    assert c.get("/api/guide").json() == {"show": False}
+    assert login(again, "ravi@example.com").get("/api/guide").json() == {"show": False}

@@ -1,10 +1,13 @@
-"""Walk-through guide for new photographers: shown each time the app opens until they press Close.
-Kept per account on the server (not in the browser), so once closed it stays closed on every device."""
+"""Walk-through guide for new photographers, shown each time the app opens.
+Close hides it for this login (until they log out or the session ends); Close with "Don't show again"
+ticked hides it for good, kept per account, so it stays hidden on every device."""
 from __future__ import annotations
 
 import time
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Cookie, Depends, HTTPException
+
+SESSION_SECONDS = 60 * 24 * 3600          # longer than any login session; it ends with the session anyway
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS guide_closed (
@@ -29,20 +32,26 @@ class Guide:
 
 
 def make_router(ctx: dict) -> APIRouter:
-    signed_in, store = ctx["signed_in"], ctx["store"]
+    signed_in, store, state = ctx["signed_in"], ctx["store"], ctx["state"]
     guide = Guide(store)
     r = APIRouter()
 
     @r.get("/api/guide")
-    def guide_state(user: dict = Depends(signed_in)):
+    def guide_state(user: dict = Depends(signed_in), autoedits: str = Cookie(default="")):
         # An admin looking at someone's account never sees (or closes) their guide.
-        return {"show": not user.get("viewing_as") and not guide.closed(user["id"])}
+        hidden = (user.get("viewing_as") or guide.closed(user["id"])
+                  or (autoedits and state.get("guide-session", autoedits) == user["id"]))
+        return {"show": not hidden}
 
     @r.post("/api/guide/close")
-    def guide_close(user: dict = Depends(signed_in)):
+    def guide_close(body: dict = Body(default={}), user: dict = Depends(signed_in), autoedits: str = Cookie(default="")):
+        """{"forever": true} when "Don't show again" is ticked; otherwise only for this login."""
         if user.get("viewing_as"):
             raise HTTPException(403, "Not while viewing someone else's account.")
-        guide.close(user["id"])
-        return {"show": False}
+        if body.get("forever"):
+            guide.close(user["id"])
+        elif autoedits:
+            state.put("guide-session", autoedits, user["id"], SESSION_SECONDS)
+        return {"show": False, "forever": bool(body.get("forever"))}
 
     return r

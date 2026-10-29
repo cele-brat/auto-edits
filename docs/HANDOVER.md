@@ -40,7 +40,8 @@ Read this first in any new Claude Code session. The full history of each feature
 
 ## Walk-through guide (29 Oct, live 559fd73; placement beside each part in a follow-up PR)
 1. `server/guide.py`, `static/guide.js`: a 13-step card with "Show more" (next step) and "Close". Each step's card moves beside the part it explains (add photos, folders, cull, preset import, presets, Develop, Apply to, sliders, crop/masks, export, share, credits), with an arrow and an outline on that part; docked bottom right when the part is not on screen and on phones. Opens every time the app opens until Close; Close is saved per account (table `guide_closed`), so it never opens again on any device. Admin "view as" never sees or closes it.
-2. Edit the steps in `GUIDE_STEPS` (guide.js). To show it to someone again: `DELETE FROM guide_closed WHERE user_id=…`.
+2. Close hides it for that login only (ephemeral state `guide-session`, keyed by the session cookie); Close with "Don't show again" ticked hides it for good (table `guide_closed`).
+3. Edit the steps in `GUIDE_STEPS` (guide.js). To show it to someone again after "Don't show again": `DELETE FROM guide_closed WHERE user_id=…`.
 
 ## Waiting on Bharat
 1. Try Auto on a real event folder (30+ photos, mixed light); say if even. Under-corrected → raise PULL/bands; drift → lower.
