@@ -116,6 +116,64 @@ def test_health_email_mentions_missing_email_records_only_when_missing(tmp_path,
     assert len(box.sent) == 1                                          # nothing to say: no email
 
 
+def _txt_reply(query: bytes, values: list[str], rcode: int = 0) -> bytes:
+    import struct
+    qid = struct.unpack(">H", query[:2])[0]
+    i = 12
+    while query[i]:
+        i += query[i] + 1
+    question = query[12:i + 5]
+    answers = b""
+    for v in values:
+        chunks = [v[k:k + 255].encode() for k in range(0, len(v), 255)]
+        rdata = b"".join(bytes([len(c)]) + c for c in chunks)
+        answers += b"\xc0\x0c" + struct.pack(">HHIH", 16, 1, 300, len(rdata)) + rdata
+    return struct.pack(">HHHHHH", qid, 0x8180 | rcode, 1, len(values), 0, 0) + question + answers
+
+
+def test_mailcheck_plain_python_lookup_reads_long_txt_records(monkeypatch):
+    import socket
+    import threading
+    long_key = "v=DKIM1; k=rsa; p=" + "A" * 400                        # split across two TXT strings
+    srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    srv.bind(("127.0.0.1", 0))
+    port = srv.getsockname()[1]
+
+    def serve():
+        for _ in range(2):
+            q, addr = srv.recvfrom(4096)
+            nx = b"_dmarc" in q
+            srv.sendto(_txt_reply(q, [] if nx else [long_key], rcode=3 if nx else 0), addr)
+    threading.Thread(target=serve, daemon=True).start()
+    monkeypatch.setattr(mailcheck, "DNS_PORT", port)
+    monkeypatch.setattr(mailcheck, "_nameservers", lambda: ["127.0.0.1"])
+    assert mailcheck._txt_socket("google._domainkey.cele-brat.solutions") == [long_key]
+    assert mailcheck._txt_socket("_dmarc.cele-brat.solutions") == []             # NXDOMAIN: no record
+    srv.close()
+
+
+def test_mailcheck_failed_lookup_is_not_a_missing_record():
+    assert mailcheck.missing("cele-brat.solutions", lambda name: None) == []
+    assert mailcheck.status("cele-brat.solutions", lambda name: None) == ([], ["SPF", "DKIM", "DMARC"])
+    assert mailcheck.parse_txt_answer(b"\x00" * 4, 1) is None
+
+
+def test_health_email_says_when_email_records_could_not_be_checked(tmp_path, monkeypatch):
+    import datetime as dt
+    import shutil
+    from collections import namedtuple
+    from server.backups import Backups
+    monkeypatch.setattr(shutil, "disk_usage", lambda p: namedtuple("u", "total used free")(100, 10, 90))
+    store = Store(tmp_path)
+    Backups(store).run()
+    health.beat(store)
+    monkeypatch.setattr(health, "HOUR", 0)
+    monkeypatch.setenv("MAIL_FROM", "Auto Edits <no-reply@cele-brat.solutions>")
+    monkeypatch.setattr(mailcheck, "lookup_txt", lambda name, resolver=None: None)
+    found = health.run_if_due(store, Box(), "studio@example.com", now=dt.datetime.now(health.IST))
+    assert len(found) == 1 and found[0].startswith("could not look up the sending domain's email records: SPF, DKIM, DMARC")
+
+
 # ---- staging ------------------------------------------------------------------------------
 class Rzp:
     def __init__(self, key):
