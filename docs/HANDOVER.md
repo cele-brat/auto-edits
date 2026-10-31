@@ -57,7 +57,7 @@ Read this first in any new Claude Code session. The full history of each feature
 2. Check Recommended picks on Haldi / Sangeet / Reception folders.
 3. Razorpay webhooks: tick `subscription.charged`, `subscription.cancelled`, `subscription.halted`, `subscription.completed`, `payment.failed`; enable Subscriptions.
 4. Uptime monitor on `/healthz` (deploy/UPTIME.md).
-5. On the VPS once: `cd /opt/auto-edits/deploy && docker compose exec server python -m server.mailcheck`, add the TXT records (DMARC likely missing).
+5. On the VPS once: `cd /opt/auto-edits/deploy && docker compose exec server python -m server.mailcheck`, add the TXT records it says are missing. (31 Oct: the health email's "SPF, DKIM, DMARC missing" was a false alarm: the server image had no DNS lookup tool, so every lookup failed and counted as missing. mailcheck now does its own lookup, and a failed lookup is reported as "could not look up". Re-run after this deploy to see the real state.)
 6. Staging when wanted: DNS for `staging.edits.cele-brat.solutions`, `deploy/.env.staging` with TEST keys, `./deploy/staging.sh up` (deploy/STAGING.md).
 7. Real Lightroom: plug-in v0.9 settings window, Bring back and apply twice (white balance must not change), stars/labels.
 8. Real weddings: Learn my style, Retouch, Compare view (C), galleries on a phone, History/Undo, zoom 1:1.

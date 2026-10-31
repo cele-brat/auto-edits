@@ -86,9 +86,12 @@ def run_if_due(store, mailer, to: str, backups=None, now: dt.datetime | None = N
     try:                                             # SPF / DKIM / DMARC of the sending domain (server/mailcheck.py)
         from . import mailcheck
         domain = mailcheck.sending_domain()
-        gone = mailcheck.missing(domain) if domain else []
+        gone, unchecked = mailcheck.status(domain) if domain else ([], [])
         if gone:
             found.append(f"email records missing for the sending domain: {', '.join(gone)} (run: python -m server.mailcheck)")
+        if unchecked:
+            found.append(f"could not look up the sending domain's email records: {', '.join(unchecked)} "
+                         "(DNS lookup failed; run: python -m server.mailcheck)")
     except Exception:
         pass
     if found and to:
